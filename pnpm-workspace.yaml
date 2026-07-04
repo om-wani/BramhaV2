@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "infra/sandbox"
+allowBuilds:
+  esbuild: true

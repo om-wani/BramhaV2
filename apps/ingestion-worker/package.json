@@ -1,0 +1,22 @@
+{
+  "name": "@bramha/ingestion-worker",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@bramha/shared": "workspace:*",
+    "@bramha/db": "workspace:*",
+    "@bramha/event-bus": "workspace:*",
+    "@bramha/agents": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
