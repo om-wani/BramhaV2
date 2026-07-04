@@ -2,8 +2,7 @@ node_modules/
 dist/
 .turbo/
 coverage/
-.env
-.env.*
+.env*
 !.env.example
 *.pem
 *.key

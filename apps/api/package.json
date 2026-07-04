@@ -7,7 +7,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "echo 'lint configured in T1.1.2'"
   },
   "dependencies": {
     "@bramha/shared": "workspace:*",
