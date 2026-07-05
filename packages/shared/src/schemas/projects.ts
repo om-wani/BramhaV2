@@ -3,6 +3,8 @@ import { uuidSchema, isoDateSchema, displayNameSchema } from './common.js'
 
 export const ProjectRoleSchema = z.enum(['owner', 'editor', 'viewer'])
 
+export type ProjectRole = z.infer<typeof ProjectRoleSchema>
+
 export const ProjectSettingsSchema = z
   .object({
     tokenBudgetPerDayUsd: z.number().positive().default(10),
@@ -48,23 +50,3 @@ export const UpdateProjectInputSchema = z
   .strict()
 
 export type UpdateProjectInput = z.infer<typeof UpdateProjectInputSchema>
-
-export const ProjectMemberSchema = z
-  .object({
-    projectId: uuidSchema,
-    userId: uuidSchema,
-    role: ProjectRoleSchema,
-    createdAt: isoDateSchema,
-  })
-  .strict()
-
-export type ProjectMember = z.infer<typeof ProjectMemberSchema>
-
-export const InviteProjectMemberInputSchema = z
-  .object({
-    email: z.string().email(),
-    role: ProjectRoleSchema,
-  })
-  .strict()
-
-export type InviteProjectMemberInput = z.infer<typeof InviteProjectMemberInputSchema>

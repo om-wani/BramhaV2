@@ -58,28 +58,3 @@ export const UpdateProfileInputSchema = z
   .strict()
 
 export type UpdateProfileInput = z.infer<typeof UpdateProfileInputSchema>
-
-// Session (public-facing — no token hashes)
-export const SessionSchema = z
-  .object({
-    id: uuidSchema,
-    userId: uuidSchema,
-    userAgent: z.string().nullable(),
-    ip: z.string().nullable(),
-    expiresAt: isoDateSchema,
-    revokedAt: isoDateSchema.nullable(),
-    createdAt: isoDateSchema,
-  })
-  .strict()
-
-export type Session = z.infer<typeof SessionSchema>
-
-// Auth responses
-export const AuthTokensSchema = z
-  .object({
-    accessToken: z.string(),
-    expiresIn: z.number(),
-  })
-  .strict()
-
-export type AuthTokens = z.infer<typeof AuthTokensSchema>

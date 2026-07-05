@@ -33,7 +33,7 @@ export const WsServerEventSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
-      type: z.literal('error'),
+      type: z.literal('system.error'),
       code: z.string(),
       message: z.string(),
     })

@@ -3,6 +3,8 @@ import { uuidSchema, slugSchema, isoDateSchema, displayNameSchema } from './comm
 
 export const OrgRoleSchema = z.enum(['owner', 'admin', 'member'])
 
+export type OrgRole = z.infer<typeof OrgRoleSchema>
+
 export const OrgSchema = z
   .object({
     id: uuidSchema,
@@ -33,23 +35,3 @@ export const UpdateOrgInputSchema = z
   .strict()
 
 export type UpdateOrgInput = z.infer<typeof UpdateOrgInputSchema>
-
-export const OrgMemberSchema = z
-  .object({
-    orgId: uuidSchema,
-    userId: uuidSchema,
-    role: OrgRoleSchema,
-    createdAt: isoDateSchema,
-  })
-  .strict()
-
-export type OrgMember = z.infer<typeof OrgMemberSchema>
-
-export const InviteOrgMemberInputSchema = z
-  .object({
-    email: z.string().email(),
-    role: OrgRoleSchema,
-  })
-  .strict()
-
-export type InviteOrgMemberInput = z.infer<typeof InviteOrgMemberInputSchema>

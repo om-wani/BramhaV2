@@ -3,6 +3,8 @@ export * from './schemas/common.js'
 export * from './schemas/users.js'
 export * from './schemas/orgs.js'
 export * from './schemas/projects.js'
+export * from './schemas/members.js'
+export * from './schemas/sessions.js'
 
 // Events
 export * from './events/index.js'
