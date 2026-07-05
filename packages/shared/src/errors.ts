@@ -4,7 +4,7 @@ export const ErrorCodes = {
   // Auth
   INVALID_CREDENTIALS: 'invalid_credentials',
   EMAIL_UNVERIFIED: 'email_unverified',
-  EMAIL_ALREADY_REGISTERED: 'email_already_registered',
+  EMAIL_ALREADY_EXISTS: 'email_already_exists',
   TOKEN_EXPIRED: 'token_expired',
   TOKEN_INVALID: 'token_invalid',
   TOTP_REQUIRED: 'totp_required',

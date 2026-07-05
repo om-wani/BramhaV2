@@ -42,6 +42,7 @@ export class SessionService {
 
   /** Build a Set-Cookie header that immediately expires the refresh_token cookie. */
   buildClearRefreshCookieHeader(): string {
-    return `refresh_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `refresh_token=; Path=/; HttpOnly${secure}; SameSite=Lax; Max-Age=0`
   }
 }

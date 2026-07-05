@@ -20,22 +20,18 @@ const LOCKOUT_WINDOW_MS = 15 * 60 * 1000 // 15 min
 const IP_BUCKET_MAX = 20
 const IP_BUCKET_WINDOW_MS = 15 * 60 * 1000
 
-interface RateLimitEntry {
-  count: number
-  windowStart: number
-}
-
 // ── AuthService ─────────────────────────────────────────────────────────────
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name)
 
-  /** In-memory per-account failed attempt counters. */
-  private readonly accountAttempts = new Map<string, RateLimitEntry>()
-
-  /** In-memory per-IP token bucket. */
-  private readonly ipAttempts = new Map<string, RateLimitEntry>()
+  /**
+   * NOTE: In-memory rate limiter — single process only.
+   * Replace with Redis INCR + EXPIRE before horizontal scaling.
+   */
+  private readonly accountAttempts = new Map<string, { count: number; windowStart: number }>()
+  private readonly ipAttempts = new Map<string, { count: number; windowStart: number }>()
 
   /**
    * Sentinel hash used to ensure constant-time response when user not found.
@@ -73,7 +69,7 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private checkAccountLocked(email: string): void {
+  private checkAccountLocked(email: string, ip: string | null): void {
     const now = Date.now()
     const entry = this.accountAttempts.get(email)
     if (!entry) return
@@ -82,9 +78,10 @@ export class AuthService implements OnModuleInit {
       return
     }
     if (entry.count >= LOCKOUT_ATTEMPTS) {
+      this.logger.warn({ event: 'account_locked', email, ip }, 'Account temporarily locked')
       throw new UnauthorizedException({
-        code: 'account_locked',
-        message: 'Account temporarily locked. Please try again in 15 minutes.',
+        code: 'invalid_credentials',
+        message: 'Invalid credentials',
       })
     }
   }
@@ -114,7 +111,7 @@ export class AuthService implements OnModuleInit {
     const existing = await this.authDb.findUserByEmail(input.email)
     if (existing) {
       throw new ConflictException({
-        code: 'email_already_registered',
+        code: 'email_already_exists',
         message: 'Email already registered',
       })
     }
@@ -135,13 +132,14 @@ export class AuthService implements OnModuleInit {
       expiresAt: this.session.getVerificationTokenExpiry(),
     })
 
-    // 5. Log verification URL (dev: no mailer yet)
+    // 5. Log verification URL — token is only emitted in development
     const appUrl = process.env['APP_URL'] ?? 'http://localhost:3000'
     const verifyUrl = `${appUrl}/verify-email?token=${raw}`
-    this.logger.log(
-      { userId: user.id, verifyUrl, event: 'user_registered' },
-      '[DEV] Email verification URL — forward this to the user',
-    )
+    if (process.env['NODE_ENV'] === 'development') {
+      this.logger.log({ event: 'email_verify_url', verifyUrl, userId: user.id }, 'Email verification URL (dev only)')
+    } else {
+      this.logger.log({ event: 'email_verification_sent', userId: user.id }, 'Verification email queued')
+    }
 
     return { userId: user.id, verifyToken: raw }
   }
@@ -165,8 +163,11 @@ export class AuthService implements OnModuleInit {
     userAgent: string | null,
   ): Promise<{ accessToken: string; expiresIn: number; rawRefreshToken: string }> {
     // 1. Rate limiting (IP first, then per-account lockout)
-    if (ip) this.checkIpBucket(ip)
-    this.checkAccountLocked(input.email)
+    // Falls back to 'unknown' when IP is unavailable (e.g. misconfigured proxy).
+    // All requests sharing the 'unknown' key share the same rate limit bucket.
+    const ipKey = ip ?? 'unknown'
+    this.checkIpBucket(ipKey)
+    this.checkAccountLocked(input.email, ip)
 
     // 2. Look up user — do NOT short-circuit before argon2 to prevent timing oracle
     const user = await this.authDb.findUserByEmail(input.email)
@@ -213,7 +214,16 @@ export class AuthService implements OnModuleInit {
       })
     }
 
-    // 4. On success: clear failed attempts, issue tokens
+    // 4. Email verification gate (checked after password to avoid timing leaks)
+    if (!user.email_verified_at) {
+      throw new UnauthorizedException({
+        code: 'email_unverified',
+        message: 'Email address not verified',
+        detail: 'Check your inbox and verify your email before logging in',
+      })
+    }
+
+    // 5. On success: clear failed attempts, issue tokens
     this.clearAttempts(input.email)
 
     const { accessToken, expiresIn } = await this.jwt.sign(user.id)

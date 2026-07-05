@@ -105,14 +105,14 @@ describe('AuthService', () => {
       ).rejects.toThrow(BadRequestException)
     })
 
-    it('throws email_already_registered when email already exists', async () => {
+    it('throws email_already_exists when email already exists', async () => {
       vi.mocked(mocks.authDb.findUserByEmail!).mockResolvedValue(makeUserRow())
       const err = await svc
         .register({ email: 'alice@example.com', password: 'StrongPass99!', displayName: 'A' })
         .catch((e: unknown) => e)
       expect(err).toBeInstanceOf(ConflictException)
       const resp = (err as ConflictException).getResponse() as Record<string, unknown>
-      expect(resp['code']).toBe('email_already_registered')
+      expect(resp['code']).toBe('email_already_exists')
     })
 
     it('returns userId and verifyToken on success', async () => {
@@ -163,7 +163,7 @@ describe('AuthService', () => {
       expect(resp['code']).toBe('invalid_credentials')
     })
 
-    it('throws account_locked after 10 consecutive failed attempts', async () => {
+    it('throws invalid_credentials (with internal account_locked log) after 10 consecutive failed attempts', async () => {
       vi.mocked(mocks.authDb.findUserByEmail!).mockResolvedValue(makeUserRow())
       vi.mocked(mocks.password.verify!).mockResolvedValue(false)
       const loginInput = { email: 'lockme@example.com', password: 'WrongPass' }
@@ -171,11 +171,11 @@ describe('AuthService', () => {
       for (let i = 0; i < 10; i++) {
         await svc.login(loginInput, null, null).catch(() => {})
       }
-      // 11th attempt should throw account_locked
+      // 11th attempt should throw invalid_credentials (hides account existence from attacker)
       const err = await svc.login(loginInput, null, null).catch((e: unknown) => e)
       expect(err).toBeInstanceOf(UnauthorizedException)
       const resp = (err as UnauthorizedException).getResponse() as Record<string, unknown>
-      expect(resp['code']).toBe('account_locked')
+      expect(resp['code']).toBe('invalid_credentials')
     })
   })
 
