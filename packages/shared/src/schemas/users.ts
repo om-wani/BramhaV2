@@ -58,3 +58,11 @@ export const UpdateProfileInputSchema = z
   .strict()
 
 export type UpdateProfileInput = z.infer<typeof UpdateProfileInputSchema>
+
+export const VerifyEmailInputSchema = z
+  .object({
+    token: z.string().min(32).max(128),
+  })
+  .strict()
+
+export type VerifyEmailInput = z.infer<typeof VerifyEmailInputSchema>
