@@ -7,7 +7,9 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:migrate": "pnpm --filter @bramha/db db:migrate",
+    "db:seed": "pnpm --filter @bramha/db db:seed"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.0",
