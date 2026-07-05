@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Run gitleaks if available to block commits containing secrets.
+# gitleaks must be installed separately (e.g., brew install gitleaks).
+# In CI, gitleaks is enforced via .github/workflows/security.yml (T1.1.4).
+if command -v gitleaks > /dev/null 2>&1; then
+  gitleaks protect --staged --redact -v
+fi
+
+pnpm exec lint-staged
