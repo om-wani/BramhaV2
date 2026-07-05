@@ -1,25 +1,9 @@
 import { Logger } from '@nestjs/common'
-import pino from 'pino'
+
+// Application logging is handled by nestjs-pino (LoggerModule in AppModule).
+// Use @nestjs/common Logger for DI-based logging in services/controllers.
+// pinoLogger is removed — all logging goes through nestjs-pino.
 
 export function createLogger() {
   return new Logger('Bootstrap')
 }
-
-// Pino logger instance for use in non-DI contexts
-export const pinoLogger = pino({
-  level: process.env['LOG_LEVEL'] ?? 'info',
-  redact: {
-    paths: [
-      'req.headers.authorization',
-      'req.headers.cookie',
-      '*.password',
-      '*.passwordHash',
-      '*.password_hash',
-      '*.token',
-      '*.refreshToken',
-      '*.accessToken',
-      '*.secret',
-    ],
-    censor: '[REDACTED]',
-  },
-})

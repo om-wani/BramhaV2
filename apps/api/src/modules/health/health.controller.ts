@@ -22,28 +22,30 @@ export class HealthController {
     return this.health.check([
       async (): Promise<HealthIndicatorResult> => {
         const start = Date.now()
+        const dbUrl = process.env['DATABASE_URL']
+        if (!dbUrl) return { postgres: { status: 'down', latencyMs: Date.now() - start } }
+        const sql = postgres(dbUrl, { max: 1, connect_timeout: 5 })
         try {
-          const dbUrl = process.env['DATABASE_URL']
-          if (!dbUrl) throw new Error('DATABASE_URL not set')
-          const sql = postgres(dbUrl, { max: 1, connect_timeout: 5 })
           await sql`SELECT 1`
-          await sql.end()
           return { postgres: { status: 'up', latencyMs: Date.now() - start } }
         } catch {
           return { postgres: { status: 'down', latencyMs: Date.now() - start } }
+        } finally {
+          await sql.end({ timeout: 2 })
         }
       },
       async (): Promise<HealthIndicatorResult> => {
         const start = Date.now()
+        const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379'
+        const redis = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 5000 })
         try {
-          const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379'
-          const redis = new Redis(redisUrl, { lazyConnect: true, connectTimeout: 5000 })
           await redis.connect()
           await redis.ping()
-          await redis.quit()
           return { redis: { status: 'up', latencyMs: Date.now() - start } }
         } catch {
           return { redis: { status: 'down', latencyMs: Date.now() - start } }
+        } finally {
+          try { await redis.quit() } catch { /* ignore quit errors */ }
         }
       },
     ])

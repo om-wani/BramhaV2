@@ -51,7 +51,7 @@ export class ProblemJsonFilter implements ExceptionFilter {
       }
     } else if (exception instanceof Error) {
       // Log unexpected errors server-side but don't leak details
-      this.logger.error({ err: exception.message }, 'Unhandled exception')
+      this.logger.error({ err: exception }, 'Unhandled exception')
     }
 
     const body: ProblemJson = { status, code, title }

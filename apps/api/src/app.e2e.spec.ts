@@ -24,6 +24,17 @@ beforeAll(async () => {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await app.register(helmet as any, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
     noSniff: true,
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
@@ -66,6 +77,11 @@ describe('Security headers', () => {
   it('sets Referrer-Policy', async () => {
     const res = await app.inject({ method: 'GET', url: '/health/live' })
     expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
+  })
+
+  it('sets Content-Security-Policy with frame-ancestors none', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health/live' })
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
   })
 })
 

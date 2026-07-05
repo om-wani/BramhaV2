@@ -12,6 +12,7 @@ import { AppModule } from './app.module'
 import { ZodValidationPipe } from 'nestjs-zod'
 import { ProblemJsonFilter } from './common/filters/problem-json.filter'
 import { createLogger } from './common/logger'
+import { Logger } from 'nestjs-pino'
 
 async function bootstrap() {
   const logger = createLogger()
@@ -57,6 +58,10 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter(Boolean)
 
+  if (allowedOrigins.length === 0 && process.env['NODE_ENV'] === 'production') {
+    logger.warn('ALLOWED_ORIGINS is empty — all cross-origin requests will be denied')
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await app.register(cors as any, {
     origin: (origin: string | undefined, callback: (err: Error | null, allow: boolean) => void) => {
@@ -91,6 +96,8 @@ async function bootstrap() {
     const cleanedDoc = cleanupOpenApiDoc(doc)
     SwaggerModule.setup('docs', app, cleanedDoc)
   }
+
+  app.useLogger(app.get(Logger))
 
   const port = parseInt(process.env['PORT'] ?? '3001', 10)
   const host = process.env['HOST'] ?? '0.0.0.0'
