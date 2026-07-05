@@ -16,7 +16,8 @@
     "test": "vitest run",
     "lint": "eslint src",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@bramha/shared": "workspace:*",
