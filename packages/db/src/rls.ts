@@ -1,4 +1,4 @@
-import postgres from 'postgres'
+import type postgres from 'postgres'
 import { sql } from './client.js'
 
 export interface TenantContext {

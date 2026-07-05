@@ -5,12 +5,19 @@ import postgres from 'postgres'
  * RLS probe tests — require a running Postgres instance with the migration applied.
  * Skipped automatically when DATABASE_URL is not set (CI without Docker).
  *
- * NOTE: These tests connect as the admin/dev user but SET LOCAL the app.user_id GUC,
- * which simulates exactly what bramha_app would see under RLS. A stricter test would
- * connect as bramha_app itself, but that requires DB role setup in CI.
+ * Probe queries connect as bramha_app (the restricted role subject to RLS) so that
+ * policies are actually enforced. Setup/teardown still uses the admin connection to
+ * seed and clean test data bypassing RLS.
  */
 const DATABASE_URL = process.env['DATABASE_URL']
 const runRlsTests = !!DATABASE_URL
+
+function getAppRoleUrl(): string {
+  const url = new URL(DATABASE_URL!)
+  url.username = 'bramha_app'
+  url.password = 'dev_only_app_password'
+  return url.toString()
+}
 
 describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
   let adminSql: ReturnType<typeof postgres>
@@ -67,7 +74,7 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
   })
 
   it('user B cannot SELECT user A project rows', async () => {
-    const appSql = postgres(DATABASE_URL!, { max: 1 })
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
       await tx`SET LOCAL app.user_id = ${userBId}`
@@ -80,7 +87,7 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
   })
 
   it('user A CAN SELECT their own project row', async () => {
-    const appSql = postgres(DATABASE_URL!, { max: 1 })
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
       await tx`SET LOCAL app.user_id = ${userAId}`
@@ -94,11 +101,12 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
 
   it('EXPLAIN on projects lookup uses index (idx_projects_org_id or PK)', async () => {
     // Just verifying the plan doesn't sequential-scan the whole table
-    const appSql = postgres(DATABASE_URL!, { max: 1 })
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const [row] = await appSql.begin(async (tx) => {
       await tx`SET LOCAL app.user_id = ${userAId}`
       await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SET LOCAL enable_seqscan = off`
       return tx`EXPLAIN (FORMAT JSON) SELECT * FROM projects WHERE id = ${projectAId}`
     })
 

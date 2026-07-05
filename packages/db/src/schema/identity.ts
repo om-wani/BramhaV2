@@ -11,9 +11,12 @@ import {
 } from 'drizzle-orm/pg-core'
 
 // bytea is not a built-in drizzle-orm/pg-core column; define it via customType
-const bytea = customType<{ data: Buffer; driverData: string }>({
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType() {
     return 'bytea'
+  },
+  fromDriver(v: Buffer): Buffer {
+    return v
   },
 })
 

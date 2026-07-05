@@ -143,6 +143,9 @@ CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members (pr
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO bramha_app;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO bramha_app;
 
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bramha_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO bramha_app;
+
 -- bramha_migrator: full DDL + DML (bypasses RLS via role attribute above)
 GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO bramha_migrator;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO bramha_migrator;
@@ -174,16 +177,19 @@ ALTER TABLE project_members FORCE  ROW LEVEL SECURITY;
 -- -------------------------------------------------------------------------
 
 -- Users: each user sees only their own row
+DROP POLICY IF EXISTS users_isolation ON users;
 CREATE POLICY users_isolation ON users
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid);
 
 -- Auth sessions: only the owning user's sessions
+DROP POLICY IF EXISTS sessions_isolation ON auth_sessions;
 CREATE POLICY sessions_isolation ON auth_sessions
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid);
 
 -- Orgs: only orgs the user is a member of
+DROP POLICY IF EXISTS orgs_isolation ON orgs;
 CREATE POLICY orgs_isolation ON orgs
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (
@@ -195,6 +201,7 @@ CREATE POLICY orgs_isolation ON orgs
   );
 
 -- Org members: rows where user is the member, or belongs to the same org
+DROP POLICY IF EXISTS org_members_isolation ON org_members;
 CREATE POLICY org_members_isolation ON org_members
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (
@@ -207,6 +214,7 @@ CREATE POLICY org_members_isolation ON org_members
   );
 
 -- Projects: only projects the user is a member of
+DROP POLICY IF EXISTS projects_isolation ON projects;
 CREATE POLICY projects_isolation ON projects
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (
@@ -218,6 +226,7 @@ CREATE POLICY projects_isolation ON projects
   );
 
 -- Project members: only rows for projects the user belongs to
+DROP POLICY IF EXISTS project_members_isolation ON project_members;
 CREATE POLICY project_members_isolation ON project_members
   AS PERMISSIVE FOR ALL TO bramha_app
   USING (
