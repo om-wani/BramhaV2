@@ -24,17 +24,45 @@ export default [
   {
     plugins: { boundaries },
     settings: {
+      // TypeScript import resolver so workspace pkg names (@bramha/*) resolve to
+      // their source files, enabling boundaries to classify them by element type.
+      'import/resolver': {
+        typescript: { alwaysTryTypes: true, project: './tsconfig.base.json' },
+      },
       'boundaries/elements': [
-        { type: 'app-web', pattern: 'apps/web/src/**' },
-        { type: 'app-api', pattern: 'apps/api/src/**' },
-        { type: 'app-agent-runtime', pattern: 'apps/agent-runtime/src/**' },
-        { type: 'app-ingestion-worker', pattern: 'apps/ingestion-worker/src/**' },
-        { type: 'pkg-shared', pattern: 'packages/shared/src/**' },
-        { type: 'pkg-db', pattern: 'packages/db/src/**' },
-        { type: 'pkg-agents', pattern: 'packages/agents/src/**' },
-        { type: 'pkg-agents-providers', pattern: 'packages/agents/src/providers/**' },
-        { type: 'pkg-event-bus', pattern: 'packages/event-bus/src/**' },
-        { type: 'pkg-mcp-connectors', pattern: 'packages/mcp-connectors/src/**' },
+        { type: 'app-web', pattern: ['apps/web/src/**', 'apps/web/dist/**'] },
+        { type: 'app-api', pattern: ['apps/api/src/**', 'apps/api/dist/**'] },
+        {
+          type: 'app-agent-runtime',
+          pattern: ['apps/agent-runtime/src/**', 'apps/agent-runtime/dist/**'],
+        },
+        {
+          type: 'app-ingestion-worker',
+          pattern: ['apps/ingestion-worker/src/**', 'apps/ingestion-worker/dist/**'],
+        },
+        { type: 'pkg-shared', pattern: ['packages/shared/src/**', 'packages/shared/dist/**'] },
+        { type: 'pkg-db', pattern: ['packages/db/src/**', 'packages/db/dist/**'] },
+        // pkg-agents-providers MUST come before pkg-agents so the more-specific
+        // glob matches first and is not shadowed by packages/agents/src/**
+        {
+          type: 'pkg-agents-providers',
+          pattern: [
+            'packages/agents/src/providers/**',
+            'packages/agents/dist/providers/**',
+          ],
+        },
+        {
+          type: 'pkg-agents',
+          pattern: ['packages/agents/src/**', 'packages/agents/dist/**'],
+        },
+        {
+          type: 'pkg-event-bus',
+          pattern: ['packages/event-bus/src/**', 'packages/event-bus/dist/**'],
+        },
+        {
+          type: 'pkg-mcp-connectors',
+          pattern: ['packages/mcp-connectors/src/**', 'packages/mcp-connectors/dist/**'],
+        },
       ],
       'boundaries/ignore': ['**/*.test.ts', '**/*.test.tsx'],
     },
@@ -54,7 +82,13 @@ export default [
               from: { type: 'app-agent-runtime' },
               allow: {
                 to: {
-                  type: ['pkg-shared', 'pkg-db', 'pkg-event-bus', 'pkg-agents', 'pkg-mcp-connectors'],
+                  type: [
+                    'pkg-shared',
+                    'pkg-db',
+                    'pkg-event-bus',
+                    'pkg-agents',
+                    'pkg-mcp-connectors',
+                  ],
                 },
               },
             },
@@ -93,7 +127,8 @@ export default [
               message: 'Vendor SDK imports only allowed in packages/agents/src/providers/',
             },
             {
-              group: ['@google/*', 'google-generativeai'],
+              // @google/generative-ai is the correct scoped npm package name
+              group: ['@google/generative-ai'],
               message: 'Vendor SDK imports only allowed in packages/agents/src/providers/',
             },
             {
