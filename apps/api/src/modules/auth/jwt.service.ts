@@ -1,15 +1,17 @@
 import { Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common'
-import { SignJWT, jwtVerify, importPKCS8, importSPKI, type KeyLike } from 'jose'
+import { SignJWT, jwtVerify, importPKCS8, importSPKI, type CryptoKey, type KeyObject } from 'jose'
 import { ConfigService } from '@nestjs/config'
 import { SESSION_ACCESS_TOKEN_TTL_SECONDS } from '@bramha/shared'
 
 const ISS = 'bramha'
 const AUD = 'bramha-api'
 
+type JoseKey = CryptoKey | KeyObject
+
 @Injectable()
 export class JwtService implements OnModuleInit {
-  private privateKey!: KeyLike
-  private publicKey!: KeyLike
+  private privateKey!: JoseKey
+  private publicKey!: JoseKey
   private keyId!: string
 
   constructor(private readonly config: ConfigService) {}
