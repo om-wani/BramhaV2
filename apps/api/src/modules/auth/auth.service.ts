@@ -1,0 +1,318 @@
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common'
+import { AuthDbService } from './auth-db.service'
+import { JwtService } from './jwt.service'
+import { PasswordService } from './password.service'
+import { SessionService } from './session.service'
+import type { RegisterInput, LoginInput } from '@bramha/shared'
+
+// ── Rate-limit constants ────────────────────────────────────────────────────
+
+const LOCKOUT_ATTEMPTS = 10
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000 // 15 min
+
+const IP_BUCKET_MAX = 20
+const IP_BUCKET_WINDOW_MS = 15 * 60 * 1000
+
+interface RateLimitEntry {
+  count: number
+  windowStart: number
+}
+
+// ── AuthService ─────────────────────────────────────────────────────────────
+
+@Injectable()
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name)
+
+  /** In-memory per-account failed attempt counters. */
+  private readonly accountAttempts = new Map<string, RateLimitEntry>()
+
+  /** In-memory per-IP token bucket. */
+  private readonly ipAttempts = new Map<string, RateLimitEntry>()
+
+  /**
+   * Sentinel hash used to ensure constant-time response when user not found.
+   * Computed on module init so it is warm before the first request.
+   */
+  private sentinelHash = ''
+
+  constructor(
+    private readonly authDb: AuthDbService,
+    private readonly jwt: JwtService,
+    private readonly password: PasswordService,
+    private readonly session: SessionService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    this.sentinelHash = await this.password.hash('__sentinel_timing_protection__')
+  }
+
+  // ── Rate-limit helpers ──────────────────────────────────────────────────
+
+  private checkIpBucket(ip: string): void {
+    const now = Date.now()
+    const entry = this.ipAttempts.get(ip) ?? { count: 0, windowStart: now }
+    if (now - entry.windowStart > IP_BUCKET_WINDOW_MS) {
+      entry.count = 0
+      entry.windowStart = now
+    }
+    entry.count++
+    this.ipAttempts.set(ip, entry)
+    if (entry.count > IP_BUCKET_MAX) {
+      throw new UnauthorizedException({
+        code: 'rate_limit_exceeded',
+        message: 'Too many requests. Please try again later.',
+      })
+    }
+  }
+
+  private checkAccountLocked(email: string): void {
+    const now = Date.now()
+    const entry = this.accountAttempts.get(email)
+    if (!entry) return
+    if (now - entry.windowStart > LOCKOUT_WINDOW_MS) {
+      this.accountAttempts.delete(email)
+      return
+    }
+    if (entry.count >= LOCKOUT_ATTEMPTS) {
+      throw new UnauthorizedException({
+        code: 'account_locked',
+        message: 'Account temporarily locked. Please try again in 15 minutes.',
+      })
+    }
+  }
+
+  private recordFailedAttempt(email: string): void {
+    const now = Date.now()
+    const entry = this.accountAttempts.get(email) ?? { count: 0, windowStart: now }
+    if (now - entry.windowStart > LOCKOUT_WINDOW_MS) {
+      entry.count = 0
+      entry.windowStart = now
+    }
+    entry.count++
+    this.accountAttempts.set(email, entry)
+  }
+
+  private clearAttempts(email: string): void {
+    this.accountAttempts.delete(email)
+  }
+
+  // ── Auth operations ─────────────────────────────────────────────────────
+
+  async register(input: RegisterInput): Promise<{ userId: string; verifyToken: string }> {
+    // 1. Password strength check (throws password_too_weak if score < 3)
+    this.password.checkStrength(input.password)
+
+    // 2. Uniqueness check
+    const existing = await this.authDb.findUserByEmail(input.email)
+    if (existing) {
+      throw new ConflictException({
+        code: 'email_already_registered',
+        message: 'Email already registered',
+      })
+    }
+
+    // 3. Hash password and create user
+    const passwordHash = await this.password.hash(input.password)
+    const user = await this.authDb.createUser({
+      email: input.email,
+      passwordHash,
+      displayName: input.displayName,
+    })
+
+    // 4. Create email verification token
+    const { raw, hash } = this.session.generateToken()
+    await this.authDb.createEmailVerificationToken({
+      userId: user.id,
+      tokenHash: hash,
+      expiresAt: this.session.getVerificationTokenExpiry(),
+    })
+
+    // 5. Log verification URL (dev: no mailer yet)
+    const appUrl = process.env['APP_URL'] ?? 'http://localhost:3000'
+    const verifyUrl = `${appUrl}/verify-email?token=${raw}`
+    this.logger.log(
+      { userId: user.id, verifyUrl, event: 'user_registered' },
+      '[DEV] Email verification URL — forward this to the user',
+    )
+
+    return { userId: user.id, verifyToken: raw }
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const hash = this.session.hashToken(token)
+    const result = await this.authDb.findAndConsumeVerificationToken(hash)
+    if (!result) {
+      throw new BadRequestException({
+        code: 'token_invalid',
+        message: 'Verification token is invalid or has expired',
+      })
+    }
+    await this.authDb.markEmailVerified(result.userId)
+    this.logger.log({ userId: result.userId, event: 'email_verified' }, 'Email verified')
+  }
+
+  async login(
+    input: LoginInput,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<{ accessToken: string; expiresIn: number; rawRefreshToken: string }> {
+    // 1. Rate limiting (IP first, then per-account lockout)
+    if (ip) this.checkIpBucket(ip)
+    this.checkAccountLocked(input.email)
+
+    // 2. Look up user — do NOT short-circuit before argon2 to prevent timing oracle
+    const user = await this.authDb.findUserByEmail(input.email)
+
+    if (!user || !user.password_hash) {
+      // Run sentinel verify to maintain constant time even for unknown accounts
+      await this.password.verify(this.sentinelHash, input.password).catch(() => {})
+      this.recordFailedAttempt(input.email)
+      this.logger.warn(
+        { email: input.email, ip, event: 'login_failed_unknown' },
+        'Login failed: unknown email',
+      )
+      throw new UnauthorizedException({
+        code: 'invalid_credentials',
+        message: 'Invalid credentials',
+      })
+    }
+
+    // Suspended users: run password check (constant time), then return generic error
+    if (user.status === 'suspended') {
+      await this.password.verify(user.password_hash, input.password).catch(() => {})
+      this.recordFailedAttempt(input.email)
+      this.logger.warn(
+        { userId: user.id, ip, event: 'login_failed_suspended' },
+        'Login failed: suspended account',
+      )
+      throw new UnauthorizedException({
+        code: 'invalid_credentials',
+        message: 'Invalid credentials',
+      })
+    }
+
+    // 3. Verify password
+    const valid = await this.password.verify(user.password_hash, input.password)
+    if (!valid) {
+      this.recordFailedAttempt(input.email)
+      this.logger.warn(
+        { userId: user.id, ip, event: 'login_failed_bad_password' },
+        'Login failed: wrong password',
+      )
+      throw new UnauthorizedException({
+        code: 'invalid_credentials',
+        message: 'Invalid credentials',
+      })
+    }
+
+    // 4. On success: clear failed attempts, issue tokens
+    this.clearAttempts(input.email)
+
+    const { accessToken, expiresIn } = await this.jwt.sign(user.id)
+    const { raw: rawRefreshToken, hash: refreshHash } = this.session.generateToken()
+
+    await this.authDb.createSession({
+      userId: user.id,
+      refreshTokenHash: refreshHash,
+      userAgent,
+      ip,
+      expiresAt: this.session.getRefreshTokenExpiry(),
+    })
+
+    this.logger.log({ userId: user.id, ip, event: 'login_success' }, 'Login successful')
+    return { accessToken, expiresIn, rawRefreshToken }
+  }
+
+  async refresh(
+    rawRefreshToken: string,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<{ accessToken: string; expiresIn: number; rawRefreshToken: string }> {
+    const hash = this.session.hashToken(rawRefreshToken)
+    const existingSession = await this.authDb.findSessionByTokenHash(hash)
+
+    if (!existingSession) {
+      throw new UnauthorizedException({ code: 'token_invalid', message: 'Invalid refresh token' })
+    }
+
+    // Family reuse detection: revoked token reused → revoke all sessions
+    if (existingSession.revoked_at) {
+      this.logger.warn(
+        { userId: existingSession.user_id, sessionId: existingSession.id, event: 'token_reuse' },
+        'Refresh token reuse detected — revoking all sessions for user',
+      )
+      await this.authDb.revokeAllUserSessions(existingSession.user_id)
+      throw new UnauthorizedException({ code: 'session_revoked', message: 'Session revoked' })
+    }
+
+    if (new Date(existingSession.expires_at) <= new Date()) {
+      throw new UnauthorizedException({ code: 'token_expired', message: 'Refresh token expired' })
+    }
+
+    // Rotation: revoke old session, issue new tokens
+    await this.authDb.revokeSession(existingSession.id)
+
+    const { accessToken, expiresIn } = await this.jwt.sign(existingSession.user_id)
+    const { raw: newRawToken, hash: newHash } = this.session.generateToken()
+
+    await this.authDb.createSession({
+      userId: existingSession.user_id,
+      refreshTokenHash: newHash,
+      userAgent,
+      ip,
+      expiresAt: this.session.getRefreshTokenExpiry(),
+      rotatedFrom: existingSession.id,
+    })
+
+    this.logger.log(
+      { userId: existingSession.user_id, event: 'token_rotated' },
+      'Refresh token rotated',
+    )
+    return { accessToken, expiresIn, rawRefreshToken: newRawToken }
+  }
+
+  async logout(rawRefreshToken: string, userId: string): Promise<void> {
+    const hash = this.session.hashToken(rawRefreshToken)
+    const session = await this.authDb.findSessionByTokenHash(hash)
+    if (session && session.user_id === userId) {
+      await this.authDb.revokeSession(session.id)
+    }
+    this.logger.log({ userId, event: 'logout' }, 'User logged out')
+  }
+
+  async getMe(userId: string): Promise<{
+    id: string
+    email: string
+    displayName: string
+    emailVerifiedAt: string | null
+    avatarKey: null
+    isAdmin: boolean
+    status: string
+    createdAt: string
+    updatedAt: string
+  }> {
+    const user = await this.authDb.findUserById(userId)
+    if (!user) {
+      throw new UnauthorizedException({ code: 'invalid_token', message: 'User not found' })
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.display_name,
+      emailVerifiedAt: user.email_verified_at,
+      avatarKey: null,
+      isAdmin: user.is_admin,
+      status: user.status,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at,
+    }
+  }
+}
