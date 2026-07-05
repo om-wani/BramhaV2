@@ -3,5 +3,6 @@ packages:
   - "packages/*"
   - "infra/sandbox"
 allowBuilds:
+  '@scarf/scarf': false
   esbuild: true
   unrs-resolver: true

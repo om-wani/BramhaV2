@@ -4,9 +4,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    testTimeout: 15000,
-    passWithNoTests: true,
-    include: ['src/**/*.spec.ts'],
-    exclude: ['src/**/*.e2e.spec.ts'],
+    testTimeout: 30000,
+    include: ['src/**/*.e2e.spec.ts'],
   },
 })
