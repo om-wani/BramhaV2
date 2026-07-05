@@ -1,7 +1,8 @@
 import { readFileSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
 
-const ROOT = resolve(import.meta.dirname, '..')
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 function parseEnvFile(filePath: string): Record<string, string> {
   const content = readFileSync(filePath, 'utf-8')

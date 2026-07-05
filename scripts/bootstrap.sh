@@ -23,9 +23,8 @@ fi
 
 # 4. Validate env
 echo "==> Validating environment..."
-node --input-type=module --loader=ts-node/esm "$ROOT/scripts/check-env.ts" 2>/dev/null \
-  || npx tsx "$ROOT/scripts/check-env.ts" \
-  || echo "WARN: check-env.ts failed (tsx not installed) — skipping env validation"
+npx tsx "$ROOT/scripts/check-env.ts" \
+  || echo "WARN: check-env.ts skipped (tsx not installed)"
 
 # 5. Start compose stack
 echo "==> Starting dev services..."
@@ -33,8 +32,10 @@ cd "$ROOT" && docker compose -f infra/docker/compose.dev.yml up -d --wait
 
 # 6. Wait for postgres to be healthy
 echo "==> Waiting for Postgres..."
-until docker compose -f infra/docker/compose.dev.yml exec -T postgres pg_isready -U bramha_dev -d bramha_dev > /dev/null 2>&1; do
-  sleep 2
+RETRIES=30; COUNT=0
+until docker compose -f infra/docker/compose.dev.yml exec -T postgres pg_isready -U bramha_dev -d bramha_dev >/dev/null 2>&1; do
+  sleep 2; COUNT=$((COUNT+1))
+  [ $COUNT -ge $RETRIES ] && { echo "ERROR: Postgres did not become ready after 60s"; exit 1; }
 done
 echo "  Postgres ready."
 

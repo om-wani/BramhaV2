@@ -20,6 +20,7 @@ services:
       - data
 
   redis:
+    # Redis data is intentionally ephemeral in dev (no volume mount)
     image: redis:7-alpine
     command: redis-server --requirepass dev_only_redis_password
     ports:
@@ -138,6 +139,5 @@ networks:
 
 volumes:
   postgres_data:
-  redis_data:
   minio_data:
   clamav_data:
