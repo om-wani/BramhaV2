@@ -1,0 +1,88 @@
+name: Security
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 6am UTC
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0 # Full history for gitleaks
+
+      - name: Run gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --exit-code 1
+        # exit-code 1 = secrets found; CI fails hard (no continue-on-error)
+
+  semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run Semgrep (OWASP + TypeScript rules)
+        run: |
+          semgrep scan \
+            --config "p/owasp-top-ten" \
+            --config "p/typescript" \
+            --error \
+            --exclude "node_modules" \
+            --exclude "dist" \
+            --exclude ".turbo"
+        # --error: exit non-zero on any finding (no continue-on-error)
+
+  osv-scanner:
+    name: Dependency vulnerabilities (osv-scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run osv-scanner
+        run: |
+          curl -sSfL https://github.com/google/osv-scanner/releases/download/v1.9.1/osv-scanner_linux_amd64 \
+            -o osv-scanner && chmod +x osv-scanner
+          ./osv-scanner scan --lockfile pnpm-lock.yaml
+        # exits non-zero on high/critical findings
+
+  pnpm-audit:
+    name: pnpm audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a3252b7022c8592138d39888d77b3f56cd0ed2c5 # v4.0.0
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high
+        # exits non-zero on high/critical findings
