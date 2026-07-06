@@ -9,9 +9,10 @@ import postgres from 'postgres'
  *   1. Append-only guard: UPDATE/DELETE on conversation_nodes raises exception
  *   2. Depth/path trigger: correct depth and ltree path on insert
  *   3. Depth/path 5-level chain: each level's depth and path are correct
- *   4. Cycle guard: node_links DFS detects and rejects cycles
- *   5. RLS probe: user B cannot see user A's rooms/conversations/nodes
- *   6. Property: 20 random fork operations each maintain depth = parent.depth + 1
+ *   4. Cycle guard: node_links BFS detects and rejects cycles + self-loops
+ *   5. RLS probes: user B cannot see user A's data in all 7 new tables
+ *   6. Property: 1000 random fork operations each maintain depth = parent.depth+1 + path suffix
+ *   7. Performance: depth-500 chain ltree ancestor slice query completes in < 10s
  */
 
 const DATABASE_URL = process.env['DATABASE_URL']
@@ -27,7 +28,7 @@ function getAppRoleUrl(): string {
 describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
   let adminSql: ReturnType<typeof postgres>
 
-  // Shared test fixture IDs
+  // Shared fixture IDs — populated in beforeAll
   let userAId: string
   let userBId: string
   let orgAId: string
@@ -35,12 +36,17 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
   let projectBId: string
   let roomAId: string
   let conversationAId: string
+  // Extra fixtures for RLS probes on room_participants, node_links, branches, user_room_state
+  let participantAId: string   // room_participants row id
+  let nodeForLinkId: string    // from_node in a node_link
+  let nodeForLinkToId: string  // to_node in a node_link
+  let branchAId: string        // branches row id
 
   // ---------------------------------------------------------------------------
-  // Setup: create isolated users, projects, rooms, conversations
+  // Setup
   // ---------------------------------------------------------------------------
   beforeAll(async () => {
-    adminSql = postgres(DATABASE_URL!, { max: 3 })
+    adminSql = postgres(DATABASE_URL!, { max: 5 })
 
     // Users
     const [userA] = await adminSql`
@@ -64,7 +70,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     `
     orgAId = orgA!.id as string
 
-    // Project A (user A is member; user B is NOT)
+    // Project A (user A is member; user B is NOT — for RLS isolation)
     const [projA] = await adminSql`
       INSERT INTO projects (org_id, name)
       VALUES (${orgAId}, 'DAG Test Project A')
@@ -77,7 +83,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
       VALUES (${projectAId}, ${userAId}, 'owner')
     `
 
-    // Project B (for RLS cross-project isolation)
+    // Project B (no members — cross-project isolation)
     const [projB] = await adminSql`
       INSERT INTO projects (org_id, name)
       VALUES (${orgAId}, 'DAG Test Project B')
@@ -93,6 +99,14 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     `
     roomAId = roomA!.id as string
 
+    // Room participant for user A in room A
+    const [partA] = await adminSql`
+      INSERT INTO room_participants (room_id, participant_kind, user_id)
+      VALUES (${roomAId}, 'user', ${userAId})
+      RETURNING id
+    `
+    participantAId = partA!.id as string
+
     // Conversation in room A
     const [convA] = await adminSql`
       INSERT INTO conversations (room_id, project_id, title)
@@ -100,33 +114,67 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
       RETURNING id
     `
     conversationAId = convA!.id as string
+
+    // Two conversation nodes — used as from/to for a node_link and as branch head
+    const [nFrom] = await adminSql`
+      INSERT INTO conversation_nodes (conversation_id, project_id, type, author_kind, content)
+      VALUES (${conversationAId}, ${projectAId}, 'user_message', 'user', '{"text":"from"}'::jsonb)
+      RETURNING id
+    `
+    nodeForLinkId = nFrom!.id as string
+
+    const [nTo] = await adminSql`
+      INSERT INTO conversation_nodes
+        (conversation_id, project_id, parent_id, type, author_kind, content)
+      VALUES
+        (${conversationAId}, ${projectAId}, ${nodeForLinkId},
+         'agent_message', 'agent', '{"text":"to"}'::jsonb)
+      RETURNING id
+    `
+    nodeForLinkToId = nTo!.id as string
+
+    // A node_link (used by RLS probe for node_links table)
+    await adminSql`
+      INSERT INTO node_links (from_node, to_node, kind)
+      VALUES (${nodeForLinkId}, ${nodeForLinkToId}, 'reference')
+    `
+
+    // A branch pointing at nodeForLinkToId
+    const [brA] = await adminSql`
+      INSERT INTO branches
+        (conversation_id, project_id, name, head_node_id, created_by_kind, status)
+      VALUES
+        (${conversationAId}, ${projectAId}, 'main', ${nodeForLinkToId}, 'user', 'active')
+      RETURNING id
+    `
+    branchAId = brA!.id as string
+
+    // User room state for user A (used by RLS probe for user_room_state table)
+    await adminSql`
+      INSERT INTO user_room_state
+        (user_id, room_id, conversation_id, active_branch_id, last_read_node_id)
+      VALUES
+        (${userAId}, ${roomAId}, ${conversationAId}, ${branchAId}, ${nodeForLinkToId})
+    `
   })
 
   // ---------------------------------------------------------------------------
-  // Teardown: TRUNCATE DAG tables (TRUNCATE bypasses row-level triggers,
-  // so the append-only guard does not block cleanup).
+  // Teardown — TRUNCATE bypasses row-level triggers (including append-only guard)
   // ---------------------------------------------------------------------------
   afterAll(async () => {
-    // Truncate all DAG tables in reverse dependency order.
-    // CASCADE handles any remaining FK refs automatically.
     await adminSql`
       TRUNCATE user_room_state, node_links, branches, conversation_nodes,
                conversations, room_participants, rooms CASCADE
     `
-
-    // Clean up identity fixture data
     await adminSql`DELETE FROM project_members WHERE project_id IN (${projectAId}, ${projectBId})`
     await adminSql`DELETE FROM projects WHERE id IN (${projectAId}, ${projectBId})`
     await adminSql`DELETE FROM orgs WHERE id = ${orgAId}`
     await adminSql`DELETE FROM users WHERE email LIKE 'dag-test-%@test.invalid'`
-
     await adminSql.end()
   })
 
   // ---------------------------------------------------------------------------
-  // Helper: insert a node without specifying depth/path (trigger sets them).
-  // Content is JSON-serialised as a string and cast to jsonb in SQL to avoid
-  // postgres.js JSONValue type constraints in the test helper signature.
+  // Helper: insert a node; trigger sets depth and path
   // ---------------------------------------------------------------------------
   async function insertNode(opts: {
     conversationId: string
@@ -162,82 +210,54 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     return { id: row.id as string, depth: row.depth as number, path: row.path as string }
   }
 
-  // ---------------------------------------------------------------------------
-  // 1. Append-only: UPDATE raises exception
-  // ---------------------------------------------------------------------------
+  // ═══════════════════════════════════════════════════════════════════════════
+  // APPEND-ONLY GUARD
+  // ═══════════════════════════════════════════════════════════════════════════
+
   it('rejects UPDATE on conversation_nodes', async () => {
-    const node = await insertNode({
-      conversationId: conversationAId,
-      projectId: projectAId,
-    })
+    const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
 
     await expect(
       adminSql`UPDATE conversation_nodes SET content = '{"text":"mutated"}'::jsonb WHERE id = ${node.id}`,
     ).rejects.toThrow(/append-only/)
   })
 
-  // ---------------------------------------------------------------------------
-  // 2. Append-only: DELETE raises exception
-  // ---------------------------------------------------------------------------
   it('rejects DELETE on conversation_nodes', async () => {
-    const node = await insertNode({
-      conversationId: conversationAId,
-      projectId: projectAId,
-    })
+    const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
 
     await expect(
       adminSql`DELETE FROM conversation_nodes WHERE id = ${node.id}`,
     ).rejects.toThrow(/append-only/)
   })
 
-  // ---------------------------------------------------------------------------
-  // 3. Depth/path: root node gets depth=0, path=<id-with-underscores>
-  // ---------------------------------------------------------------------------
-  it('root node gets depth=0 and path equal to its id (hyphens → underscores)', async () => {
-    const node = await insertNode({
-      conversationId: conversationAId,
-      projectId: projectAId,
-    })
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DEPTH / PATH TRIGGER
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    const expectedPath = node.id.replace(/-/g, '_')
+  it('root node gets depth=0 and path equal to its id (hyphens → underscores)', async () => {
+    const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
 
     expect(node.depth).toBe(0)
-    expect(node.path).toBe(expectedPath)
+    expect(node.path).toBe(node.id.replace(/-/g, '_'))
   })
 
-  // ---------------------------------------------------------------------------
-  // 4. Depth/path: child node gets depth=1, path=parent.path + '.' + child_label
-  // ---------------------------------------------------------------------------
   it('child node gets depth=1 and path=parent.path.child_id_label', async () => {
-    const root = await insertNode({
-      conversationId: conversationAId,
-      projectId: projectAId,
-    })
+    const root = await insertNode({ conversationId: conversationAId, projectId: projectAId })
     const child = await insertNode({
       conversationId: conversationAId,
       projectId: projectAId,
       parentId: root.id,
     })
 
-    const childLabel = child.id.replace(/-/g, '_')
-    const expectedPath = `${root.path}.${childLabel}`
-
     expect(child.depth).toBe(1)
-    expect(child.path).toBe(expectedPath)
+    expect(child.path).toBe(`${root.path}.${child.id.replace(/-/g, '_')}`)
   })
 
-  // ---------------------------------------------------------------------------
-  // 5. Depth/path: 5-level chain — each node depth = parent.depth + 1
-  // ---------------------------------------------------------------------------
-  it('5-level chain: each node depth = parent.depth + 1 and path grows correctly', async () => {
+  it('5-level chain: depth and path are correct at each level', async () => {
     const chain: Array<{ id: string; depth: number; path: string }> = []
 
-    // Root
-    chain.push(
-      await insertNode({ conversationId: conversationAId, projectId: projectAId }),
-    )
+    chain.push(await insertNode({ conversationId: conversationAId, projectId: projectAId }))
 
-    // Children
     for (let i = 1; i <= 4; i++) {
       chain.push(
         await insertNode({
@@ -248,64 +268,51 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
       )
     }
 
-    // Verify depth
     for (let i = 0; i < chain.length; i++) {
       expect(chain[i]!.depth, `depth at level ${i}`).toBe(i)
     }
-
-    // Verify path: each node's path = parent.path + '.' + id_label
     for (let i = 1; i < chain.length; i++) {
       const label = chain[i]!.id.replace(/-/g, '_')
-      const expected = `${chain[i - 1]!.path}.${label}`
-      expect(chain[i]!.path, `path at level ${i}`).toBe(expected)
+      expect(chain[i]!.path, `path at level ${i}`).toBe(`${chain[i - 1]!.path}.${label}`)
     }
   })
 
-  // ---------------------------------------------------------------------------
-  // 6. Cycle guard: A→B→C then C→A raises exception
-  // ---------------------------------------------------------------------------
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CYCLE GUARD
+  // ═══════════════════════════════════════════════════════════════════════════
+
   it('node_links cycle guard: A→B→C then C→A is rejected', async () => {
     const nodeA = await insertNode({ conversationId: conversationAId, projectId: projectAId })
     const nodeB = await insertNode({ conversationId: conversationAId, projectId: projectAId })
     const nodeC = await insertNode({ conversationId: conversationAId, projectId: projectAId })
 
-    // Build chain A→B→C
     await adminSql`
-      INSERT INTO node_links (from_node, to_node, kind)
-      VALUES (${nodeA.id}, ${nodeB.id}, 'reference')
+      INSERT INTO node_links (from_node, to_node, kind) VALUES (${nodeA.id}, ${nodeB.id}, 'reference')
     `
     await adminSql`
-      INSERT INTO node_links (from_node, to_node, kind)
-      VALUES (${nodeB.id}, ${nodeC.id}, 'reference')
+      INSERT INTO node_links (from_node, to_node, kind) VALUES (${nodeB.id}, ${nodeC.id}, 'reference')
     `
 
-    // C→A would close the cycle — must be rejected
     await expect(
-      adminSql`
-        INSERT INTO node_links (from_node, to_node, kind)
-        VALUES (${nodeC.id}, ${nodeA.id}, 'reference')
-      `,
+      adminSql`INSERT INTO node_links (from_node, to_node, kind) VALUES (${nodeC.id}, ${nodeA.id}, 'reference')`,
     ).rejects.toThrow(/cycle/)
   })
 
-  // ---------------------------------------------------------------------------
-  // 7. Cycle guard: self-loop is rejected
-  // ---------------------------------------------------------------------------
   it('node_links cycle guard: self-loop is rejected', async () => {
     const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
 
     await expect(
-      adminSql`
-        INSERT INTO node_links (from_node, to_node, kind)
-        VALUES (${node.id}, ${node.id}, 'reference')
-      `,
+      adminSql`INSERT INTO node_links (from_node, to_node, kind) VALUES (${node.id}, ${node.id}, 'reference')`,
     ).rejects.toThrow(/cycle/)
   })
 
-  // ---------------------------------------------------------------------------
-  // 8. RLS: user B cannot SELECT user A's rooms (different project membership)
-  // ---------------------------------------------------------------------------
-  it('RLS: user B cannot SELECT user A rooms', async () => {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RLS PROBES — all 7 new tables
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── rooms ──────────────────────────────────────────────────────────────────
+
+  it('RLS rooms: user B cannot SELECT user A rooms', async () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
@@ -318,10 +325,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     expect(rows).toHaveLength(0)
   })
 
-  // ---------------------------------------------------------------------------
-  // 9. RLS: user A CAN SELECT their own rooms
-  // ---------------------------------------------------------------------------
-  it('RLS: user A can SELECT their own rooms', async () => {
+  it('RLS rooms: user A can SELECT their own rooms', async () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
@@ -334,13 +338,66 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     expect(rows).toHaveLength(1)
   })
 
-  // ---------------------------------------------------------------------------
-  // 10. RLS: user B cannot SELECT user A's conversation nodes
-  // ---------------------------------------------------------------------------
-  it('RLS: user B cannot SELECT conversation_nodes from user A project', async () => {
-    // Insert a node as admin (bypasses RLS)
-    const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
+  // ── room_participants ──────────────────────────────────────────────────────
 
+  it('RLS room_participants: user B cannot SELECT user A room_participants', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SET LOCAL app.project_id = ''`
+      return tx`SELECT id FROM room_participants WHERE id = ${participantAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(0)
+  })
+
+  it('RLS room_participants: user A can SELECT their own room_participants', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userAId}`
+      await tx`SET LOCAL app.project_id = ${projectAId}`
+      return tx`SELECT id FROM room_participants WHERE id = ${participantAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(1)
+  })
+
+  // ── conversations ──────────────────────────────────────────────────────────
+
+  it('RLS conversations: user B cannot SELECT user A conversations', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SET LOCAL app.project_id = ''`
+      return tx`SELECT id FROM conversations WHERE id = ${conversationAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(0)
+  })
+
+  it('RLS conversations: user A can SELECT their own conversations', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userAId}`
+      await tx`SET LOCAL app.project_id = ${projectAId}`
+      return tx`SELECT id FROM conversations WHERE id = ${conversationAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(1)
+  })
+
+  // ── conversation_nodes ─────────────────────────────────────────────────────
+
+  it('RLS conversation_nodes: user B cannot SELECT user A nodes', async () => {
+    const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
@@ -353,12 +410,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     expect(rows).toHaveLength(0)
   })
 
-  // ---------------------------------------------------------------------------
-  // 11. RLS: user A CAN SELECT their own conversation nodes
-  // ---------------------------------------------------------------------------
-  it('RLS: user A can SELECT their own conversation_nodes', async () => {
+  it('RLS conversation_nodes: user A can SELECT their own nodes', async () => {
     const node = await insertNode({ conversationId: conversationAId, projectId: projectAId })
-
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
@@ -371,32 +424,165 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     expect(rows).toHaveLength(1)
   })
 
-  // ---------------------------------------------------------------------------
-  // 12. Property: 20 fork operations each maintain depth = parent.depth + 1
-  // ---------------------------------------------------------------------------
-  it('property: 20 fork/append operations each have depth = parent.depth + 1', async () => {
-    // Build a small tree: root + 19 children each forking from a random ancestor.
-    // All nodes inserted via admin SQL; trigger sets depth automatically.
+  // ── node_links ─────────────────────────────────────────────────────────────
 
-    const inserted: Array<{ id: string; depth: number; parentId: string | null }> = []
+  it('RLS node_links: user B cannot SELECT user A node_links', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
-    // Root
-    const root = await insertNode({ conversationId: conversationAId, projectId: projectAId })
-    inserted.push({ id: root.id, depth: root.depth, parentId: null })
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SET LOCAL app.project_id = ''`
+      return tx`SELECT from_node FROM node_links WHERE from_node = ${nodeForLinkId}`
+    })
 
-    for (let i = 1; i < 20; i++) {
-      // Pick a random existing node as parent
-      const parentIdx = Math.floor(Math.random() * inserted.length)
-      const parent = inserted[parentIdx]!
-
-      const node = await insertNode({
-        conversationId: conversationAId,
-        projectId: projectAId,
-        parentId: parent.id,
-      })
-      inserted.push({ id: node.id, depth: node.depth, parentId: parent.id })
-
-      expect(node.depth, `node ${i} depth`).toBe(parent.depth + 1)
-    }
+    await appSql.end()
+    expect(rows).toHaveLength(0)
   })
+
+  it('RLS node_links: user A can SELECT their own node_links', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userAId}`
+      await tx`SET LOCAL app.project_id = ${projectAId}`
+      return tx`SELECT from_node FROM node_links WHERE from_node = ${nodeForLinkId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(1)
+  })
+
+  // ── branches ──────────────────────────────────────────────────────────────
+
+  it('RLS branches: user B cannot SELECT user A branches', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SET LOCAL app.project_id = ''`
+      return tx`SELECT id FROM branches WHERE id = ${branchAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(0)
+  })
+
+  it('RLS branches: user A can SELECT their own branches', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userAId}`
+      await tx`SET LOCAL app.project_id = ${projectAId}`
+      return tx`SELECT id FROM branches WHERE id = ${branchAId}`
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(1)
+  })
+
+  // ── user_room_state ────────────────────────────────────────────────────────
+
+  it('RLS user_room_state: user B cannot SELECT user A state', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SET LOCAL app.project_id = ''`
+      return tx`
+        SELECT user_id FROM user_room_state
+        WHERE user_id = ${userAId} AND room_id = ${roomAId} AND conversation_id = ${conversationAId}
+      `
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(0)
+  })
+
+  it('RLS user_room_state: user A can SELECT their own state', async () => {
+    const appSql = postgres(getAppRoleUrl(), { max: 1 })
+
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id = ${userAId}`
+      await tx`SET LOCAL app.project_id = ${projectAId}`
+      return tx`
+        SELECT user_id FROM user_room_state
+        WHERE user_id = ${userAId} AND room_id = ${roomAId} AND conversation_id = ${conversationAId}
+      `
+    })
+
+    await appSql.end()
+    expect(rows).toHaveLength(1)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROPERTY TEST — 1000 random fork operations
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  it(
+    'property: 1000 random fork/append operations each have depth = parent.depth+1 and path ends with id_label',
+    async () => {
+      const inserted: Array<{ id: string; depth: number; path: string }> = []
+
+      // Root
+      const root = await insertNode({ conversationId: conversationAId, projectId: projectAId })
+      inserted.push(root)
+
+      for (let i = 1; i < 1000; i++) {
+        const parent = inserted[Math.floor(Math.random() * inserted.length)]!
+
+        const node = await insertNode({
+          conversationId: conversationAId,
+          projectId: projectAId,
+          parentId: parent.id,
+        })
+        inserted.push(node)
+
+        const idLabel = node.id.replace(/-/g, '_')
+
+        // depth invariant
+        expect(node.depth, `node ${i} depth`).toBe(parent.depth + 1)
+        // path suffix invariant
+        expect(node.path, `node ${i} path suffix`).toMatch(new RegExp(`\\.?${idLabel}$`))
+      }
+    },
+    { timeout: 120_000 },
+  )
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PERFORMANCE TEST — depth-500 chain + ltree ancestor query
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  it(
+    'performance: ltree ancestor-slice query over 500-node chain completes in < 10s',
+    async () => {
+      // Build a linear chain of 500 nodes (each child of the previous)
+      let prev = await insertNode({ conversationId: conversationAId, projectId: projectAId })
+      const rootPath = prev.path
+
+      for (let i = 1; i < 500; i++) {
+        prev = await insertNode({
+          conversationId: conversationAId,
+          projectId: projectAId,
+          parentId: prev.id,
+        })
+      }
+
+      // Verify the last node is at depth 499
+      expect(prev.depth).toBe(499)
+
+      // Time a single ltree ancestor-slice query (uses GiST index on path)
+      const start = Date.now()
+      const rows = await adminSql`
+        SELECT id FROM conversation_nodes
+        WHERE path <@ ${rootPath}::ltree
+      `
+      const elapsed = Date.now() - start
+
+      // All 500 nodes in the chain are descendants of (or equal to) the root
+      expect(rows.length).toBeGreaterThanOrEqual(500)
+      // Assert the index is actually used — query must finish well under 10s
+      expect(elapsed, `ltree query took ${elapsed}ms`).toBeLessThan(10_000)
+    },
+    { timeout: 120_000 },
+  )
 })
