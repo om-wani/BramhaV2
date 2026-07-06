@@ -7,6 +7,7 @@ export * from './schemas/members.js'
 export * from './schemas/sessions.js'
 export * from './schemas/api-keys.js'
 export * from './schemas/password-reset.js'
+export * from './schemas/conversations.js'
 
 // Events
 export * from './events/index.js'

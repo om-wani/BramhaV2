@@ -4,9 +4,12 @@ import { LoggerModule } from 'nestjs-pino'
 import { HealthModule } from './modules/health/health.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { DbModule } from './modules/common/db/db.module'
+import { RedisModule } from './modules/common/redis/redis.module'
 import { UsersModule } from './modules/users/users.module'
 import { OrgsModule } from './modules/orgs/orgs.module'
 import { ProjectsModule } from './modules/projects/projects.module'
+import { RoomsModule } from './modules/rooms/rooms.module'
+import { ConversationsModule } from './modules/conversations/conversations.module'
 
 @Module({
   imports: [
@@ -36,9 +39,12 @@ import { ProjectsModule } from './modules/projects/projects.module'
     HealthModule,
     AuthModule,
     DbModule,
+    RedisModule,
     UsersModule,
     OrgsModule,
     ProjectsModule,
+    RoomsModule,
+    ConversationsModule,
   ],
 })
 export class AppModule {}
