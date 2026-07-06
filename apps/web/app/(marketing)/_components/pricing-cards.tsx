@@ -60,8 +60,9 @@ interface PricingCardsProps {
 
 export function PricingCards({ teaser = false }: PricingCardsProps) {
   return (
-    <section id="pricing" className={cn('py-24', teaser && 'bg-muted/30')}>
+    <section id="pricing" aria-labelledby="pricing-heading" className={cn('py-24', teaser && 'bg-muted/30')}>
       <div className="container mx-auto max-w-6xl px-4">
+        <h2 id="pricing-heading" className="sr-only">Pricing plans</h2>
         {teaser && (
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Simple pricing</h2>

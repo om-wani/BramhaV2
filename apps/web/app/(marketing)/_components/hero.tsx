@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export function Hero() {
   return (
@@ -26,7 +27,11 @@ export function Hero() {
           </div>
         </div>
         {/* Room metaphor illustration — SVG, inline, zero external requests */}
-        <div className="mt-16 rounded-2xl border bg-card p-8 shadow-xl" aria-label="Workspace illustration">
+        <div
+          className="mt-16 rounded-2xl border bg-card p-8 shadow-xl"
+          role="region"
+          aria-label="Workspace illustration"
+        >
           <RoomIllustration />
         </div>
       </div>
@@ -37,11 +42,11 @@ export function Hero() {
 function RoomIllustration() {
   // Simplified room metaphor showing conference table with agent avatars
   const personas = [
-    { label: 'CEO', color: '#3b82f6' },
-    { label: 'CTO', color: '#8b5cf6' },
-    { label: 'CMO', color: '#ec4899' },
-    { label: 'CFO', color: '#14b8a6' },
-    { label: 'COO', color: '#f59e0b' },
+    { label: 'CEO', bg: 'bg-[hsl(217,91%,60%)]' },
+    { label: 'CTO', bg: 'bg-[hsl(271,81%,56%)]' },
+    { label: 'CMO', bg: 'bg-[hsl(338,75%,55%)]' },
+    { label: 'CFO', bg: 'bg-[hsl(160,60%,45%)]' },
+    { label: 'COO', bg: 'bg-[hsl(38,92%,50%)]' },
   ]
   return (
     <div
@@ -52,8 +57,7 @@ function RoomIllustration() {
       {personas.map((p) => (
         <div key={p.label} className="flex flex-col items-center gap-2">
           <div
-            className="flex h-14 w-14 items-center justify-center rounded-full text-sm font-bold text-white"
-            style={{ backgroundColor: p.color }}
+            className={cn('flex h-14 w-14 items-center justify-center rounded-full text-sm font-bold text-white', p.bg)}
             aria-label={p.label}
           >
             {p.label}
