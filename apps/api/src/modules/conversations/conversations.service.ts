@@ -71,6 +71,7 @@ export interface GraphDto {
   nodes: ConversationNodeDto[]
   edges: NodeLinkDto[]
   branches: BranchDto[]
+  /** Composite cursor `<created_at>|<id>` for the next page, or null. */
   nextCursor: string | null
 }
 
@@ -169,6 +170,18 @@ const RATE_LIMIT_MSG_PER_MIN = 20
 const IDEMPOTENCY_TTL_SECS = 86400 // 24h
 const CONTENT_MAX_BYTES = 32768
 
+/**
+ * Atomic INCR + conditional EXPIRE in a single Lua round-trip.
+ * Prevents permanent rate-limit keys if the process crashes between INCR and EXPIRE.
+ */
+const LUA_RATE_LIMIT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], 60)
+end
+return count
+`
+
 type Tx = postgres.TransactionSql
 
 @Injectable()
@@ -180,14 +193,11 @@ export class ConversationsService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  // ── Rate limiting ─────────────────────────────────────────────────────────
+  // ── Rate limiting (atomic Lua) ────────────────────────────────────────────
 
   private async checkRateLimit(userId: string): Promise<void> {
     const key = `ratelimit:msg:${userId}`
-    const count = await this.redis.incr(key)
-    if (count === 1) {
-      await this.redis.expire(key, 60)
-    }
+    const count = (await this.redis.eval(LUA_RATE_LIMIT, 1, key)) as number
     if (count > RATE_LIMIT_MSG_PER_MIN) {
       throw new HttpException(
         { statusCode: 429, code: 'rate_limit_exceeded', message: 'Too many messages' },
@@ -342,7 +352,7 @@ export class ConversationsService {
                created_by_kind, created_by_id, status, created_at, updated_at
         FROM branches
         WHERE conversation_id = ${convId}
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, id ASC
       `
 
       return {
@@ -367,13 +377,13 @@ export class ConversationsService {
     convId: string,
     input: AppendNodeInput,
   ): Promise<ConversationNodeDto> {
-    // 1. Idempotency check
+    // 1. Idempotency check (before any DB work)
     const cached = await this.getIdempotencyResult(userId, input.idempotencyKey)
     if (cached != null) {
       return cached as ConversationNodeDto
     }
 
-    // 2. Rate limit
+    // 2. Rate limit (atomic Lua script — single round-trip, no TTL leak)
     await this.checkRateLimit(userId)
 
     // 3. Content size guard (UTF-8 bytes, not UTF-16 character count)
@@ -385,6 +395,7 @@ export class ConversationsService {
       )
     }
 
+    // 4. DB work + idempotency write (inside db.run so write is as close to commit as possible)
     const result = await this.db.run({ userId, projectId }, async (tx) => {
       await this.assertRoomBelongsToProject(tx, roomId, projectId)
       await this.assertConvBelongsToRoom(tx, convId, roomId, projectId)
@@ -435,14 +446,9 @@ export class ConversationsService {
       `
 
       if (advanceResult.length === 0) {
-        // Conflict: head was already advanced — create a parallel branch
-        const siblingCount = await tx<{ cnt: string }[]>`
-          SELECT count(*)::text AS cnt
-          FROM branches
-          WHERE conversation_id = ${convId} AND name LIKE 'parallel-%'
-        `
-        const n = Number(siblingCount[0]?.cnt ?? '0') + 1
-        const parallelName = `parallel-${n}`
+        // Conflict: head was already advanced — create a collision-resistant parallel branch.
+        // Use the new node's UUID prefix so two concurrent transactions never collide on the name.
+        const parallelName = `parallel-${newNode.id.slice(0, 8)}`
 
         await tx`
           INSERT INTO branches (
@@ -456,11 +462,14 @@ export class ConversationsService {
         `
       }
 
-      return mapNode(newNode)
-    })
+      const mapped = mapNode(newNode)
 
-    // 4. Cache idempotency result
-    await this.setIdempotencyResult(userId, input.idempotencyKey, result)
+      // Write idempotency cache INSIDE db.run — as close to the DB commit as possible.
+      // This minimises the crash window between a committed node and a missing cache entry.
+      await this.setIdempotencyResult(userId, input.idempotencyKey, mapped)
+
+      return mapped
+    })
 
     this.logger.log({
       event: 'conversation.node_appended',
@@ -494,7 +503,8 @@ export class ConversationsService {
       let branchName = input.name
       if (!branchName) {
         const forkCount = await tx<{ cnt: string }[]>`
-          SELECT count(*)::text AS cnt FROM branches WHERE conversation_id = ${convId} AND name LIKE 'fork-%'
+          SELECT count(*)::text AS cnt FROM branches
+          WHERE conversation_id = ${convId} AND name LIKE 'fork-%'
         `
         branchName = `fork-${Number(forkCount[0]?.cnt ?? '0') + 1}`
       }
@@ -541,9 +551,24 @@ export class ConversationsService {
     projectId: string,
     roomId: string,
     convId: string,
-    opts: { cursor?: string | undefined; limit?: number | undefined; branchId?: string | undefined },
+    opts: {
+      cursor?: string | undefined
+      limit?: number | undefined
+      branchId?: string | undefined
+    },
   ): Promise<GraphDto> {
     const limit = Math.min(opts.limit ?? 50, 100)
+
+    // Parse composite cursor `<created_at>|<id>`
+    let cursorTs: string | undefined
+    let cursorId: string | undefined
+    if (opts.cursor) {
+      const sep = opts.cursor.indexOf('|')
+      if (sep !== -1) {
+        cursorTs = opts.cursor.slice(0, sep)
+        cursorId = opts.cursor.slice(sep + 1)
+      }
+    }
 
     return this.db.run({ userId, projectId }, async (tx) => {
       await this.assertRoomBelongsToProject(tx, roomId, projectId)
@@ -552,6 +577,7 @@ export class ConversationsService {
       let nodeRows: NodeRow[]
 
       if (opts.branchId) {
+        // Get head's ltree path; filter ancestors using @> ("path is ancestor of headPath")
         const headRows = await tx<{ path: string }[]>`
           SELECT cn.path::text AS path
           FROM branches b
@@ -561,15 +587,15 @@ export class ConversationsService {
         if (!headRows[0]) throw new NotFoundException({ code: 'branch_not_found' })
         const headPath = headRows[0].path
 
-        if (opts.cursor) {
+        if (cursorTs && cursorId) {
           nodeRows = await tx<NodeRow[]>`
             SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
                    author_kind, author_user_id, author_persona_id, content, token_usage, created_at
             FROM conversation_nodes
             WHERE conversation_id = ${convId}
-              AND path::ltree <@ ${headPath}::ltree
-              AND created_at > ${opts.cursor}
-            ORDER BY created_at ASC
+              AND path::ltree @> ${headPath}::ltree
+              AND (created_at, id) > (${cursorTs}::timestamptz, ${cursorId}::uuid)
+            ORDER BY created_at ASC, id ASC
             LIMIT ${limit + 1}
           `
         } else {
@@ -578,19 +604,19 @@ export class ConversationsService {
                    author_kind, author_user_id, author_persona_id, content, token_usage, created_at
             FROM conversation_nodes
             WHERE conversation_id = ${convId}
-              AND path::ltree <@ ${headPath}::ltree
-            ORDER BY created_at ASC
+              AND path::ltree @> ${headPath}::ltree
+            ORDER BY created_at ASC, id ASC
             LIMIT ${limit + 1}
           `
         }
-      } else if (opts.cursor) {
+      } else if (cursorTs && cursorId) {
         nodeRows = await tx<NodeRow[]>`
           SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
                  author_kind, author_user_id, author_persona_id, content, token_usage, created_at
           FROM conversation_nodes
           WHERE conversation_id = ${convId}
-            AND created_at > ${opts.cursor}
-          ORDER BY created_at ASC
+            AND (created_at, id) > (${cursorTs}::timestamptz, ${cursorId}::uuid)
+          ORDER BY created_at ASC, id ASC
           LIMIT ${limit + 1}
         `
       } else {
@@ -599,17 +625,16 @@ export class ConversationsService {
                  author_kind, author_user_id, author_persona_id, content, token_usage, created_at
           FROM conversation_nodes
           WHERE conversation_id = ${convId}
-          ORDER BY created_at ASC
+          ORDER BY created_at ASC, id ASC
           LIMIT ${limit + 1}
         `
       }
 
       const hasMore = nodeRows.length > limit
       const pageNodes = hasMore ? nodeRows.slice(0, limit) : nodeRows
+      const lastNode = pageNodes[pageNodes.length - 1]
       const nextCursor =
-        hasMore && pageNodes.length > 0
-          ? (pageNodes[pageNodes.length - 1]?.created_at ?? null)
-          : null
+        hasMore && lastNode != null ? `${lastNode.created_at}|${lastNode.id}` : null
 
       // Edges for visible nodes
       const nodeIds = pageNodes.map((n) => n.id)
@@ -628,7 +653,7 @@ export class ConversationsService {
                created_by_kind, created_by_id, status, created_at, updated_at
         FROM branches
         WHERE conversation_id = ${convId}
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, id ASC
       `
 
       return {
@@ -665,27 +690,24 @@ export class ConversationsService {
       if (!headRows[0]) throw new NotFoundException({ code: 'branch_not_found' })
       const { path: headPath } = headRows[0]
 
-      // All ancestors of head (including head), ordered deepest first
+      // @> means "path is ancestor of headPath" — returns root → head chain, ordered deepest first
       const ancestorRows = await tx<NodeRow[]>`
         SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
                author_kind, author_user_id, author_persona_id, content, token_usage, created_at
         FROM conversation_nodes
         WHERE conversation_id = ${convId}
-          AND path::ltree <@ ${headPath}::ltree
+          AND path::ltree @> ${headPath}::ltree
         ORDER BY depth DESC
       `
 
-      // Walk head → root, accumulating until budget exhausted
+      // Walk head → root, accumulate until token budget exhausted
       let accumulated = 0
       const selected: NodeRow[] = []
       let truncated = false
 
       for (const node of ancestorRows) {
         let tokens: number
-        if (
-          node.token_usage != null &&
-          typeof node.token_usage === 'object'
-        ) {
+        if (node.token_usage != null && typeof node.token_usage === 'object') {
           const usage = node.token_usage as Record<string, number>
           tokens = (usage['in'] ?? 0) + (usage['out'] ?? 0)
         } else {
@@ -701,7 +723,7 @@ export class ConversationsService {
         selected.push(node)
       }
 
-      // Return chronological order (root → head)
+      // Reverse to chronological order (root → head)
       selected.reverse()
 
       return {
@@ -728,7 +750,7 @@ export class ConversationsService {
                created_by_kind, created_by_id, status, created_at, updated_at
         FROM branches
         WHERE conversation_id = ${convId}
-        ORDER BY created_at ASC
+        ORDER BY created_at ASC, id ASC
       `
       return rows.map(mapBranch)
     })
@@ -746,7 +768,7 @@ export class ConversationsService {
       await this.assertRoomBelongsToProject(tx, roomId, projectId)
       await this.assertConvBelongsToRoom(tx, convId, roomId, projectId)
 
-      const current = await tx<BranchRow[]>`
+      const current = await tx<{ id: string; name: string; status: string }[]>`
         SELECT id, name, status
         FROM branches
         WHERE id = ${branchId} AND conversation_id = ${convId}
