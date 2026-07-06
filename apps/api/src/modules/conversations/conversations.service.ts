@@ -376,9 +376,9 @@ export class ConversationsService {
     // 2. Rate limit
     await this.checkRateLimit(userId)
 
-    // 3. Content size guard
+    // 3. Content size guard (UTF-8 bytes, not UTF-16 character count)
     const contentJson = JSON.stringify(input.content)
-    if (contentJson.length > CONTENT_MAX_BYTES) {
+    if (Buffer.byteLength(contentJson, 'utf8') > CONTENT_MAX_BYTES) {
       throw new HttpException(
         { statusCode: 413, code: 'content_too_large', message: 'Content exceeds 32 kB limit' },
         HttpStatus.PAYLOAD_TOO_LARGE,

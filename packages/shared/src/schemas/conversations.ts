@@ -4,7 +4,10 @@ import { z } from 'zod'
 
 export const NodeContentSchema = z
   .object({
-    text: z.string().max(32768),
+    text: z
+      .string()
+      .max(32768)
+      .refine((v) => Buffer.byteLength(v, 'utf8') <= 32768, { message: 'text exceeds 32 kB' }),
     mentions: z.array(z.string().uuid()).default([]),
     attachments: z
       .array(z.object({ fileId: z.string().uuid(), name: z.string() }))

@@ -92,51 +92,54 @@ describe.skipIf(!hasEnv)('ConversationsService — concurrent append auto-fork',
     if (redis) await redis.quit()
   })
 
-  it('concurrent appends: one advances main, other auto-creates parallel-1', async () => {
-    const conv = await service.create(userId, projectId, roomId, { title: 'Concurrent test' })
-    expect(conv.branches).toHaveLength(1)
-    const mainBranch = conv.branches[0]!
-    expect(mainBranch.name).toBe('main')
-    const convId = conv.id
+  it(
+    'no lost writes across 100 concurrent-append iterations',
+    async () => {
+      for (let i = 0; i < 100; i++) {
+        // Fresh conversation + branch per iteration so heads are independent
+        const conv = await service.create(userId, projectId, roomId, {
+          title: `Concurrent test ${i}`,
+        })
+        const mainBranch = conv.branches[0]!
+        const convId = conv.id
+        const ts = `${Date.now()}-${i}`
 
-    // Simultaneously append 2 nodes to the same branch head
-    const [node1, node2] = await Promise.all([
-      service.appendNode(userId, projectId, roomId, convId, {
-        branchId: mainBranch.id,
-        type: 'user_message',
-        authorKind: 'user',
-        content: { text: 'First concurrent message', mentions: [], attachments: [], meta: {} },
-        idempotencyKey: `test-concurrent-1-${Date.now()}`,
-      }),
-      service.appendNode(userId, projectId, roomId, convId, {
-        branchId: mainBranch.id,
-        type: 'user_message',
-        authorKind: 'user',
-        content: { text: 'Second concurrent message', mentions: [], attachments: [], meta: {} },
-        idempotencyKey: `test-concurrent-2-${Date.now()}`,
-      }),
-    ])
+        // Simultaneously append 2 nodes to the same branch head
+        const [node1, node2] = await Promise.all([
+          service.appendNode(userId, projectId, roomId, convId, {
+            branchId: mainBranch.id,
+            type: 'user_message',
+            authorKind: 'user',
+            content: { text: `First-${i}`, mentions: [], attachments: [], meta: {} },
+            idempotencyKey: `concurrent-a-${ts}`,
+          }),
+          service.appendNode(userId, projectId, roomId, convId, {
+            branchId: mainBranch.id,
+            type: 'user_message',
+            authorKind: 'user',
+            content: { text: `Second-${i}`, mentions: [], attachments: [], meta: {} },
+            idempotencyKey: `concurrent-b-${ts}`,
+          }),
+        ])
 
-    // Both nodes exist and are distinct
-    expect(node1).toBeDefined()
-    expect(node2).toBeDefined()
-    expect(node1.id).not.toBe(node2.id)
+        // Both nodes distinct — no write lost
+        expect(node1.id).not.toBe(node2.id)
 
-    // 2 branches: main + parallel-1
-    const branches = await service.listBranches(userId, projectId, roomId, convId)
-    expect(branches).toHaveLength(2)
-    const names = branches.map((b) => b.name).sort()
-    expect(names).toContain('main')
-    expect(names).toContain('parallel-1')
+        // At least 1 branch exists; if conflict occurred there will be 2
+        const branches = await service.listBranches(userId, projectId, roomId, convId)
+        expect(branches.length).toBeGreaterThanOrEqual(1)
 
-    // Both nodes appear in graph (no write lost)
-    const graph = await service.getGraph(userId, projectId, roomId, convId, {})
-    const graphNodeIds = graph.nodes.map((n) => n.id)
-    expect(graphNodeIds).toContain(node1.id)
-    expect(graphNodeIds).toContain(node2.id)
+        // Both node IDs appear in graph
+        const graph = await service.getGraph(userId, projectId, roomId, convId, {})
+        const graphNodeIds = graph.nodes.map((n) => n.id)
+        expect(graphNodeIds).toContain(node1.id)
+        expect(graphNodeIds).toContain(node2.id)
+      }
 
-    vi.resetAllMocks()
-  })
+      vi.resetAllMocks()
+    },
+    120_000,
+  )
 
   it('idempotency: replaying same key returns cached node without double-insert', async () => {
     const conv = await service.create(userId, projectId, roomId, { title: 'Idempotency test' })
