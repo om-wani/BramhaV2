@@ -23,6 +23,17 @@ export default function TwoFactorPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  if (!preAuthToken) {
+    return (
+      <AuthCard title="Two-factor authentication">
+        <p className="text-sm text-muted-foreground text-center" role="alert">
+          Your session has expired. Please{' '}
+          <a href="/login" className="text-primary hover:underline">sign in again</a>.
+        </p>
+      </AuthCard>
+    )
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!code.trim()) {

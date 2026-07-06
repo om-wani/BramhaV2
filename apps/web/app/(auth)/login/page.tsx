@@ -27,7 +27,8 @@ const LoginResponseSchema = z.union([
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const next = searchParams.get('next') ?? '/dashboard'
+  const rawNext = searchParams.get('next') ?? ''
+  const next = rawNext.startsWith('/') ? rawNext : '/dashboard'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
