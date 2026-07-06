@@ -5,3 +5,4 @@ export type { TenantContext } from './rls.js'
 // Schema types for consumers
 export type { InferSelectModel, InferInsertModel } from 'drizzle-orm'
 export * from './schema/identity.js'
+export * from './schema/conversations.js'
