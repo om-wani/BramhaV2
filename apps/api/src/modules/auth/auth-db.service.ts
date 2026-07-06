@@ -235,4 +235,36 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
       DELETE FROM recovery_codes WHERE user_id = ${userId}
     `
   }
+
+  // ── API keys ───────────────────────────────────────────────────────────────
+
+  async findApiKeyByKeyId(keyId: string): Promise<{
+    id: string
+    user_id: string
+    key_hash: string
+    scopes: string[]
+    revoked_at: string | null
+  } | null> {
+    const rows = await this.sql<
+      {
+        id: string
+        user_id: string
+        key_hash: string
+        scopes: string[]
+        revoked_at: string | null
+      }[]
+    >`
+      SELECT id, user_id, key_hash, scopes, revoked_at
+      FROM   api_keys
+      WHERE  key_id = ${keyId}
+      LIMIT  1
+    `
+    return rows[0] ?? null
+  }
+
+  async touchApiKeyLastUsed(id: string): Promise<void> {
+    await this.sql`
+      UPDATE api_keys SET last_used_at = now() WHERE id = ${id}
+    `
+  }
 }

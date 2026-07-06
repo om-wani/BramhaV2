@@ -14,6 +14,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { AuthService } from './auth.service'
 import { SessionService } from './session.service'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
+import { AnyAuthGuard } from './guards/any-auth.guard'
 import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.decorator'
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
@@ -121,9 +122,9 @@ export class AuthController {
     reply.header('Set-Cookie', this.sessionService.buildClearRefreshCookieHeader())
   }
 
-  /** GET /auth/me — return current authenticated user */
+  /** GET /auth/me — return current authenticated user (accepts JWT or API key) */
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(AnyAuthGuard)
   async me(@CurrentUser() user: AuthenticatedUser): Promise<{
     id: string
     email: string

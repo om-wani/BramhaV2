@@ -5,6 +5,7 @@ export * from './schemas/orgs.js'
 export * from './schemas/projects.js'
 export * from './schemas/members.js'
 export * from './schemas/sessions.js'
+export * from './schemas/api-keys.js'
 
 // Events
 export * from './events/index.js'
