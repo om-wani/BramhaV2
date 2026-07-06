@@ -229,4 +229,10 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
     `
     return parseInt(rows[0]?.count ?? '0', 10)
   }
+
+  async deleteRecoveryCodes(userId: string): Promise<void> {
+    await this.sql`
+      DELETE FROM recovery_codes WHERE user_id = ${userId}
+    `
+  }
 }

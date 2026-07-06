@@ -139,6 +139,7 @@ describe('AuthService', () => {
         '127.0.0.1',
         'TestAgent',
       )
+      if (result.requiresTwoFactor) throw new Error('Expected no requiresTwoFactor')
       expect(result.accessToken).toBe('test.access.token')
       expect(typeof result.rawRefreshToken).toBe('string')
     })

@@ -39,6 +39,7 @@ function buildMocks() {
     findUserById: vi.fn().mockResolvedValue(makeUserRow()),
     setTotpSecret: vi.fn().mockResolvedValue(undefined),
     createRecoveryCodes: vi.fn().mockResolvedValue(undefined),
+    deleteRecoveryCodes: vi.fn().mockResolvedValue(undefined),
     findUnusedRecoveryCodes: vi.fn().mockResolvedValue([]),
     markRecoveryCodeUsed: vi.fn().mockResolvedValue(undefined),
     countUnusedRecoveryCodes: vi.fn().mockResolvedValue(7),
@@ -49,6 +50,8 @@ function buildMocks() {
     sign: vi.fn().mockResolvedValue({ accessToken: 'test.access.token', expiresIn: 900 }),
     signPreAuth: vi.fn().mockResolvedValue('pre.auth.token'),
     verifyPreAuth: vi.fn().mockResolvedValue({ userId: 'user-uuid-1' }),
+    signPendingTotp: vi.fn().mockResolvedValue('fake.pending.token'),
+    verifyPendingTotp: vi.fn().mockResolvedValue({ secret: 'PLACEHOLDER_SECRET' }),
   }
 
   const session: Partial<SessionService> = {
@@ -80,22 +83,22 @@ describe('TwoFactorService', () => {
   // ── enroll ─────────────────────────────────────────────────────────────────
 
   describe('enroll', () => {
-    it('returns a totpUri and does NOT persist the secret', async () => {
+    it('returns a totpUri and pendingToken and does NOT persist the secret', async () => {
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(makeUserRow({ totp_secret_enc: null }))
 
       const result = await svc.enroll('user-uuid-1')
 
       expect(result.totpUri).toMatch(/^otpauth:\/\/totp\//)
-      expect(typeof result.pendingSecret).toBe('string')
-      expect(result.pendingSecret.length).toBeGreaterThan(0)
       expect(result.totpUri).toContain('BramhaV2')
+      expect(typeof result.pendingToken).toBe('string')
+      expect(result.pendingToken.length).toBeGreaterThan(0)
 
       // setTotpSecret must NOT have been called during enrollment
       expect(mocks.authDb.setTotpSecret).not.toHaveBeenCalled()
     })
 
     it('throws two_factor_already_enabled if 2FA is already active', async () => {
-      const encSecret = totpSvc.encryptSecret(totpSvc.generateSecret())
+      const encSecret = totpSvc.encrypt(totpSvc.generateSecret())
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
         makeUserRow({ totp_secret_enc: encSecret }),
       )
@@ -114,7 +117,10 @@ describe('TwoFactorService', () => {
       const secret = totpSvc.generateSecret()
       const code = generateSync({ secret })
 
-      const result = await svc.confirmEnrollment('user-uuid-1', secret, code)
+      // Make verifyPendingTotp return the actual secret for this test
+      vi.mocked(mocks.jwt.verifyPendingTotp!).mockResolvedValue({ secret })
+
+      const result = await svc.confirmEnrollment('user-uuid-1', 'fake.pending.token', code)
 
       expect(result.recoveryCodes).toHaveLength(10)
       // Each code should match the XXXX-XXXX-XXXX-XXXX format
@@ -134,7 +140,11 @@ describe('TwoFactorService', () => {
 
     it('throws totp_invalid for an invalid code', async () => {
       const secret = totpSvc.generateSecret()
-      const err = await svc.confirmEnrollment('user-uuid-1', secret, '000000').catch((e: unknown) => e)
+
+      // Make verifyPendingTotp return the actual secret for this test
+      vi.mocked(mocks.jwt.verifyPendingTotp!).mockResolvedValue({ secret })
+
+      const err = await svc.confirmEnrollment('user-uuid-1', 'fake.pending.token', '000000').catch((e: unknown) => e)
       expect(err).toBeInstanceOf(UnauthorizedException)
       const resp = (err as UnauthorizedException).getResponse() as Record<string, unknown>
       expect(resp['code']).toBe('totp_invalid')
@@ -149,7 +159,7 @@ describe('TwoFactorService', () => {
   describe('challenge', () => {
     it('issues full session on valid TOTP code', async () => {
       const secret = totpSvc.generateSecret()
-      const encSecret = totpSvc.encryptSecret(secret)
+      const encSecret = totpSvc.encrypt(secret)
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
         makeUserRow({ totp_secret_enc: encSecret }),
       )
@@ -165,7 +175,7 @@ describe('TwoFactorService', () => {
 
     it('throws rate_limit_exceeded after 5 failed attempts', async () => {
       const secret = totpSvc.generateSecret()
-      const encSecret = totpSvc.encryptSecret(secret)
+      const encSecret = totpSvc.encrypt(secret)
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
         makeUserRow({ totp_secret_enc: encSecret }),
       )
@@ -184,7 +194,7 @@ describe('TwoFactorService', () => {
 
     it('accepts a valid recovery code and marks it used', async () => {
       const secret = totpSvc.generateSecret()
-      const encSecret = totpSvc.encryptSecret(secret)
+      const encSecret = totpSvc.encrypt(secret)
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
         makeUserRow({ totp_secret_enc: encSecret }),
       )
@@ -215,7 +225,7 @@ describe('TwoFactorService', () => {
 
     it('rejects a reused (already consumed) recovery code', async () => {
       const secret = totpSvc.generateSecret()
-      const encSecret = totpSvc.encryptSecret(secret)
+      const encSecret = totpSvc.encrypt(secret)
       vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
         makeUserRow({ totp_secret_enc: encSecret }),
       )

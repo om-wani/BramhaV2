@@ -62,10 +62,11 @@ export class TwoFactorService {
   // ── Enrollment ──────────────────────────────────────────────────────────────
 
   /**
-   * Begin 2FA enrollment: generate a TOTP secret and return the provisioning URI.
-   * The secret is held in memory (not yet persisted) until `confirmEnrollment`.
+   * Begin 2FA enrollment: generate a TOTP secret, sign it in a short-lived JWT,
+   * and return the provisioning URI plus the pending token.
+   * The secret is carried in the signed JWT — not stored server-side.
    */
-  async enroll(userId: string): Promise<{ totpUri: string; pendingSecret: string }> {
+  async enroll(userId: string): Promise<{ totpUri: string; pendingToken: string }> {
     const user = await this.authDb.findUserById(userId)
     if (!user) {
       throw new UnauthorizedException({ code: 'invalid_token', message: 'User not found' })
@@ -78,24 +79,26 @@ export class TwoFactorService {
     }
 
     const secret = this.totp.generateSecret()
-    const totpUri = this.totp.keyUri(user.email, secret)
+    const totpUri = this.totp.getUri(user.email, secret)
+    const pendingToken = await this.jwt.signPendingTotp(userId, secret)
 
-    // Secret is returned to the caller so the controller can pass it back in confirmEnrollment.
-    // It is NOT persisted yet — only after the user confirms with a valid code.
-    return { totpUri, pendingSecret: secret }
+    return { totpUri, pendingToken }
   }
 
   /**
-   * Confirm enrollment: verify the TOTP code against the pending secret,
-   * then persist the encrypted secret and generate recovery codes.
+   * Confirm enrollment: verify the pending JWT to recover the secret,
+   * verify the TOTP code against it, then persist the encrypted secret
+   * and generate recovery codes.
    * Returns recovery codes (shown ONCE only).
    */
   async confirmEnrollment(
     userId: string,
-    pendingSecret: string,
+    pendingToken: string,
     code: string,
   ): Promise<{ recoveryCodes: string[] }> {
-    const valid = this.totp.verifyCode(pendingSecret, code)
+    const { secret: pendingSecret } = await this.jwt.verifyPendingTotp(pendingToken, userId)
+
+    const valid = this.totp.verify(pendingSecret, code)
     if (!valid) {
       throw new UnauthorizedException({
         code: 'totp_invalid',
@@ -104,7 +107,7 @@ export class TwoFactorService {
     }
 
     // Persist encrypted secret
-    const encryptedSecret = this.totp.encryptSecret(pendingSecret)
+    const encryptedSecret = this.totp.encrypt(pendingSecret)
     await this.authDb.setTotpSecret(userId, encryptedSecret)
 
     // Generate recovery codes
@@ -135,6 +138,7 @@ export class TwoFactorService {
    * Disable 2FA. Requires either a valid TOTP code or a recovery code.
    */
   async disable(userId: string, code: string): Promise<void> {
+    this.checkChallengeRateLimit(userId)
     const user = await this.authDb.findUserById(userId)
     if (!user) {
       throw new UnauthorizedException({ code: 'invalid_token', message: 'User not found' })
@@ -147,8 +151,8 @@ export class TwoFactorService {
     }
 
     // Try TOTP code first
-    const secret = this.totp.decryptSecret(user.totp_secret_enc)
-    const totpValid = this.totp.verifyCode(secret, code)
+    const secret = this.totp.decrypt(user.totp_secret_enc)
+    const totpValid = this.totp.verify(secret, code)
 
     if (!totpValid) {
       // Try recovery code
@@ -163,6 +167,7 @@ export class TwoFactorService {
 
     // Remove TOTP secret and all recovery codes
     await this.authDb.setTotpSecret(userId, null)
+    await this.authDb.deleteRecoveryCodes(userId)
     this.logger.log({ userId, event: '2fa_disabled' }, '2FA disabled')
   }
 
@@ -194,8 +199,8 @@ export class TwoFactorService {
     }
 
     // Try TOTP code
-    const secret = this.totp.decryptSecret(user.totp_secret_enc)
-    const totpValid = this.totp.verifyCode(secret, code)
+    const secret = this.totp.decrypt(user.totp_secret_enc)
+    const totpValid = this.totp.verify(secret, code)
 
     if (!totpValid) {
       // Try recovery code

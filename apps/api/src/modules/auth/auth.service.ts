@@ -162,7 +162,7 @@ export class AuthService implements OnModuleInit {
     ip: string | null,
     userAgent: string | null,
   ): Promise<
-    | { requiresTwoFactor: true; preAuthToken: string; accessToken: undefined; expiresIn: undefined; rawRefreshToken: undefined }
+    | { requiresTwoFactor: true; preAuthToken: string }
     | { requiresTwoFactor: false; accessToken: string; expiresIn: number; rawRefreshToken: string }
   > {
     // 1. Rate limiting (IP first, then per-account lockout)
@@ -233,7 +233,7 @@ export class AuthService implements OnModuleInit {
     if (user.totp_secret_enc) {
       const preAuthToken = await this.jwt.signPreAuth(user.id)
       this.logger.log({ userId: user.id, ip, event: 'login_requires_2fa' }, 'Login requires 2FA')
-      return { requiresTwoFactor: true, preAuthToken, accessToken: undefined, expiresIn: undefined, rawRefreshToken: undefined }
+      return { requiresTwoFactor: true as const, preAuthToken }
     }
 
     // 5b. Issue full session tokens

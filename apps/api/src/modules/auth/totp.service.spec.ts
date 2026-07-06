@@ -23,20 +23,20 @@ describe('TotpService', () => {
     svc = buildSvc()
   })
 
-  describe('encryptSecret / decryptSecret round-trip', () => {
+  describe('encrypt / decrypt round-trip', () => {
     it('encrypts and decrypts the same plaintext', () => {
       const secret = 'JBSWY3DPEHPK3PXP'
-      const enc = svc.encryptSecret(secret)
+      const enc = svc.encrypt(secret)
       expect(enc).toBeInstanceOf(Buffer)
-      const dec = svc.decryptSecret(enc)
+      const dec = svc.decrypt(enc)
       expect(dec).toBe(secret)
     })
 
     it('handles a generated 32-char base32 secret', () => {
       const secret = svc.generateSecret()
       expect(secret.length).toBe(32)
-      const enc = svc.encryptSecret(secret)
-      const dec = svc.decryptSecret(enc)
+      const enc = svc.encrypt(secret)
+      const dec = svc.decrypt(enc)
       expect(dec).toBe(secret)
     })
   })
@@ -44,8 +44,8 @@ describe('TotpService', () => {
   describe('IV randomness', () => {
     it('produces different ciphertexts for the same plaintext (unique IV per call)', () => {
       const secret = 'JBSWY3DPEHPK3PXP'
-      const enc1 = svc.encryptSecret(secret)
-      const enc2 = svc.encryptSecret(secret)
+      const enc1 = svc.encrypt(secret)
+      const enc2 = svc.encrypt(secret)
       // Ciphertexts must differ because IVs are random
       expect(enc1.toString('hex')).not.toBe(enc2.toString('hex'))
     })
@@ -54,20 +54,20 @@ describe('TotpService', () => {
   describe('tamper detection', () => {
     it('throws on tampered ciphertext (GCM auth tag verification fails)', () => {
       const secret = 'JBSWY3DPEHPK3PXP'
-      const enc = svc.encryptSecret(secret)
+      const enc = svc.encrypt(secret)
       // Flip a byte in the ciphertext portion (after iv[12] + authTag[16] = 28 bytes)
       if (enc.length > 28) {
         enc[28] = enc[28]! ^ 0xff
       }
-      expect(() => svc.decryptSecret(enc)).toThrow()
+      expect(() => svc.decrypt(enc)).toThrow()
     })
 
     it('throws when the auth tag is tampered', () => {
       const secret = 'TESTSECRETHELLO'
-      const enc = svc.encryptSecret(secret)
+      const enc = svc.encrypt(secret)
       // Flip a byte in the auth tag (bytes 12–27)
       enc[13] = enc[13]! ^ 0x01
-      expect(() => svc.decryptSecret(enc)).toThrow()
+      expect(() => svc.decrypt(enc)).toThrow()
     })
   })
 
@@ -89,23 +89,23 @@ describe('TotpService', () => {
     })
   })
 
-  describe('verifyCode (generate and verify)', () => {
+  describe('verify (generate and verify)', () => {
     it('verifies a freshly generated TOTP code', () => {
       const secret = svc.generateSecret()
       const code = generateSync({ secret })
-      expect(svc.verifyCode(secret, code)).toBe(true)
+      expect(svc.verify(secret, code)).toBe(true)
     })
 
     it('rejects a wrong code', () => {
       const secret = svc.generateSecret()
-      expect(svc.verifyCode(secret, '000000')).toBe(false)
+      expect(svc.verify(secret, '000000')).toBe(false)
     })
   })
 
-  describe('keyUri', () => {
+  describe('getUri', () => {
     it('returns a valid otpauth:// URI', () => {
       const secret = svc.generateSecret()
-      const uri = svc.keyUri('alice@example.com', secret)
+      const uri = svc.getUri('alice@example.com', secret)
       expect(uri).toMatch(/^otpauth:\/\/totp\//)
       expect(uri).toContain('BramhaV2')
     })

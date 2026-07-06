@@ -123,4 +123,53 @@ export class JwtService implements OnModuleInit {
       })
     }
   }
+
+  async signPendingTotp(userId: string, secret: string): Promise<string> {
+    return new SignJWT({ type: 'pending_totp', secret })
+      .setProtectedHeader({ alg: 'EdDSA', kid: this.keyId })
+      .setSubject(userId)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .setIssuer(ISS)
+      .setAudience(AUD)
+      .sign(this.privateKey)
+  }
+
+  async verifyPendingTotp(token: string, userId: string): Promise<{ secret: string }> {
+    this.rejectWeakAlg(token)
+
+    try {
+      const { payload } = await jwtVerify(token, this.publicKey, {
+        algorithms: ['EdDSA'],
+        issuer: ISS,
+        audience: AUD,
+      })
+      if ((payload as Record<string, unknown>)['type'] !== 'pending_totp') {
+        throw new UnauthorizedException({
+          code: 'invalid_token',
+          message: 'Not a pending TOTP token',
+        })
+      }
+      if (payload.sub !== userId) {
+        throw new UnauthorizedException({
+          code: 'invalid_token',
+          message: 'User mismatch in pending TOTP token',
+        })
+      }
+      const secret = (payload as Record<string, unknown>)['secret']
+      if (typeof secret !== 'string') {
+        throw new UnauthorizedException({
+          code: 'invalid_token',
+          message: 'Missing secret claim in pending TOTP token',
+        })
+      }
+      return { secret }
+    } catch (e) {
+      if (e instanceof UnauthorizedException) throw e
+      throw new UnauthorizedException({
+        code: 'invalid_token',
+        message: 'Invalid pending TOTP token',
+      })
+    }
+  }
 }

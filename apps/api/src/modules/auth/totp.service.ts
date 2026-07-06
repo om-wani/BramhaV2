@@ -28,7 +28,7 @@ export class TotpService implements OnModuleInit {
     return generateSecret({ length: 20 })
   }
 
-  keyUri(email: string, secret: string): string {
+  getUri(email: string, secret: string): string {
     return generateURI({
       issuer: 'BramhaV2',
       label: email,
@@ -38,7 +38,7 @@ export class TotpService implements OnModuleInit {
 
   // ── TOTP verification ───────────────────────────────────────────────────────
 
-  verifyCode(secret: string, code: string): boolean {
+  verify(secret: string, code: string): boolean {
     try {
       // epochTolerance: TOTP_WINDOW steps × 30s period = ±30s (±1 step)
       const result = verifySync({
@@ -60,7 +60,7 @@ export class TotpService implements OnModuleInit {
    * Encrypt a plaintext TOTP secret string.
    * Format: Buffer.concat([iv(12), authTag(16), ciphertext])
    */
-  encryptSecret(secret: string): Buffer {
+  encrypt(secret: string): Buffer {
     return this.encryptSecretWithKey(secret, this.masterKey)
   }
 
@@ -82,7 +82,7 @@ export class TotpService implements OnModuleInit {
    * Decrypt an encrypted TOTP secret buffer back to the plaintext string.
    * Throws on auth tag mismatch (tampering).
    */
-  decryptSecret(enc: Buffer): string {
+  decrypt(enc: Buffer): string {
     return this.decryptSecretWithKey(enc, this.masterKey)
   }
 
