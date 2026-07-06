@@ -1,8 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-// Hoist mock before @bramha/db loads to prevent real postgres init
-vi.mock('@bramha/db', () => ({ withTenant: vi.fn() }))
-
 import { createHash } from 'crypto'
 import { NotFoundException } from '@nestjs/common'
 import { ApiKeysService } from './api-keys.service'
@@ -196,6 +193,12 @@ describe('ApiKeysService', () => {
       })
 
       const result = await svc.validateKey(raw)
+      expect(result).toBeNull()
+    })
+
+    it('validateKey returns null when DB throws', async () => {
+      vi.mocked(mocks.authDb.findApiKeyByKeyId!).mockRejectedValue(new Error('connection lost'))
+      const result = await svc.validateKey('bmv2_a1b2c3d4_somesecret')
       expect(result).toBeNull()
     })
   })

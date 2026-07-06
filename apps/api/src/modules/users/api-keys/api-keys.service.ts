@@ -102,25 +102,29 @@ export class ApiKeysService {
     if (!rawKey.startsWith(`${PREFIX}_`)) return null
     const rest = rawKey.slice(PREFIX.length + 1)
     const underscoreIdx = rest.indexOf('_')
-    if (underscoreIdx !== 8) return null // key_id must be 8 chars
+    if (underscoreIdx !== KEY_ID_BYTES * 2) return null // key_id must be 8 chars
 
-    const keyId = rest.slice(0, 8)
+    const keyId = rest.slice(0, KEY_ID_BYTES * 2)
 
-    // 2. Lookup by key_id using authDb (superuser, bypasses RLS)
-    const row = await this.authDb.findApiKeyByKeyId(keyId)
-    if (!row || row.revoked_at) return null
+    try {
+      // 2. Lookup by key_id using authDb (superuser, bypasses RLS)
+      const row = await this.authDb.findApiKeyByKeyId(keyId)
+      if (!row || row.revoked_at) return null
 
-    // 3. Constant-time hash compare
-    const incoming = new Uint8Array(createHash('sha256').update(rawKey).digest())
-    const stored = new Uint8Array(Buffer.from(row.key_hash, 'hex'))
-    if (incoming.length !== stored.length) return null
-    if (!timingSafeEqual(incoming, stored)) return null
+      // 3. Constant-time hash compare
+      const incoming = new Uint8Array(createHash('sha256').update(rawKey).digest())
+      const stored = new Uint8Array(Buffer.from(row.key_hash, 'hex'))
+      if (incoming.length !== stored.length) return null
+      if (!timingSafeEqual(incoming, stored)) return null
 
-    // 4. Update last_used_at best-effort (don't await, don't throw)
-    this.authDb.touchApiKeyLastUsed(row.id).catch(() => {
-      /* best-effort */
-    })
+      // 4. Update last_used_at best-effort (don't await, don't throw)
+      this.authDb.touchApiKeyLastUsed(row.id).catch(() => {
+        /* best-effort */
+      })
 
-    return { userId: row.user_id, keyId: row.id, scopes: row.scopes }
+      return { userId: row.user_id, keyId: row.id, scopes: row.scopes }
+    } catch {
+      return null
+    }
   }
 }
