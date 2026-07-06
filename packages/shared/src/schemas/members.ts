@@ -42,3 +42,28 @@ export const InviteProjectMemberInputSchema = z
   .strict()
 
 export type InviteProjectMemberInput = z.infer<typeof InviteProjectMemberInputSchema>
+
+export const UpdateOrgMemberRoleInputSchema = z
+  .object({
+    role: OrgRoleSchema,
+  })
+  .strict()
+
+export type UpdateOrgMemberRoleInput = z.infer<typeof UpdateOrgMemberRoleInputSchema>
+
+export const AddProjectMemberInputSchema = z
+  .object({
+    userId: uuidSchema,
+    role: ProjectRoleSchema,
+  })
+  .strict()
+
+export type AddProjectMemberInput = z.infer<typeof AddProjectMemberInputSchema>
+
+export const UpdateProjectMemberRoleInputSchema = z
+  .object({
+    role: ProjectRoleSchema,
+  })
+  .strict()
+
+export type UpdateProjectMemberRoleInput = z.infer<typeof UpdateProjectMemberRoleInputSchema>
