@@ -161,7 +161,10 @@ export class AuthService implements OnModuleInit {
     input: LoginInput,
     ip: string | null,
     userAgent: string | null,
-  ): Promise<{ accessToken: string; expiresIn: number; rawRefreshToken: string }> {
+  ): Promise<
+    | { requiresTwoFactor: true; preAuthToken: string; accessToken: undefined; expiresIn: undefined; rawRefreshToken: undefined }
+    | { requiresTwoFactor: false; accessToken: string; expiresIn: number; rawRefreshToken: string }
+  > {
     // 1. Rate limiting (IP first, then per-account lockout)
     // Falls back to 'unknown' when IP is unavailable (e.g. misconfigured proxy).
     // All requests sharing the 'unknown' key share the same rate limit bucket.
@@ -223,9 +226,17 @@ export class AuthService implements OnModuleInit {
       })
     }
 
-    // 5. On success: clear failed attempts, issue tokens
+    // 5. On success: clear failed attempts
     this.clearAttempts(input.email)
 
+    // 5a. Check if 2FA is enabled — if so, return pre-auth token instead of full session
+    if (user.totp_secret_enc) {
+      const preAuthToken = await this.jwt.signPreAuth(user.id)
+      this.logger.log({ userId: user.id, ip, event: 'login_requires_2fa' }, 'Login requires 2FA')
+      return { requiresTwoFactor: true, preAuthToken, accessToken: undefined, expiresIn: undefined, rawRefreshToken: undefined }
+    }
+
+    // 5b. Issue full session tokens
     const { accessToken, expiresIn } = await this.jwt.sign(user.id)
     const { raw: rawRefreshToken, hash: refreshHash } = this.session.generateToken()
 
@@ -238,7 +249,7 @@ export class AuthService implements OnModuleInit {
     })
 
     this.logger.log({ userId: user.id, ip, event: 'login_success' }, 'Login successful')
-    return { accessToken, expiresIn, rawRefreshToken }
+    return { requiresTwoFactor: false, accessToken, expiresIn, rawRefreshToken }
   }
 
   async refresh(

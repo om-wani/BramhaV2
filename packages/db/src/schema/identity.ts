@@ -104,3 +104,13 @@ export const projectMembers = pgTable(
   },
   (t) => [primaryKey({ columns: [t.projectId, t.userId] })],
 )
+
+export const recoveryCodes = pgTable('recovery_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})

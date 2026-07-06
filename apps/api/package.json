@@ -31,6 +31,7 @@
     "jose": "^6.2.3",
     "nestjs-pino": "^4.6.1",
     "nestjs-zod": "^5.4.0",
+    "otplib": "^13.4.1",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "postgres": "^3.4.9",

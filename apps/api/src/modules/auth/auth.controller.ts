@@ -60,23 +60,27 @@ export class AuthController {
     return { message: 'Email verified successfully' }
   }
 
-  /** POST /auth/login — authenticate and return access token + set refresh cookie */
+  /** POST /auth/login — authenticate and return access token + set refresh cookie, or pre-auth token if 2FA is enabled */
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() body: LoginDto,
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
+  ): Promise<
+    | { accessToken: string; expiresIn: number }
+    | { requiresTwoFactor: true; preAuthToken: string }
+  > {
     const ip = req.ip ?? null
     const userAgent = (req.headers['user-agent'] as string | undefined) ?? null
-    const { accessToken, expiresIn, rawRefreshToken } = await this.authService.login(
-      body,
-      ip,
-      userAgent,
-    )
-    reply.header('Set-Cookie', this.sessionService.buildRefreshCookieHeader(rawRefreshToken))
-    return { accessToken, expiresIn }
+    const result = await this.authService.login(body, ip, userAgent)
+
+    if (result.requiresTwoFactor) {
+      return { requiresTwoFactor: true, preAuthToken: result.preAuthToken }
+    }
+
+    reply.header('Set-Cookie', this.sessionService.buildRefreshCookieHeader(result.rawRefreshToken))
+    return { accessToken: result.accessToken, expiresIn: result.expiresIn }
   }
 
   /** POST /auth/refresh — rotate refresh token, return new access token */

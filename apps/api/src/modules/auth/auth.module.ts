@@ -6,9 +6,12 @@ import { JwtService } from './jwt.service'
 import { PasswordService } from './password.service'
 import { SessionService } from './session.service'
 import { JwtAuthGuard } from './guards/jwt-auth.guard'
+import { TotpService } from './totp.service'
+import { TwoFactorService } from './twofactor.service'
+import { TwoFactorController } from './twofactor.controller'
 
 @Module({
-  controllers: [AuthController],
+  controllers: [AuthController, TwoFactorController],
   providers: [
     AuthService,
     AuthDbService,
@@ -16,6 +19,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard'
     PasswordService,
     SessionService,
     JwtAuthGuard,
+    TotpService,
+    TwoFactorService,
   ],
   exports: [JwtService, JwtAuthGuard],
 })

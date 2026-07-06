@@ -19,6 +19,7 @@ function makeUserRow(overrides: Partial<UserRow> = {}): UserRow {
     password_hash: '$argon2id$v=19$m=19456,t=2,p=1$hash',
     display_name: 'Alice',
     email_verified_at: '2024-01-01T00:00:00+00:00',
+    totp_secret_enc: null,
     status: 'active',
     is_admin: false,
     created_at: '2024-01-01T00:00:00+00:00',

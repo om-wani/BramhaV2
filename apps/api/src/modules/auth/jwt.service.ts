@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common'
 import { SignJWT, jwtVerify, importPKCS8, importSPKI, type CryptoKey, type KeyObject } from 'jose'
 import { ConfigService } from '@nestjs/config'
-import { SESSION_ACCESS_TOKEN_TTL_SECONDS } from '@bramha/shared'
+import { SESSION_ACCESS_TOKEN_TTL_SECONDS, PRE_AUTH_TOKEN_TTL_SECONDS } from '@bramha/shared'
 
 const ISS = 'bramha'
 const AUD = 'bramha-api'
@@ -41,8 +41,7 @@ export class JwtService implements OnModuleInit {
     return { accessToken, expiresIn: SESSION_ACCESS_TOKEN_TTL_SECONDS }
   }
 
-  async verify(token: string): Promise<{ userId: string }> {
-    // Reject alg:none and HS256 downgrade by inspecting the header before full verification
+  private rejectWeakAlg(token: string): void {
     const parts = token.split('.')
     if (parts.length >= 1 && parts[0]) {
       try {
@@ -60,6 +59,11 @@ export class JwtService implements OnModuleInit {
         // Malformed base64url — let jwtVerify reject it below
       }
     }
+  }
+
+  async verify(token: string): Promise<{ userId: string }> {
+    // Reject alg:none and HS256 downgrade by inspecting the header before full verification
+    this.rejectWeakAlg(token)
 
     try {
       const { payload } = await jwtVerify(token, this.publicKey, {
@@ -74,6 +78,49 @@ export class JwtService implements OnModuleInit {
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e
       throw new UnauthorizedException({ code: 'invalid_token', message: 'Invalid token' })
+    }
+  }
+
+  async signPreAuth(userId: string): Promise<string> {
+    const now = Math.floor(Date.now() / 1000)
+    return new SignJWT({ sub: userId, type: 'pre_auth' })
+      .setProtectedHeader({ alg: 'EdDSA', kid: this.keyId })
+      .setIssuer(ISS)
+      .setAudience(AUD)
+      .setIssuedAt(now)
+      .setNotBefore(now)
+      .setExpirationTime(now + PRE_AUTH_TOKEN_TTL_SECONDS)
+      .sign(this.privateKey)
+  }
+
+  async verifyPreAuth(token: string): Promise<{ userId: string }> {
+    this.rejectWeakAlg(token)
+
+    try {
+      const { payload } = await jwtVerify(token, this.publicKey, {
+        algorithms: ['EdDSA'],
+        issuer: ISS,
+        audience: AUD,
+      })
+      if (!payload.sub) {
+        throw new UnauthorizedException({
+          code: 'pre_auth_token_invalid',
+          message: 'Invalid pre-auth token',
+        })
+      }
+      if ((payload as Record<string, unknown>)['type'] !== 'pre_auth') {
+        throw new UnauthorizedException({
+          code: 'pre_auth_token_invalid',
+          message: 'Token is not a pre-auth token',
+        })
+      }
+      return { userId: payload.sub }
+    } catch (e) {
+      if (e instanceof UnauthorizedException) throw e
+      throw new UnauthorizedException({
+        code: 'pre_auth_token_invalid',
+        message: 'Invalid pre-auth token',
+      })
     }
   }
 }

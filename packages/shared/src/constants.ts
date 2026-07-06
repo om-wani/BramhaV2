@@ -22,3 +22,9 @@ export const MAX_CONTENT_BYTES = 32768 as const // 32 kB per message node
 export const API_KEY_PREFIX = 'bmv2' as const
 export const API_KEY_ID_LENGTH = 8 as const
 export const API_KEY_SECRET_LENGTH = 32 as const
+
+export const TOTP_WINDOW = 1 as const // ±1 step tolerance
+export const TOTP_RATE_LIMIT_ATTEMPTS = 5 as const
+export const TOTP_RATE_LIMIT_WINDOW_MS = 900_000 as const // 15 minutes in ms
+export const PRE_AUTH_TOKEN_TTL_SECONDS = 300 as const // 5 minutes
+export const RECOVERY_CODE_COUNT = 10 as const

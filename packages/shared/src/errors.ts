@@ -9,7 +9,10 @@ export const ErrorCodes = {
   TOKEN_INVALID: 'token_invalid',
   TOTP_REQUIRED: 'totp_required',
   TOTP_INVALID: 'totp_invalid',
+  TWO_FACTOR_ALREADY_ENABLED: 'two_factor_already_enabled',
+  TWO_FACTOR_NOT_ENABLED: 'two_factor_not_enabled',
   RECOVERY_CODE_INVALID: 'recovery_code_invalid',
+  PRE_AUTH_TOKEN_INVALID: 'pre_auth_token_invalid',
   ACCOUNT_LOCKED: 'account_locked',
   SESSION_REVOKED: 'session_revoked',
 

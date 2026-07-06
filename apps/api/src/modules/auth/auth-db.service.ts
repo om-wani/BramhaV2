@@ -7,10 +7,19 @@ export interface UserRow {
   password_hash: string | null
   display_name: string
   email_verified_at: string | null
+  totp_secret_enc: Buffer | null
   status: string
   is_admin: boolean
   created_at: string
   updated_at: string
+}
+
+export interface RecoveryCodeRow {
+  id: string
+  user_id: string
+  code_hash: string
+  used_at: string | null
+  created_at: string
 }
 
 export interface SessionRow {
@@ -43,7 +52,7 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
   async findUserByEmail(email: string): Promise<UserRow | null> {
     const rows = await this.sql<UserRow[]>`
       SELECT id, email, password_hash, display_name, email_verified_at,
-             status, is_admin, created_at, updated_at
+             totp_secret_enc, status, is_admin, created_at, updated_at
       FROM   users
       WHERE  email = ${email}
     `
@@ -53,7 +62,7 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
   async findUserById(id: string): Promise<UserRow | null> {
     const rows = await this.sql<UserRow[]>`
       SELECT id, email, password_hash, display_name, email_verified_at,
-             status, is_admin, created_at, updated_at
+             totp_secret_enc, status, is_admin, created_at, updated_at
       FROM   users
       WHERE  id = ${id}
     `
@@ -69,7 +78,7 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
       INSERT INTO users (email, password_hash, display_name)
       VALUES (${data.email}, ${data.passwordHash}, ${data.displayName})
       RETURNING id, email, password_hash, display_name, email_verified_at,
-                status, is_admin, created_at, updated_at
+                totp_secret_enc, status, is_admin, created_at, updated_at
     `
     if (!rows[0]) throw new Error('User insert returned no row')
     return rows[0]
@@ -164,5 +173,60 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
       SET    revoked_at = now()
       WHERE  user_id = ${userId} AND revoked_at IS NULL
     `
+  }
+
+  // ── TOTP ───────────────────────────────────────────────────────────────────
+
+  async setTotpSecret(userId: string, encryptedSecret: Buffer | null): Promise<void> {
+    // postgres.js requires Uint8Array<ArrayBuffer> for bytea params (TS 5.9+ strict)
+    const param = encryptedSecret !== null ? new Uint8Array(encryptedSecret) : null
+    await this.sql`
+      UPDATE users
+      SET    totp_secret_enc = ${param}, updated_at = now()
+      WHERE  id = ${userId}
+    `
+  }
+
+  // ── Recovery codes ─────────────────────────────────────────────────────────
+
+  async createRecoveryCodes(
+    userId: string,
+    codeHashes: string[],
+  ): Promise<void> {
+    if (codeHashes.length === 0) return
+    // Delete existing unused codes first (re-enrollment)
+    await this.sql`
+      DELETE FROM recovery_codes WHERE user_id = ${userId} AND used_at IS NULL
+    `
+    // Bulk insert new codes using unnest
+    await this.sql`
+      INSERT INTO recovery_codes (user_id, code_hash)
+      SELECT ${userId}, unnest(${codeHashes}::text[])
+    `
+  }
+
+  async findUnusedRecoveryCodes(userId: string): Promise<RecoveryCodeRow[]> {
+    return this.sql<RecoveryCodeRow[]>`
+      SELECT id, user_id, code_hash, used_at, created_at
+      FROM   recovery_codes
+      WHERE  user_id = ${userId} AND used_at IS NULL
+    `
+  }
+
+  async markRecoveryCodeUsed(codeId: string): Promise<void> {
+    await this.sql`
+      UPDATE recovery_codes
+      SET    used_at = now()
+      WHERE  id = ${codeId} AND used_at IS NULL
+    `
+  }
+
+  async countUnusedRecoveryCodes(userId: string): Promise<number> {
+    const rows = await this.sql<{ count: string }[]>`
+      SELECT count(*) AS count
+      FROM   recovery_codes
+      WHERE  user_id = ${userId} AND used_at IS NULL
+    `
+    return parseInt(rows[0]?.count ?? '0', 10)
   }
 }
