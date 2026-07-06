@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AuthCard } from '../_components/auth-card'
 import { PasswordStrength } from '../_components/password-strength'
-import { api, ApiError } from '@/lib/api-client'
+import { api } from '@/lib/api-client'
 
 const RegisterSchema = z.object({
   displayName: z.string().min(1).max(100).trim(),
@@ -39,13 +39,8 @@ export default function RegisterPage() {
     try {
       await api.post('/auth/register', SuccessSchema, parsed.data)
       router.push('/verify?email=' + encodeURIComponent(email))
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        // Generic: don't reveal if email exists
-        setError('Unable to create account. Please try a different email.')
-      } else {
-        setError('Something went wrong. Please try again.')
-      }
+    } catch {
+      setError('Unable to create account. Please try again.')
     } finally {
       setLoading(false)
     }
