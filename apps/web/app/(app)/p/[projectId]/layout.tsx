@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useRouter, useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -14,22 +14,19 @@ interface NavItem {
   ariaLabel: string
 }
 
-function useProjectNavItems(projectId: string): NavItem[] {
-  return [
-    { label: 'Conference', icon: '🏛', href: `/p/${projectId}/conference`, shortcut: 'c', ariaLabel: 'Conference room' },
-    { label: "CEO's Office", icon: '💼', href: `/p/${projectId}/office`, shortcut: 'o', ariaLabel: "CEO's Office" },
-    { label: 'Storage', icon: '🗄', href: `/p/${projectId}/storage`, shortcut: 's', ariaLabel: 'Storage room' },
-    { label: 'Graph', icon: '🕸', href: `/p/${projectId}/graph`, shortcut: 'g', ariaLabel: 'Graph view' },
-    { label: 'Settings', icon: '⚙', href: `/p/${projectId}/settings`, shortcut: '.', ariaLabel: 'Project settings' },
-  ]
-}
-
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const params = useParams<{ projectId: string }>()
   const pathname = usePathname()
   const projectId = params.projectId
-  const navItems = useProjectNavItems(projectId)
+
+  const navItems = useMemo<NavItem[]>(() => [
+    { label: 'Conference', icon: '🏛', href: `/p/${projectId}/conference`, shortcut: 'c', ariaLabel: 'Conference room' },
+    { label: "CEO's Office", icon: '💼', href: `/p/${projectId}/office`, shortcut: 'o', ariaLabel: "CEO's Office" },
+    { label: 'Storage', icon: '🗄', href: `/p/${projectId}/storage`, shortcut: 's', ariaLabel: 'Storage room' },
+    { label: 'Graph', icon: '🕸', href: `/p/${projectId}/graph`, shortcut: 'g', ariaLabel: 'Graph view' },
+    { label: 'Settings', icon: '⚙', href: `/p/${projectId}/settings`, shortcut: '.', ariaLabel: 'Project settings' },
+  ], [projectId])
 
   // Keyboard shortcuts: press 'g' then letter within 1s
   useEffect(() => {
@@ -37,15 +34,10 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     let timer: ReturnType<typeof setTimeout>
 
     function handleKeyDown(e: KeyboardEvent) {
-      // Don't intercept when typing in inputs
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-
-      if (e.key === 'g' && !e.metaKey && !e.ctrlKey) {
-        gPressed = true
-        clearTimeout(timer)
-        timer = setTimeout(() => { gPressed = false }, 1000)
-        return
-      }
+      // Don't intercept when typing in inputs or contenteditable elements
+      if (e.target instanceof HTMLInputElement ||
+          e.target instanceof HTMLTextAreaElement ||
+          (e.target as HTMLElement).isContentEditable) return
 
       if (gPressed) {
         gPressed = false
@@ -55,11 +47,21 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
           e.preventDefault()
           router.push(item.href)
         }
+        return
+      }
+
+      if (e.key === 'g' && !e.metaKey && !e.ctrlKey) {
+        gPressed = true
+        clearTimeout(timer)
+        timer = setTimeout(() => { gPressed = false }, 1000)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [router, navItems])
 
   return (
@@ -81,9 +83,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
         <Separator />
         <ul className="flex-1 space-y-1 p-2" role="list">
           {navItems.map((item) => {
-            const isActive =
-              (pathname.startsWith(item.href) && item.href !== `/p/${projectId}/settings`) ||
-              pathname === item.href
+            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
             return (
               <li key={item.href}>
                 <Link
