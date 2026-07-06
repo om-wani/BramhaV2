@@ -49,7 +49,10 @@ CREATE TABLE IF NOT EXISTS room_participants (
   persona_id       uuid,
   created_at       timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT room_participants_kind_check
-    CHECK ((participant_kind = 'user') = (user_id IS NOT NULL))
+    CHECK ((participant_kind = 'user') = (user_id IS NOT NULL)),
+  -- An agent participant must always have a persona_id (even though no FK yet — Phase 3)
+  CONSTRAINT room_participants_agent_check
+    CHECK (participant_kind != 'agent' OR persona_id IS NOT NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_participants_room_id
@@ -134,6 +137,11 @@ CREATE INDEX IF NOT EXISTS idx_conversation_nodes_project_created
 CREATE OR REPLACE FUNCTION conversation_nodes_append_only()
 RETURNS TRIGGER AS $$
 BEGIN
+  -- Allow cascaded deletes triggered by parent table cleanup (e.g. hard project delete).
+  -- pg_trigger_depth() > 0 means we are inside another trigger's execution, i.e. a cascade.
+  IF pg_trigger_depth() > 0 THEN
+    RETURN OLD;
+  END IF;
   RAISE EXCEPTION 'conversation_nodes is append-only';
 END;
 $$ LANGUAGE plpgsql;
@@ -244,6 +252,11 @@ BEGIN
     v_count := v_count + 1;
   END LOOP;
 
+  -- If the frontier is non-empty when the limit is hit, the graph is too large to verify safely.
+  IF v_count >= 10000 AND array_length(v_frontier, 1) IS NOT NULL THEN
+    RAISE EXCEPTION 'node_links cycle check traversal limit exceeded';
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -262,7 +275,8 @@ CREATE TABLE IF NOT EXISTS branches (
   name             text        NOT NULL,
   head_node_id     uuid        NOT NULL REFERENCES conversation_nodes(id),
   forked_from_node uuid        REFERENCES conversation_nodes(id),
-  created_by_kind  text        NOT NULL,
+  created_by_kind  text        NOT NULL
+                               CHECK (created_by_kind IN ('user','agent','system')),
   created_by_id    uuid,
   status           text        NOT NULL DEFAULT 'active'
                                CHECK (status IN ('active','merged','abandoned')),
@@ -382,7 +396,8 @@ CREATE POLICY conversation_nodes_isolation ON conversation_nodes
     )
   );
 
--- Node links: from_node must be in a node the user can see (project membership)
+-- Node links: from_node must be in a node the user can see (project membership).
+-- WITH CHECK also restricts to_node so cross-project links cannot be inserted.
 DROP POLICY IF EXISTS node_links_isolation ON node_links;
 CREATE POLICY node_links_isolation ON node_links
   AS PERMISSIVE FOR ALL TO bramha_app
@@ -392,6 +407,22 @@ CREATE POLICY node_links_isolation ON node_links
        WHERE cn.project_id IN (
          SELECT pm.project_id FROM project_members pm
           WHERE pm.user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+       )
+    )
+  )
+  WITH CHECK (
+    from_node IN (
+      SELECT cn.id FROM conversation_nodes cn
+       WHERE cn.project_id IN (
+         SELECT pm.project_id FROM project_members pm
+          WHERE pm.user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+       )
+    )
+    AND to_node IN (
+      SELECT cn2.id FROM conversation_nodes cn2
+       WHERE cn2.project_id IN (
+         SELECT pm2.project_id FROM project_members pm2
+          WHERE pm2.user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
        )
     )
   );
