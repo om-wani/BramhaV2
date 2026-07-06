@@ -1,8 +1,24 @@
+import { Hero } from './_components/hero'
+import { Features } from './_components/features'
+import { PricingCards } from './_components/pricing-cards'
+
+export const metadata = {
+  title: 'BramhaV2 — Your AI C-Suite',
+  description:
+    'Hire a full executive team of specialized AI agents. Collaborate, delegate, and remember everything.',
+  openGraph: {
+    title: 'BramhaV2 — Your AI C-Suite',
+    description: 'Multi-agent AI orchestration platform for founders and operators.',
+    type: 'website',
+  },
+}
+
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center">
-      <h1 className="text-4xl font-bold">BramhaV2</h1>
-      <p className="mt-4 text-muted-foreground">Your AI C-Suite</p>
-    </div>
+    <>
+      <Hero />
+      <Features />
+      <PricingCards teaser />
+    </>
   )
 }
