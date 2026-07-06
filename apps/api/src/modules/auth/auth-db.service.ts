@@ -267,4 +267,40 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
       UPDATE api_keys SET last_used_at = now() WHERE id = ${id}
     `
   }
+
+  // ── Password reset tokens ──────────────────────────────────────────────────
+
+  async createPasswordResetToken(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.sql`
+      INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+      VALUES (${userId}, ${tokenHash}, ${expiresAt.toISOString()})
+    `
+  }
+
+  async findValidPasswordResetToken(tokenHash: string): Promise<{ id: string; userId: string } | null> {
+    const rows = await this.sql<{ id: string; user_id: string }[]>`
+      SELECT id, user_id
+      FROM password_reset_tokens
+      WHERE token_hash = ${tokenHash}
+        AND expires_at > now()
+        AND used_at IS NULL
+      LIMIT 1
+    `
+    const row = rows[0]
+    if (!row) return null
+    return { id: row.id, userId: row.user_id }
+  }
+
+  async markPasswordResetTokenUsed(id: string): Promise<void> {
+    await this.sql`
+      UPDATE password_reset_tokens SET used_at = now() WHERE id = ${id}
+    `
+  }
+
+  async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
+    await this.sql`
+      UPDATE users SET password_hash = ${passwordHash}, updated_at = now()
+      WHERE id = ${userId}
+    `
+  }
 }

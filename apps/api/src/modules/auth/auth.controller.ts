@@ -19,6 +19,8 @@ import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.d
 import { RegisterDto } from './dto/register.dto'
 import { LoginDto } from './dto/login.dto'
 import { VerifyEmailDto } from './dto/verify-email.dto'
+import { ForgotPasswordDto } from './dto/forgot-password.dto'
+import { ResetPasswordDto } from './dto/reset-password.dto'
 
 /** Parse a raw Cookie header into a key→value map. */
 function parseCookies(cookieHeader?: string | string[]): Record<string, string> {
@@ -120,6 +122,22 @@ export class AuthController {
     const rawRefreshToken = cookies['refresh_token'] ?? ''
     await this.authService.logout(rawRefreshToken, user.userId)
     reply.header('Set-Cookie', this.sessionService.buildClearRefreshCookieHeader())
+  }
+
+  /** POST /auth/forgot-password — request a password reset link */
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body() body: ForgotPasswordDto): Promise<{ message: string }> {
+    await this.authService.forgotPassword(body.email)
+    return { message: 'If an account exists, a reset link has been sent.' }
+  }
+
+  /** POST /auth/reset-password — reset password using a valid reset token */
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() body: ResetPasswordDto): Promise<{ message: string }> {
+    await this.authService.resetPassword(body.token, body.password)
+    return { message: 'Password reset successfully.' }
   }
 
   /** GET /auth/me — return current authenticated user (accepts JWT or API key) */

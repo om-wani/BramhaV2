@@ -10,6 +10,7 @@ import { AuthDbService } from './auth-db.service'
 import { JwtService } from './jwt.service'
 import { PasswordService } from './password.service'
 import { SessionService } from './session.service'
+import { ErrorCodes } from '@bramha/shared'
 import type { RegisterInput, LoginInput } from '@bramha/shared'
 
 // ── Rate-limit constants ────────────────────────────────────────────────────
@@ -307,6 +308,42 @@ export class AuthService implements OnModuleInit {
       await this.authDb.revokeSession(session.id)
     }
     this.logger.log({ userId, event: 'logout' }, 'User logged out')
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    // Always resolves without error — no enumeration
+    const user = await this.authDb.findUserByEmail(email)
+    if (!user) return // Silent — don't reveal if email exists
+
+    const { raw: rawToken, hash: tokenHash } = this.session.generateToken()
+    const expiresAt = this.session.getPasswordResetTokenExpiry()
+
+    await this.authDb.createPasswordResetToken(user.id, tokenHash, expiresAt)
+
+    // In dev, log the token. In prod, would send email via mailer service.
+    if (process.env['NODE_ENV'] === 'development') {
+      this.logger.log({ msg: 'password_reset_token', rawToken, userId: user.id }, 'Password reset token (dev only)')
+    } else {
+      this.logger.log({ event: 'password_reset_requested', userId: user.id }, 'Password reset email queued')
+    }
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const tokenHash = this.session.hashToken(token)
+    const record = await this.authDb.findValidPasswordResetToken(tokenHash)
+
+    if (!record) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.PASSWORD_RESET_TOKEN_INVALID,
+        message: 'Password reset token is invalid or has expired',
+      })
+    }
+
+    const passwordHash = await this.password.hash(newPassword)
+    await this.authDb.updateUserPassword(record.userId, passwordHash)
+    await this.authDb.markPasswordResetTokenUsed(record.id)
+
+    this.logger.log({ userId: record.userId, event: 'password_reset' }, 'Password reset successfully')
   }
 
   async getMe(userId: string): Promise<{

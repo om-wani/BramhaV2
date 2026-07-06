@@ -30,6 +30,12 @@ export class SessionService {
     return d
   }
 
+  getPasswordResetTokenExpiry(): Date {
+    const d = new Date()
+    d.setHours(d.getHours() + VERIFY_TOKEN_TTL_HOURS) // 1 hour, same as email verification
+    return d
+  }
+
   /**
    * Build a Set-Cookie header value for the refresh_token cookie.
    * Sets Secure only outside of development to allow HTTP local testing.

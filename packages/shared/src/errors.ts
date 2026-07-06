@@ -15,6 +15,8 @@ export const ErrorCodes = {
   PRE_AUTH_TOKEN_INVALID: 'pre_auth_token_invalid',
   ACCOUNT_LOCKED: 'account_locked',
   SESSION_REVOKED: 'session_revoked',
+  PASSWORD_RESET_TOKEN_INVALID: 'password_reset_token_invalid',
+  PASSWORD_RESET_TOKEN_EXPIRED: 'password_reset_token_expired',
 
   // Authorization
   FORBIDDEN: 'forbidden',
