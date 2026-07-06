@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException, Logger } from '@nestjs/common'
 import { RlsDbService } from '../common/db/rls-db.service'
 import type {
   CreateProjectInput,
@@ -125,14 +125,27 @@ export class ProjectsService {
       const newDescription =
         input.description !== undefined ? input.description : current[0].description
 
-      const rows = await tx<ProjectRow[]>`
-        UPDATE projects
-        SET    name        = ${newName},
-               description = ${newDescription},
-               updated_at  = now()
-        WHERE  id = ${projectId}
-        RETURNING id, org_id, name, description, settings, archived_at, created_at, updated_at
-      `
+      let rows: ProjectRow[]
+      if (input.settings !== undefined) {
+        rows = await tx<ProjectRow[]>`
+          UPDATE projects
+          SET    name        = ${newName},
+                 description = ${newDescription},
+                 settings    = settings || ${JSON.stringify(input.settings)}::jsonb,
+                 updated_at  = now()
+          WHERE  id = ${projectId}
+          RETURNING id, org_id, name, description, settings, archived_at, created_at, updated_at
+        `
+      } else {
+        rows = await tx<ProjectRow[]>`
+          UPDATE projects
+          SET    name        = ${newName},
+                 description = ${newDescription},
+                 updated_at  = now()
+          WHERE  id = ${projectId}
+          RETURNING id, org_id, name, description, settings, archived_at, created_at, updated_at
+        `
+      }
       if (!rows[0]) throw new NotFoundException({ code: 'not_found' })
       this.logger.log({
         event: 'project.updated',
@@ -178,6 +191,29 @@ export class ProjectsService {
     input: AddProjectMemberInput,
   ): Promise<ProjectMemberDto> {
     return this.db.run({ userId: actorId, projectId }, async (tx) => {
+      // Get project to check org_id
+      const projectRows = await tx<{ org_id: string }[]>`
+        SELECT org_id FROM projects WHERE id = ${projectId}
+      `
+      if (!projectRows[0]) throw new NotFoundException({ code: 'not_found' })
+      const project = projectRows[0]
+
+      // Check target user is an org member (must join org before project)
+      const orgMember = await tx`
+        SELECT 1 FROM org_members WHERE org_id = ${project.org_id} AND user_id = ${input.userId}
+      `
+      if (!orgMember[0]) {
+        throw new BadRequestException({ code: 'not_org_member', message: 'User must be an org member first' })
+      }
+
+      // Check not already a project member
+      const existing = await tx`
+        SELECT 1 FROM project_members WHERE project_id = ${projectId} AND user_id = ${input.userId}
+      `
+      if (existing[0]) {
+        throw new ConflictException({ code: 'already_member', message: 'User is already a project member' })
+      }
+
       const rows = await tx<{
         project_id: string
         user_id: string
@@ -238,6 +274,19 @@ export class ProjectsService {
       `
       if (!actorMembership[0]) throw new NotFoundException({ code: 'not_found' })
       if (actorMembership[0].role !== 'owner') throw new ForbiddenException({ code: 'forbidden' })
+
+      // Guard: cannot demote the last owner
+      const currentMembership = await tx<{ role: string }[]>`
+        SELECT role FROM project_members WHERE project_id = ${projectId} AND user_id = ${targetUserId} LIMIT 1
+      `
+      if (currentMembership[0]?.role === 'owner' && input.role !== 'owner') {
+        const ownerCount = await tx<{ cnt: string }[]>`
+          SELECT COUNT(*) AS cnt FROM project_members WHERE project_id = ${projectId} AND role = 'owner'
+        `
+        if (Number(ownerCount[0]?.cnt ?? 0) <= 1) {
+          throw new ForbiddenException({ code: 'last_owner', message: 'Cannot demote the last owner' })
+        }
+      }
 
       await tx`
         UPDATE project_members

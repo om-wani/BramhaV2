@@ -22,6 +22,6 @@ import { TwoFactorController } from './twofactor.controller'
     TotpService,
     TwoFactorService,
   ],
-  exports: [JwtService, JwtAuthGuard],
+  exports: [JwtService, JwtAuthGuard, AuthDbService],
 })
 export class AuthModule {}

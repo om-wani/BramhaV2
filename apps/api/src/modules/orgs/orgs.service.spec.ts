@@ -5,6 +5,7 @@ vi.mock('@bramha/db', () => ({ withTenant: vi.fn() }))
 import { NotFoundException, ForbiddenException } from '@nestjs/common'
 import { OrgsService } from './orgs.service'
 import type { RlsDbService } from '../common/db/rls-db.service'
+import type { AuthDbService } from '../auth/auth-db.service'
 import type postgres from 'postgres'
 
 const ACTOR_ID = '550e8400-e29b-41d4-a716-446655440000'
@@ -20,7 +21,8 @@ function makeTx(results: unknown[][]): postgres.TransactionSql {
 
 function buildMocks() {
   const db: Partial<RlsDbService> = { run: vi.fn() }
-  return { db }
+  const authDb: Partial<AuthDbService> = { findUserByEmail: vi.fn() }
+  return { db, authDb }
 }
 
 describe('OrgsService', () => {
@@ -29,7 +31,7 @@ describe('OrgsService', () => {
 
   beforeEach(() => {
     mocks = buildMocks()
-    svc = new OrgsService(mocks.db as RlsDbService)
+    svc = new OrgsService(mocks.db as RlsDbService, mocks.authDb as AuthDbService)
   })
 
   // ── Security: IDOR / membership checks ──────────────────────────────────

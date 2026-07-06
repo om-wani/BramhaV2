@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import { RlsDbService } from '../common/db/rls-db.service'
+import { AuthDbService } from '../auth/auth-db.service'
 import type {
   CreateOrgInput,
   UpdateOrgInput,
@@ -53,7 +54,10 @@ function mapOrg(r: OrgRow): OrgDto {
 export class OrgsService {
   private readonly logger = new Logger(OrgsService.name)
 
-  constructor(private readonly db: RlsDbService) {}
+  constructor(
+    private readonly db: RlsDbService,
+    private readonly authDb: AuthDbService,
+  ) {}
 
   // ── Orgs ───────────────────────────────────────────────────────────────
 
@@ -67,9 +71,8 @@ export class OrgsService {
           RETURNING id, name, slug, owner_id, created_at, updated_at
         `
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : ''
-        if (msg.includes('unique') && msg.includes('slug')) {
-          throw new ConflictException({ code: 'slug_taken' })
+        if ((err as { code?: string }).code === '23505') {
+          throw new ConflictException({ code: 'slug_already_taken', message: 'Slug already taken' })
         }
         throw err
       }
@@ -122,14 +125,22 @@ export class OrgsService {
       `
       if (!current[0]) throw new NotFoundException({ code: 'not_found' })
 
-      const rows = await tx<OrgRow[]>`
-        UPDATE orgs
-        SET    name       = ${input.name ?? current[0].name},
-               slug       = ${input.slug ?? current[0].slug},
-               updated_at = now()
-        WHERE  id = ${orgId}
-        RETURNING id, name, slug, owner_id, created_at, updated_at
-      `
+      let rows: OrgRow[]
+      try {
+        rows = await tx<OrgRow[]>`
+          UPDATE orgs
+          SET    name       = ${input.name ?? current[0].name},
+                 slug       = ${input.slug ?? current[0].slug},
+                 updated_at = now()
+          WHERE  id = ${orgId}
+          RETURNING id, name, slug, owner_id, created_at, updated_at
+        `
+      } catch (err: unknown) {
+        if ((err as { code?: string }).code === '23505') {
+          throw new ConflictException({ code: 'slug_already_taken', message: 'Slug already taken' })
+        }
+        throw err
+      }
       if (!rows[0]) throw new NotFoundException({ code: 'not_found' })
       this.logger.log({ event: 'org.updated', actorId: userId, targetId: orgId, action: 'update' })
       return mapOrg(rows[0])
@@ -156,13 +167,25 @@ export class OrgsService {
     orgId: string,
     input: InviteOrgMemberInput,
   ): Promise<OrgMemberDto> {
+    // Use authDb (bypasses RLS) for cross-user email lookup — users_isolation policy
+    // would return empty when querying another user's row inside withTenant context.
+    const target = await this.authDb.findUserByEmail(input.email)
+    if (!target) {
+      // Don't confirm whether the email is registered (prevents email enumeration)
+      throw new NotFoundException({ code: 'invitation_failed', message: 'Invitation could not be completed' })
+    }
+    const targetUserId = target.id
+
     return this.db.run({ userId: actorId }, async (tx) => {
-      // Find user by email
-      const users = await tx<{ id: string }[]>`
-        SELECT id FROM users WHERE email = ${input.email}
+      // Check actor's role — only owners can invite with owner role
+      const actorMember = await tx<{ role: string }[]>`
+        SELECT role FROM org_members WHERE org_id = ${orgId} AND user_id = ${actorId} LIMIT 1
       `
-      if (!users[0]) throw new NotFoundException({ code: 'user_not_found' })
-      const targetUserId = users[0].id
+      if (!actorMember[0]) throw new ForbiddenException({ code: 'forbidden' })
+      const actorRole = actorMember[0].role as string
+      if (input.role === 'owner' && actorRole !== 'owner') {
+        throw new ForbiddenException({ code: 'forbidden', message: 'Only owners can invite with owner role' })
+      }
 
       // Check not already a member
       const existing = await tx<{ user_id: string }[]>`
@@ -240,6 +263,19 @@ export class OrgsService {
       // Only owner can grant owner role
       if (role === 'owner' && actorRole !== 'owner') {
         throw new ForbiddenException({ code: 'forbidden' })
+      }
+
+      // Guard: cannot demote the last owner
+      const currentMembership = await tx<{ role: string }[]>`
+        SELECT role FROM org_members WHERE org_id = ${orgId} AND user_id = ${targetUserId} LIMIT 1
+      `
+      if (currentMembership[0]?.role === 'owner' && role !== 'owner') {
+        const ownerCount = await tx<{ cnt: string }[]>`
+          SELECT COUNT(*) AS cnt FROM org_members WHERE org_id = ${orgId} AND role = 'owner'
+        `
+        if (Number(ownerCount[0]?.cnt ?? 0) <= 1) {
+          throw new ForbiddenException({ code: 'last_owner', message: 'Cannot demote the last owner' })
+        }
       }
 
       await tx`

@@ -34,15 +34,6 @@ export const ProjectMemberSchema = z
 
 export type ProjectMember = z.infer<typeof ProjectMemberSchema>
 
-export const InviteProjectMemberInputSchema = z
-  .object({
-    email: emailSchema, // normalized to lowercase via emailSchema
-    role: ProjectRoleSchema,
-  })
-  .strict()
-
-export type InviteProjectMemberInput = z.infer<typeof InviteProjectMemberInputSchema>
-
 export const UpdateOrgMemberRoleInputSchema = z
   .object({
     role: OrgRoleSchema,
