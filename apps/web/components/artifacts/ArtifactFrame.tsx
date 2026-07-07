@@ -41,6 +41,8 @@ const READY_TIMEOUT_MS = 15_000
 
 export function ArtifactFrame({ src, title = 'Artifact', className, onConsole }: ArtifactFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const onConsoleRef = useRef(onConsole)
+  onConsoleRef.current = onConsole
   const [height, setHeight] = useState(INITIAL_HEIGHT)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -77,7 +79,7 @@ export function ArtifactFrame({ src, title = 'Artifact', className, onConsole }:
           setIsLoading(false)
           break
         case 'console':
-          onConsole?.(data.level, data.args ?? [])
+          onConsoleRef.current?.(data.level, data.args ?? [])
           break
       }
     }
@@ -98,7 +100,7 @@ export function ArtifactFrame({ src, title = 'Artifact', className, onConsole }:
       clearTimeout(timer)
       window.removeEventListener('message', handleMessage)
     }
-  }, [src, onConsole])
+  }, [src])
 
   // Reset state when src changes (new artifact / new version)
   useEffect(() => {
