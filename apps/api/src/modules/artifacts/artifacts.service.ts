@@ -379,6 +379,9 @@ export class ArtifactsService {
     if (payload['sub'] !== userId) {
       throw new UnauthorizedException({ code: 'invalid_render_token', message: 'User mismatch' })
     }
+    if (payload['projectId'] !== projectId) {
+      throw new UnauthorizedException({ code: 'invalid_render_token', message: 'Token project mismatch' })
+    }
 
     const key = this.s3Key(projectId, artifactId, version)
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: key })

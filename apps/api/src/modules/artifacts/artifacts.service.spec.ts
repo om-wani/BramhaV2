@@ -307,6 +307,14 @@ describe('ArtifactsService', () => {
       ).rejects.toThrow(UnauthorizedException)
     })
 
+    it('rejects token with wrong projectId', async () => {
+      const { privateKey } = await setupKeys()
+      const badToken = await signToken(privateKey, { projectId: 'other-project-id' })
+      await expect(
+        svc.getPresignedUrl(USER_ID, PROJECT_ID, ARTIFACT_ID, 1, badToken),
+      ).rejects.toThrow(UnauthorizedException)
+    })
+
     it('returns presigned URL on valid token', async () => {
       const { privateKey } = await setupKeys()
       const validToken = await signToken(privateKey)

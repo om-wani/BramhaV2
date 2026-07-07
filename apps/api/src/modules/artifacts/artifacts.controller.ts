@@ -90,6 +90,7 @@ export class ArtifactsController {
 
   /** GET /projects/:projectId/artifacts/:artifactId/versions/:version/url — Get presigned URL (requires ?token=) */
   @Get(':artifactId/versions/:version/url')
+  @UseGuards(JwtAuthGuard, ProjectViewerGuard)
   getPresignedUrl(
     @CurrentUser() user: AuthenticatedUser,
     @Param('projectId') projectId: string,
