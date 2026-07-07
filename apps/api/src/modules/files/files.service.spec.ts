@@ -223,6 +223,16 @@ describe('FilesService', () => {
         expect.anything(),
         expect.objectContaining({ expiresIn: 60 }),
       )
+
+      // Verify PutObjectCommand was called with ContentType and ContentLength
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3')
+      expect(PutObjectCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ContentType: 'application/pdf',
+          ContentLength: 1024,
+          Key: expect.stringMatching(new RegExp(`^staging/${PROJECT_ID}/`)),
+        }),
+      )
     })
   })
 
