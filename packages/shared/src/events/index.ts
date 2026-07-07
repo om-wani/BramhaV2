@@ -35,3 +35,6 @@ export type IngestFileEvent = z.infer<typeof IngestFileEventSchema>
 
 // Conversation realtime events
 export * from './conversations.js'
+
+// File ingestion scan events
+export * from './files.js'

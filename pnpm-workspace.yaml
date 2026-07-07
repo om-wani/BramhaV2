@@ -9,3 +9,4 @@ allowBuilds:
   argon2: true
   es5-ext: true
   msgpackr-extract: true
+  sharp: false
