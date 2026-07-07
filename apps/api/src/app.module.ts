@@ -11,6 +11,7 @@ import { ProjectsModule } from './modules/projects/projects.module'
 import { RoomsModule } from './modules/rooms/rooms.module'
 import { ConversationsModule } from './modules/conversations/conversations.module'
 import { RealtimeModule } from './modules/realtime/realtime.module'
+import { ArtifactsModule } from './modules/artifacts/artifacts.module'
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module'
     RoomsModule,
     ConversationsModule,
     RealtimeModule,
+    ArtifactsModule,
   ],
 })
 export class AppModule {}
