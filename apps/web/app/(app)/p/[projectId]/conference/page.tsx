@@ -1,13 +1,20 @@
-import { RoomPlaceholder } from '../components/room-placeholder'
+import { ChatRoom } from '@/components/chat/ChatRoom'
 
 export const metadata = { title: 'Conference — BramhaV2' }
 
-export default function ConferencePage() {
+interface PageProps {
+  params: { projectId: string }
+}
+
+/**
+ * Conference room page — server component.
+ * Reads the project ID from the route and hands it to the ChatRoom
+ * client component which handles all data fetching and realtime logic.
+ */
+export default function ConferencePage({ params }: PageProps) {
   return (
-    <RoomPlaceholder
-      icon="🏛"
-      name="Conference Room"
-      description="The conference room is quiet. Say something to convene your council."
-    />
+    <div className="flex h-full flex-col">
+      <ChatRoom projectId={params.projectId} roomType="conference" />
+    </div>
   )
 }
