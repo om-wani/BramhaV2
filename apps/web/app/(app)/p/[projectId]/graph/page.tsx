@@ -7,7 +7,7 @@ export default function GraphPage() {
     <RoomPlaceholder
       icon="🕸"
       name="Conversation Graph"
-      description="Visual map of all conversations and branches in this project."
+      description="Click a conversation's graph icon to view its DAG structure."
     />
   )
 }
