@@ -1,106 +1,157 @@
 /**
- * XSS sanitization tests for MessageBubble.
+ * XSS sanitization rendering tests for MessageBubble.
  *
- * These tests verify the sanitizeSchema exported from MessageBubble against
- * the three canonical XSS vectors:
- *   1. <script> tag injection
- *   2. Event-handler attributes  (e.g. onerror=, onclick=)
- *   3. javascript: protocol in href / src
- *
- * We test the schema configuration directly (no DOM rendering required) and
- * validate against the invariants that rehype-sanitize enforces at render
- * time via hast-util-sanitize.
+ * Each test renders the component with a malicious markdown payload and
+ * asserts that the harmful content is neutralised in the output DOM.
+ * All tests run in the jsdom environment so that actual DOM nodes are
+ * produced and inspected — not just schema config.
  */
 
+import React from 'react'
+import { render } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
-import { sanitizeSchema } from './MessageBubble'
+import { MessageBubble } from './MessageBubble'
+import type { ConversationNode } from '@/lib/stores/chat-store'
 
-// ── Schema-shape tests ─────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-describe('sanitizeSchema — tag allowlist', () => {
-  it('does not include <script> in allowed tagNames', () => {
-    expect(sanitizeSchema.tagNames).toBeDefined()
-    expect(sanitizeSchema.tagNames).not.toContain('script')
+function makeNode(text: string): ConversationNode {
+  return {
+    id: 'test-id',
+    conversationId: 'conv-id',
+    projectId: 'proj-id',
+    parentId: null,
+    depth: 0,
+    path: '0001',
+    type: 'user_message',
+    authorKind: 'user',
+    authorUserId: 'user-id',
+    authorPersonaId: null,
+    content: { text, mentions: [], attachments: [], meta: {} },
+    tokenUsage: null,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+// ── XSS corpus ─────────────────────────────────────────────────────────────────
+
+describe('MessageBubble — XSS rendering corpus', () => {
+  it('<img onerror="alert(1)"> — onerror attribute absent from rendered DOM', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('<img src=x onerror="alert(1)">')}
+        onBranch={() => {}}
+      />,
+    )
+    // remark strips raw HTML by default; rehype-sanitize also removes onerror
+    expect(container.innerHTML).not.toMatch(/onerror\s*=/i)
+    expect(container.querySelector('[onerror]')).toBeNull()
   })
 
-  it('does not include <style> in allowed tagNames', () => {
-    expect(sanitizeSchema.tagNames).toBeDefined()
-    expect(sanitizeSchema.tagNames).not.toContain('style')
+  it('[click](javascript:alert(1)) — href must not contain javascript: protocol', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('[click me](javascript:alert(1))')}
+        onBranch={() => {}}
+      />,
+    )
+    // rehype-sanitize strips href when the protocol is not in the allowlist
+    const anchors = Array.from(container.querySelectorAll('a'))
+    for (const a of anchors) {
+      expect(a.getAttribute('href') ?? '').not.toMatch(/^javascript:/i)
+    }
   })
 
-  it('does not include <iframe> in allowed tagNames', () => {
-    expect(sanitizeSchema.tagNames).not.toContain('iframe')
-  })
-})
-
-describe('sanitizeSchema — href protocol allowlist', () => {
-  it('blocks javascript: in href', () => {
-    const hrefProtocols = sanitizeSchema.protocols?.href ?? []
-    expect(hrefProtocols).not.toContain('javascript')
-  })
-
-  it('allows safe http/https/mailto protocols in href', () => {
-    const hrefProtocols = sanitizeSchema.protocols?.href ?? []
-    expect(hrefProtocols).toContain('http')
-    expect(hrefProtocols).toContain('https')
-    expect(hrefProtocols).toContain('mailto')
-  })
-})
-
-describe('sanitizeSchema — src protocol allowlist', () => {
-  it('blocks javascript: in src', () => {
-    const srcProtocols = sanitizeSchema.protocols?.src ?? []
-    expect(srcProtocols).not.toContain('javascript')
+  it('<script>alert(1)</script> — no script element in rendered DOM', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('<script>alert(document.cookie)</script>')}
+        onBranch={() => {}}
+      />,
+    )
+    expect(container.querySelector('script')).toBeNull()
+    expect(container.innerHTML).not.toContain('<script')
   })
 
-  it('blocks data: URIs in src (prevents <img src="data:..."> XSS)', () => {
-    const srcProtocols = sanitizeSchema.protocols?.src ?? []
-    expect(srcProtocols).not.toContain('data')
-  })
-})
-
-describe('sanitizeSchema — event-handler attributes', () => {
-  /**
-   * The wildcard attribute list (*) must not contain any on* handler.
-   * defaultSchema already enforces an explicit allowlist, so onerror /
-   * onclick / etc. are absent by design — we assert that here.
-   */
-  it('does not allow onerror in wildcard attributes', () => {
-    const wildcardAttrs = sanitizeSchema.attributes?.['*'] ?? []
-    const hasEventHandler = (wildcardAttrs as Array<string | string[]>).some((attr) => {
-      const name = typeof attr === 'string' ? attr : Array.isArray(attr) ? String(attr[0]) : ''
-      return name.startsWith('on')
-    })
-    expect(hasEventHandler).toBe(false)
+  it('<iframe src="evil.com"> — no iframe element in rendered DOM', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('<iframe src="https://evil.com"></iframe>')}
+        onBranch={() => {}}
+      />,
+    )
+    expect(container.querySelector('iframe')).toBeNull()
   })
 
-  it('does not allow onclick in wildcard attributes', () => {
-    const wildcardAttrs = sanitizeSchema.attributes?.['*'] ?? []
-    const hasOnClick = (wildcardAttrs as Array<string | string[]>).some((attr) => {
-      const name = typeof attr === 'string' ? attr : Array.isArray(attr) ? String(attr[0]) : ''
-      return name === 'onclick'
-    })
-    expect(hasOnClick).toBe(false)
+  it('[x](data:text/html,...) — data: href stripped from links', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('[x](data:text/html,<script>alert(1)</script>)')}
+        onBranch={() => {}}
+      />,
+    )
+    const anchors = Array.from(container.querySelectorAll('a'))
+    for (const a of anchors) {
+      expect(a.getAttribute('href') ?? '').not.toMatch(/^data:/i)
+    }
   })
 
-  it('does not allow any attribute starting with "on" in img attributes', () => {
-    const imgAttrs = sanitizeSchema.attributes?.['img'] ?? []
-    const hasEventHandler = (imgAttrs as Array<string | string[]>).some((attr) => {
-      const name = typeof attr === 'string' ? attr : Array.isArray(attr) ? String(attr[0]) : ''
-      return name.startsWith('on')
-    })
-    expect(hasEventHandler).toBe(false)
-  })
-})
-
-describe('sanitizeSchema — strip list', () => {
-  it('includes script in the strip list', () => {
-    const strip = sanitizeSchema.strip ?? []
-    expect(strip).toContain('script')
+  it('<style> injection — no style element in rendered DOM', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('<style>body { display: none }</style>')}
+        onBranch={() => {}}
+      />,
+    )
+    expect(container.querySelector('style')).toBeNull()
   })
 
-  it('includes style in the strip list', () => {
-    const strip = sanitizeSchema.strip ?? []
-    expect(strip).toContain('style')
+  it('<span onclick="..."> — onclick attribute absent', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('<span onclick="alert(1)">click</span>')}
+        onBranch={() => {}}
+      />,
+    )
+    expect(container.innerHTML).not.toMatch(/onclick\s*=/i)
+    expect(container.querySelector('[onclick]')).toBeNull()
+  })
+
+  it('no element in the output carries any on* event attribute', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('**bold** [link](https://safe.example.com) *italic*')}
+        onBranch={() => {}}
+      />,
+    )
+    const allElements = Array.from(container.querySelectorAll('*'))
+    for (const el of allElements) {
+      for (const attr of Array.from(el.attributes)) {
+        expect(attr.name.toLowerCase()).not.toMatch(/^on/)
+      }
+    }
+  })
+
+  it('safe https link passes through unmodified', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('[Visit](https://example.com)')}
+        onBranch={() => {}}
+      />,
+    )
+    const a = container.querySelector('a')
+    expect(a).not.toBeNull()
+    expect(a?.getAttribute('href')).toBe('https://example.com')
+  })
+
+  it('plain text renders without injecting any HTML tags', () => {
+    const { container } = render(
+      <MessageBubble
+        node={makeNode('Hello, <world>!')}
+        onBranch={() => {}}
+      />,
+    )
+    expect(container.querySelector('world')).toBeNull()
+    expect(container.textContent).toContain('Hello,')
   })
 })

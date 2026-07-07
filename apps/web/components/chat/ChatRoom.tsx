@@ -85,6 +85,12 @@ const AccessTokenSchema = z.object({
   expiresIn: z.number(),
 })
 
+const CurrentUserSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  displayName: z.string(),
+})
+
 // ── SessionStorage helpers ─────────────────────────────────────────────────────
 
 function getStoredConvId(projectId: string, roomId: string): string | null {
@@ -124,6 +130,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
     updateBranch,
     setActiveBranch,
     setConnected,
+    setTyping,
     activeBranchId,
     conversationId,
     reset,
@@ -132,6 +139,9 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
   // Track refs to avoid stale closures in socket listeners
   const convIdRef = useRef<string | null>(null)
   convIdRef.current = conversationId
+
+  // Per-user typing-indicator timeout handles
+  const typingTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // ── Step 1: Get WS access token via refresh ──────────────────────────────────
 
@@ -142,6 +152,15 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
     gcTime: 5 * 60 * 1000,
   })
   const wsToken = tokenData?.accessToken ?? null
+
+  // ── Step 1b: Current user (for typing emit) ──────────────────────────────────
+
+  const { data: currentUser } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: () => api.get('/auth/me', CurrentUserSchema),
+    staleTime: Infinity,
+  })
+  const currentUserId = currentUser?.id ?? null
 
   // ── Step 2: Fetch rooms, find the target room ────────────────────────────────
 
@@ -236,7 +255,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
   // wsToken changes → recreate socket with fresh JWT
   }, [wsToken])
 
-  // Join room + subscribe to events
+  // Join room + subscribe to conversation events + typing events
   useEffect(() => {
     if (!conversation || !room) return
 
@@ -266,21 +285,48 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
       if (parsed.success) updateBranch(parsed.data as Branch)
     }
 
+    const onUserTyping = (payload: unknown) => {
+      const p = payload as { userId?: string; displayName?: string }
+      const userId = p.userId
+      if (!userId || userId === currentUserId) return // don't show self
+
+      const displayName = p.displayName ?? userId
+      setTyping(displayName, true)
+
+      // Clear any existing auto-remove timeout for this user
+      const existing = typingTimeouts.current.get(userId)
+      if (existing) clearTimeout(existing)
+
+      // Auto-remove after 3 seconds of silence
+      const timeout = setTimeout(() => {
+        setTyping(displayName, false)
+        typingTimeouts.current.delete(userId)
+      }, 3000)
+      typingTimeouts.current.set(userId, timeout)
+    }
+
     sock.on('conv.node.appended', onNodeAppended)
     sock.on('conv.branch.forked', onBranchForked)
     sock.on('conv.branch.updated', onBranchUpdated)
+    sock.on('room.typing', onUserTyping)
 
     return () => {
       sock.emit('room.leave', { roomId: room.id })
       sock.off('conv.node.appended', onNodeAppended)
       sock.off('conv.branch.forked', onBranchForked)
       sock.off('conv.branch.updated', onBranchUpdated)
+      sock.off('room.typing', onUserTyping)
     }
   }, [conversation?.id, room?.id])
 
-  // Reset store on unmount
+  // Clear all typing timeouts on unmount
   useEffect(() => {
-    return () => { reset() }
+    const timeouts = typingTimeouts.current
+    return () => {
+      timeouts.forEach(clearTimeout)
+      timeouts.clear()
+      reset()
+    }
   }, [])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
@@ -300,7 +346,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
         },
       )
     },
-      [conversation?.id, room?.id, activeBranchId, projectId],
+    [conversation?.id, room?.id, activeBranchId, projectId],
   )
 
   const handleBranchFrom = useCallback(
@@ -315,7 +361,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
       addBranch(newBranch as Branch)
       setActiveBranch(newBranch.id)
     },
-      [conversation?.id, room?.id, projectId],
+    [conversation?.id, room?.id, projectId],
   )
 
   const handleSwitchBranch = useCallback(
@@ -325,17 +371,29 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
       setActiveBranch(branchId)
       // Fetch new slice
       try {
-        const slice = await api.get(
+        const newSlice = await api.get(
           `/projects/${projectId}/rooms/${room.id}/conversations/${conversation.id}/slice?branchId=${branchId}`,
           SliceSchema,
         )
-        setNodes(slice.nodes as ConversationNode[])
+        setNodes(newSlice.nodes as ConversationNode[])
       } finally {
         setIsTransitioning(false)
       }
     },
-      [conversation?.id, room?.id, projectId],
+    [conversation?.id, room?.id, projectId],
   )
+
+  /** Throttled typing emit — called by Composer when user types. */
+  const handleTyping = useCallback(() => {
+    if (!room || !currentUserId) return
+    const sock = getSocket()
+    if (!sock?.connected) return
+    sock.emit('room.typing', {
+      roomId: room.id,
+      userId: currentUserId,
+      displayName: currentUser?.displayName ?? currentUserId,
+    })
+  }, [room?.id, currentUserId, currentUser?.displayName])
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -350,7 +408,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
         onBranch={handleBranchFrom}
         onSwitchBranch={handleSwitchBranch}
       />
-      <Composer onSend={handleSend} />
+      <Composer onSend={handleSend} onTyping={handleTyping} />
     </div>
   )
 }

@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils'
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>
+  /** Called (throttled, once per second) when the user is actively typing. */
+  onTyping?: () => void
 }
 
 /**
@@ -14,12 +16,15 @@ interface ComposerProps {
  * - Enter submits; Shift+Enter inserts a newline.
  * - Textarea auto-resizes up to 200 px.
  * - Shows the active branch name when not on 'main'.
+ * - Shows typing indicator for other users when typingUsers is non-empty.
  */
-export function Composer({ onSend }: ComposerProps) {
+export function Composer({ onSend, onTyping }: ComposerProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const { activeBranchId, branches, conversationId } = useChatStore()
+  const lastTypingEmit = useRef(0)
+
+  const { activeBranchId, branches, conversationId, typingUsers } = useChatStore()
 
   const activeBranch = branches.find((b) => b.id === activeBranchId)
   const isNonMainBranch = activeBranch && activeBranch.name !== 'main'
@@ -57,7 +62,25 @@ export function Composer({ onSend }: ComposerProps) {
     const el = e.target
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    // Throttled typing notification (at most once per second)
+    if (onTyping) {
+      const now = Date.now()
+      if (now - lastTypingEmit.current > 1000) {
+        lastTypingEmit.current = now
+        onTyping()
+      }
+    }
   }
+
+  // Format typing indicator text
+  const typingText =
+    typingUsers.length === 1
+      ? `${typingUsers[0]} is typing…`
+      : typingUsers.length === 2
+        ? `${typingUsers[0]} and ${typingUsers[1]} are typing…`
+        : typingUsers.length > 2
+          ? `${typingUsers.length} people are typing…`
+          : null
 
   return (
     <div className="border-t border-border bg-background px-4 py-3">
@@ -67,6 +90,17 @@ export function Composer({ onSend }: ComposerProps) {
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
             {activeBranch.name}
           </span>
+        </div>
+      )}
+
+      {/* Typing indicator */}
+      {typingText && (
+        <div
+          className="mb-1 px-1 text-xs text-muted-foreground"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {typingText}
         </div>
       )}
 

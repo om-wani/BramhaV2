@@ -81,7 +81,11 @@ interface ChatState {
   addBranch: (branch: Branch) => void
   updateBranch: (branch: Branch) => void
   setConnected: (connected: boolean) => void
-  setTyping: (users: string[]) => void
+  /**
+   * Add or remove a single user from the typing indicator list.
+   * `active: true` adds the user; `active: false` removes them.
+   */
+  setTyping: (userId: string, active: boolean) => void
   reset: () => void
 }
 
@@ -163,7 +167,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConnected: (connected) => set({ isConnected: connected }),
 
-  setTyping: (users) => set({ typingUsers: users }),
+  setTyping: (userId, active) =>
+    set((state) => ({
+      typingUsers: active
+        ? state.typingUsers.includes(userId)
+          ? state.typingUsers
+          : [...state.typingUsers, userId]
+        : state.typingUsers.filter((u) => u !== userId),
+    })),
 
   reset: () => set({ ...emptyState, nodes: new Map(), nodeOrder: [] }),
 }))

@@ -6,13 +6,18 @@ import { MessageBubble } from './MessageBubble'
 import { BranchChips } from './BranchChips'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useChatStore } from '@/lib/stores/chat-store'
-import type { ConversationNode } from '@/lib/stores/chat-store'
+import type { ConversationNode, Branch } from '@/lib/stores/chat-store'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type RowItem =
   | { type: 'node'; node: ConversationNode }
-  | { type: 'branch-chips'; forkNodeId: string }
+  /**
+   * Inline branch-chip row after a fork-point node.
+   * `siblings` contains ONLY the branches forked from that specific node —
+   * not all branches in the conversation.
+   */
+  | { type: 'branch-chips'; forkNodeId: string; siblings: Branch[] }
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -39,7 +44,7 @@ export function MessageList({
       .filter((n): n is ConversationNode => n !== undefined)
   }, [nodes, nodeOrder])
 
-  // Set of node ids that are fork points (parent of multiple branches)
+  // Set of node ids that are fork points (parent of one or more branches)
   const forkPointIds = useMemo<Set<string>>(() => {
     const forks = new Set<string>()
     for (const branch of branches) {
@@ -48,17 +53,19 @@ export function MessageList({
     return forks
   }, [branches])
 
-  // Build the flat item list: each message may be followed by a branch-chips row
+  // Build the flat item list.  After each fork-point node, insert a branch-chips
+  // row containing ONLY the sibling branches that forked from that node.
   const items = useMemo<RowItem[]>(() => {
     const result: RowItem[] = []
     for (const node of orderedNodes) {
       result.push({ type: 'node', node })
       if (forkPointIds.has(node.id)) {
-        result.push({ type: 'branch-chips', forkNodeId: node.id })
+        const siblings = branches.filter((b) => b.forkedFromNode === node.id)
+        result.push({ type: 'branch-chips', forkNodeId: node.id, siblings })
       }
     }
     return result
-  }, [orderedNodes, forkPointIds])
+  }, [orderedNodes, forkPointIds, branches])
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -78,7 +85,7 @@ export function MessageList({
       rowVirtualizer.scrollToIndex(items.length - 1, { behavior: 'smooth' })
     }
     // We intentionally only depend on length — not the virtualizer instance
-    }, [items.length, isLoading])
+  }, [items.length, isLoading])
 
   // Loading skeleton
   if (isLoading) {
@@ -118,6 +125,7 @@ export function MessageList({
         style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+           
           const item: RowItem | undefined = items[virtualRow.index]
           if (!item) return null
 
@@ -137,8 +145,9 @@ export function MessageList({
               {item.type === 'node' ? (
                 <MessageBubble node={item.node} onBranch={onBranch} />
               ) : (
+                // Pass only the sibling branches for this fork point
                 <BranchChips
-                  branches={branches}
+                  branches={item.siblings}
                   activeBranchId={activeBranchId ?? ''}
                   onSwitch={onSwitchBranch}
                 />
