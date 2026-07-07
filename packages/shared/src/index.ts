@@ -9,6 +9,7 @@ export * from './schemas/api-keys.js'
 export * from './schemas/password-reset.js'
 export * from './schemas/conversations.js'
 export * from './schemas/artifacts.js'
+export * from './schemas/files.js'
 
 // Events
 export * from './events/index.js'

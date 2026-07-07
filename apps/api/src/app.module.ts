@@ -12,6 +12,7 @@ import { RoomsModule } from './modules/rooms/rooms.module'
 import { ConversationsModule } from './modules/conversations/conversations.module'
 import { RealtimeModule } from './modules/realtime/realtime.module'
 import { ArtifactsModule } from './modules/artifacts/artifacts.module'
+import { FilesModule } from './modules/files/files.module'
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ArtifactsModule } from './modules/artifacts/artifacts.module'
     ConversationsModule,
     RealtimeModule,
     ArtifactsModule,
+    FilesModule,
   ],
 })
 export class AppModule {}
