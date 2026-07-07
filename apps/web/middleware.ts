@@ -37,15 +37,23 @@ export function middleware(request: NextRequest) {
     request: { headers: requestHeaders },
   })
 
-  response.headers.set('Content-Security-Policy', cspHeader)
+  // Always-on security headers
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   response.headers.set(
     'Strict-Transport-Security',
     'max-age=63072000; includeSubDomains; preload'
   )
+
+  // /artifact-frame serves sandboxed iframe HTML with its own strict CSP.
+  // Applying frame-ancestors 'none' here would prevent embedding on the same
+  // origin. Skip the main-app CSP and X-Frame-Options for that path only.
+  const isArtifactFrame = request.nextUrl.pathname === '/artifact-frame'
+  if (!isArtifactFrame) {
+    response.headers.set('Content-Security-Policy', cspHeader)
+    response.headers.set('X-Frame-Options', 'DENY')
+  }
 
   return response
 }
