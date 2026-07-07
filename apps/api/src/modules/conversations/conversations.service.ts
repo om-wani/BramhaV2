@@ -17,6 +17,7 @@ import type {
   ForkInput,
   UpdateBranchInput,
 } from '@bramha/shared'
+import { EventPublisher, Channels } from '@bramha/event-bus'
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -187,11 +188,14 @@ type Tx = postgres.TransactionSql
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name)
+  private readonly publisher: EventPublisher
 
   constructor(
     private readonly db: RlsDbService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
-  ) {}
+  ) {
+    this.publisher = new EventPublisher(redis)
+  }
 
   // ── Rate limiting (atomic Lua) ────────────────────────────────────────────
 
@@ -478,6 +482,18 @@ export class ConversationsService {
       action: 'append_node',
     })
 
+    // Fire-and-forget publish — never fail the main operation on Redis error
+    this.publisher
+      .publish(Channels.convNodeAppended(projectId), {
+        conversationId: convId,
+        roomId,
+        projectId,
+        node: result as unknown as Record<string, unknown>,
+      })
+      .catch((err: unknown) => {
+        this.logger.error({ event: 'event_publish.failed', channel: 'conv.node.appended', err })
+      })
+
     return result
   }
 
@@ -529,7 +545,21 @@ export class ConversationsService {
           targetId: rows[0].id,
           action: 'fork',
         })
-        return mapBranch(rows[0])
+        const forkedBranch = mapBranch(rows[0])
+
+        // Fire-and-forget publish
+        this.publisher
+          .publish(Channels.convBranchForked(projectId), {
+            conversationId: convId,
+            roomId,
+            projectId,
+            branch: forkedBranch as unknown as Record<string, unknown>,
+          })
+          .catch((err: unknown) => {
+            this.logger.error({ event: 'event_publish.failed', channel: 'conv.branch.forked', err })
+          })
+
+        return forkedBranch
       } catch (err: unknown) {
         if (
           typeof err === 'object' &&
@@ -795,7 +825,21 @@ export class ConversationsService {
           targetId: branchId,
           action: 'update',
         })
-        return mapBranch(rows[0])
+        const updatedBranch = mapBranch(rows[0])
+
+        // Fire-and-forget publish
+        this.publisher
+          .publish(Channels.convBranchUpdated(projectId), {
+            conversationId: convId,
+            roomId,
+            projectId,
+            branch: updatedBranch as unknown as Record<string, unknown>,
+          })
+          .catch((err: unknown) => {
+            this.logger.error({ event: 'event_publish.failed', channel: 'conv.branch.updated', err })
+          })
+
+        return updatedBranch
       } catch (err: unknown) {
         if (
           typeof err === 'object' &&
