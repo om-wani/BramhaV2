@@ -488,7 +488,7 @@ export class ConversationsService {
         conversationId: convId,
         roomId,
         projectId,
-        node: result as unknown as Record<string, unknown>,
+        node: result,
       })
       .catch((err: unknown) => {
         this.logger.error({ event: 'event_publish.failed', channel: 'conv.node.appended', err })
@@ -553,7 +553,7 @@ export class ConversationsService {
             conversationId: convId,
             roomId,
             projectId,
-            branch: forkedBranch as unknown as Record<string, unknown>,
+            branch: forkedBranch,
           })
           .catch((err: unknown) => {
             this.logger.error({ event: 'event_publish.failed', channel: 'conv.branch.forked', err })
@@ -833,7 +833,7 @@ export class ConversationsService {
             conversationId: convId,
             roomId,
             projectId,
-            branch: updatedBranch as unknown as Record<string, unknown>,
+            branch: updatedBranch,
           })
           .catch((err: unknown) => {
             this.logger.error({ event: 'event_publish.failed', channel: 'conv.branch.updated', err })

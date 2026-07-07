@@ -35,10 +35,14 @@ function makeSocket(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function makeRedis(scardResult = 0) {
+/**
+ * @param evalResult - return value of the Lua socket-cap script:
+ *   1 = socket added (under cap), 0 = rejected (at/over cap)
+ */
+function makeRedis(evalResult: 0 | 1 = 1) {
   return {
-    scard: vi.fn().mockResolvedValue(scardResult),
-    sadd: vi.fn().mockResolvedValue(1),
+    // Lua socket-cap script — returns 1 (added) or 0 (rejected)
+    eval: vi.fn().mockResolvedValue(evalResult),
     srem: vi.fn().mockResolvedValue(1),
     duplicate: vi.fn().mockReturnValue({
       on: vi.fn(),
@@ -127,13 +131,13 @@ describe('RealtimeGateway', () => {
   let relayService: ReturnType<typeof makeRelayService>
 
   function buildGateway(
-    scardResult = 0,
+    evalResult: 0 | 1 = 1,
     memberRows: { role: string }[] = [{ role: 'member' }],
     roomRows: { id: string }[] = [{ id: 'room-1' }],
     wsAuthResult: string | null = 'user-1',
   ) {
     wsAuthGuard = { verifyHandshake: vi.fn().mockResolvedValue(wsAuthResult) }
-    redis = makeRedis(scardResult)
+    redis = makeRedis(evalResult)
     relayService = makeRelayService()
     const db = makeDb(memberRows, roomRows)
     const config = makeConfigService()
@@ -150,29 +154,29 @@ describe('RealtimeGateway', () => {
   // ── handleConnection ──────────────────────────────────────────────────────
 
   describe('handleConnection', () => {
-    it('stores userId and tracks socket on valid connection', async () => {
-      buildGateway(0) // scard = 0 (no existing sockets)
+    it('stores userId and tracks socket on valid connection (Lua returns 1 = added)', async () => {
+      buildGateway(1) // Lua returns 1 = under cap, added
       const socket = makeSocket()
 
       await gateway.handleConnection(socket as unknown as import('socket.io').Socket)
 
       expect(socket.data['userId']).toBe('user-1')
-      expect(redis.sadd).toHaveBeenCalledWith('ws:user:user-1:sockets', socket.id)
+      expect(redis.eval).toHaveBeenCalledOnce()
       expect(socket.disconnect).not.toHaveBeenCalled()
     })
 
     it('emits auth_expired and disconnects when WsAuthGuard returns null', async () => {
-      buildGateway(0, [], [], null)
+      buildGateway(1, [], [], null)
       const socket = makeSocket()
 
       await gateway.handleConnection(socket as unknown as import('socket.io').Socket)
 
       // Guard itself handles the disconnect/emit — gateway just returns early
-      expect(redis.sadd).not.toHaveBeenCalled()
+      expect(redis.eval).not.toHaveBeenCalled()
     })
 
-    it('emits socket_limit and disconnects on 6th concurrent connection', async () => {
-      buildGateway(5) // scard = 5 (already at cap)
+    it('emits socket_limit and disconnects when Lua returns 0 (at cap)', async () => {
+      buildGateway(0) // Lua returns 0 = at/over cap
       const socket = makeSocket()
 
       await gateway.handleConnection(socket as unknown as import('socket.io').Socket)
@@ -182,7 +186,6 @@ describe('RealtimeGateway', () => {
         expect.objectContaining({ code: 'socket_limit' }),
       )
       expect(socket.disconnect).toHaveBeenCalledWith(true)
-      expect(redis.sadd).not.toHaveBeenCalled()
     })
   })
 

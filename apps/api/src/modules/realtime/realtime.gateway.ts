@@ -25,6 +25,22 @@ import { EventRelayService } from './event-relay.service'
 
 const USER_SOCKETS_KEY = (userId: string): string => `ws:user:${userId}:sockets`
 
+/**
+ * Atomic Lua: check per-user socket count and add in one round-trip.
+ * Returns 1 if added (under cap), 0 if rejected (at/over cap).
+ * Sets a 24-hour TTL so stale entries self-clean after a server crash.
+ */
+const LUA_SOCKET_CAP_ADD = `
+local key   = KEYS[1]
+local sid   = ARGV[1]
+local cap   = tonumber(ARGV[2])
+local count = redis.call('SCARD', key)
+if count >= cap then return 0 end
+redis.call('SADD', key, sid)
+redis.call('EXPIRE', key, 86400)
+return 1
+`
+
 interface RoomJoinPayload {
   roomId: string
   projectId: string
@@ -80,23 +96,24 @@ export class RealtimeGateway
     const userId = await this.wsAuthGuard.verifyHandshake(client)
     if (!userId) return // guard already disconnected the socket
 
-    // 2. Per-user socket cap (5 max)
+    // 2. Per-user socket cap (5 max) — atomic Lua to eliminate TOCTOU race
     const userKey = USER_SOCKETS_KEY(userId)
-    const socketCount = await this.redis.scard(userKey)
-    if (socketCount >= WS_SOCKET_CAP) {
-      this.logger.warn({
-        event: 'ws.socket_limit',
-        userId,
-        count: socketCount,
-      })
+    const added = (await this.redis.eval(
+      LUA_SOCKET_CAP_ADD,
+      1,
+      userKey,
+      client.id,
+      String(WS_SOCKET_CAP),
+    )) as number
+    if (added === 0) {
+      this.logger.warn({ event: 'ws.socket_limit', userId })
       client.emit('system.error', { code: 'socket_limit', message: 'Max concurrent sockets reached' })
       client.disconnect(true)
       return
     }
 
-    // 3. Register socket
+    // 3. Register userId on socket (Lua already added socketId to the set)
     client.data['userId'] = userId
-    await this.redis.sadd(userKey, client.id)
 
     this.logger.log({ event: 'ws.connected', userId, socketId: client.id })
   }

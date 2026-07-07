@@ -1,4 +1,21 @@
 import type { Redis } from 'ioredis'
+import {
+  ConvNodeAppendedPayloadSchema,
+  ConvBranchForkedPayloadSchema,
+  ConvBranchUpdatedPayloadSchema,
+} from '@bramha/shared'
+
+// Re-export payload types and schemas for consumers
+export {
+  ConvNodeAppendedPayloadSchema,
+  ConvBranchForkedPayloadSchema,
+  ConvBranchUpdatedPayloadSchema,
+} from '@bramha/shared'
+export type {
+  ConvNodeAppendedPayload,
+  ConvBranchForkedPayload,
+  ConvBranchUpdatedPayload,
+} from '@bramha/shared'
 
 // ── Channel builders ──────────────────────────────────────────────────────────
 // Channel pattern: `{event_type}:{projectId}`
@@ -9,40 +26,45 @@ export const Channels = {
   convBranchUpdated: (projectId: string): string => `conv.branch.updated:${projectId}`,
 } as const
 
-// ── Payload types ─────────────────────────────────────────────────────────────
+// ── Schema map for publish-time validation ────────────────────────────────────
 
-export interface ConvNodeAppendedPayload {
-  conversationId: string
-  roomId: string
-  projectId: string
-  node: Record<string, unknown>
+/** Minimal interface satisfied by all Zod schemas. */
+interface ParseableSchema {
+  parse: (value: unknown) => unknown
 }
 
-export interface ConvBranchForkedPayload {
-  conversationId: string
-  roomId: string
-  projectId: string
-  branch: Record<string, unknown>
-}
+const CHANNEL_SCHEMAS: Map<string, ParseableSchema> = new Map([
+  ['conv.node.appended', ConvNodeAppendedPayloadSchema as ParseableSchema],
+  ['conv.branch.forked', ConvBranchForkedPayloadSchema as ParseableSchema],
+  ['conv.branch.updated', ConvBranchUpdatedPayloadSchema as ParseableSchema],
+])
 
-export interface ConvBranchUpdatedPayload {
-  conversationId: string
-  roomId: string
-  projectId: string
-  branch: Record<string, unknown>
+function schemaForChannel(channel: string) {
+  // Channel format: `{event_type}:{projectId}` — strip the projectId suffix
+  const colonIdx = channel.indexOf(':')
+  const eventType = colonIdx !== -1 ? channel.slice(0, colonIdx) : channel
+  return CHANNEL_SCHEMAS.get(eventType)
 }
 
 // ── EventPublisher ────────────────────────────────────────────────────────────
 
 /**
  * Thin wrapper around ioredis `PUBLISH`.
+ * Validates payloads against Zod schemas before serialising.
  * Use the shared (non-subscriber) Redis connection.
  */
 export class EventPublisher {
   constructor(private readonly redis: Redis) {}
 
+  /**
+   * Validate `payload` against the schema registered for `channel`, then publish.
+   * Throws a `ZodError` if validation fails — callers should handle (or wrap in
+   * fire-and-forget `.catch()`).
+   */
   async publish(channel: string, payload: unknown): Promise<void> {
-    await this.redis.publish(channel, JSON.stringify(payload))
+    const schema = schemaForChannel(channel)
+    const validated = schema ? schema.parse(payload) : payload
+    await this.redis.publish(channel, JSON.stringify(validated))
   }
 }
 
