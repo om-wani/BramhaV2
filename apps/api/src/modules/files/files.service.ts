@@ -160,11 +160,13 @@ export class FilesService {
     const key = `staging/${projectId}/${fileId}`
 
     await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      // Quota check inside the same transaction to prevent TOCTOU races
+      // FOR UPDATE locks matching rows so concurrent transactions queue here,
+      // preventing TOCTOU under READ COMMITTED isolation.
       const quotaRows = await tx<{ total: string }[]>`
         SELECT COALESCE(SUM(size_bytes), 0)::text AS total
         FROM files
         WHERE project_id = ${projectId}::uuid
+        FOR UPDATE
       `
       const usedBytes = Number(quotaRows[0]?.total ?? 0)
       if (usedBytes + input.sizeBytes > maxBytes) {
