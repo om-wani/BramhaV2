@@ -86,7 +86,7 @@ function NodeCard({ data, selected }: NodeProps<RFNode<NodeCardData>>) {
       className={cn(
         'relative w-[220px] rounded-xl border bg-card px-3 py-2 shadow-sm',
         'transition-all duration-300',
-        'data-[new=true]:animate-[fadeIn_0.4s_ease]',
+        'data-[new=true]:animate-fadeIn',
         selected ? 'border-primary ring-1 ring-primary' : 'border-border',
       )}
     >
@@ -184,8 +184,8 @@ export function ConversationGraph({
 
         // Fetch remaining pages up to MAX_NODES (parallel where possible)
         while (cursor && allNodes.length < MAX_NODES) {
-          const remaining = MAX_NODES - allNodes.length
-          const limit = Math.min(PAGE_LIMIT, remaining)
+          const remainingSlots = MAX_NODES - allNodes.length
+          const limit = Math.min(PAGE_LIMIT, remainingSlots)
           const page = await api.get(
             `${base}/graph?cursor=${encodeURIComponent(cursor)}&limit=${limit}`,
             GraphPageSchema,
@@ -291,7 +291,7 @@ export function ConversationGraph({
       socket.off('conv.node.appended', onNodeAppended)
       socket.off('conv.branch.forked', onBranchForked)
     }
-  }, [conversationId, setRFEdges, setRFNodes])
+  }, [conversationId])
 
   // ── Load more ─────────────────────────────────────────────────────────────
 

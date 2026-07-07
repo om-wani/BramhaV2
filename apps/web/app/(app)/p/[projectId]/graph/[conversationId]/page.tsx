@@ -4,8 +4,8 @@
  * Conversation graph route: /p/:projectId/graph/:conversationId
  *
  * Split into:
- *   ConversationGraphPage — async server component (awaits params)
- *   ConversationGraphLoader — client component (fetches roomId, renders graph)
+ *   ConversationGraphPage — client component using React use() to unwrap async params
+ *   ConversationGraphLoader — fetches roomId from the rooms API, then renders the graph
  */
 
 import { use, useEffect, useState } from 'react'
