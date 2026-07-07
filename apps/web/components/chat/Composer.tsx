@@ -72,14 +72,15 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
     }
   }
 
-  // Format typing indicator text
+  // Derive display names from the userId→displayName map for rendering
+  const typingNames = Array.from(typingUsers.values())
   const typingText =
-    typingUsers.length === 1
-      ? `${typingUsers[0]} is typing…`
-      : typingUsers.length === 2
-        ? `${typingUsers[0]} and ${typingUsers[1]} are typing…`
-        : typingUsers.length > 2
-          ? `${typingUsers.length} people are typing…`
+    typingNames.length === 1
+      ? `${typingNames[0]} is typing…`
+      : typingNames.length === 2
+        ? `${typingNames[0]} and ${typingNames[1]} are typing…`
+        : typingNames.length > 2
+          ? `${typingNames.length} people are typing…`
           : null
 
   return (

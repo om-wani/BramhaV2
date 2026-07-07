@@ -291,7 +291,8 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
       if (!userId || userId === currentUserId) return // don't show self
 
       const displayName = p.displayName ?? userId
-      setTyping(displayName, true)
+      // Key on userId — displayName is only for rendering
+      setTyping(userId, displayName, true)
 
       // Clear any existing auto-remove timeout for this user
       const existing = typingTimeouts.current.get(userId)
@@ -299,7 +300,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
 
       // Auto-remove after 3 seconds of silence
       const timeout = setTimeout(() => {
-        setTyping(displayName, false)
+        setTyping(userId, displayName, false)
         typingTimeouts.current.delete(userId)
       }, 3000)
       typingTimeouts.current.set(userId, timeout)

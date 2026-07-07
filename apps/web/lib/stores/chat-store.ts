@@ -70,7 +70,12 @@ interface ChatState {
   activeBranchId: string | null
   conversationId: string | null
   isConnected: boolean
-  typingUsers: string[]
+  /**
+   * Map of currently-typing users: userId → displayName.
+   * Using a Map keyed on userId ensures a user's entry is always
+   * updated/removed by a stable identity, even if their displayName changes.
+   */
+  typingUsers: Map<string, string>
 
   // Actions
   setConversation: (conversationId: string, branches: Branch[]) => void
@@ -82,10 +87,11 @@ interface ChatState {
   updateBranch: (branch: Branch) => void
   setConnected: (connected: boolean) => void
   /**
-   * Add or remove a single user from the typing indicator list.
-   * `active: true` adds the user; `active: false` removes them.
+   * Add or remove a user from the typing indicator map.
+   * Key is always userId; displayName is stored for rendering.
+   * `active: true` upserts the entry; `active: false` removes it.
    */
-  setTyping: (userId: string, active: boolean) => void
+  setTyping: (userId: string, displayName: string, active: boolean) => void
   reset: () => void
 }
 
@@ -98,7 +104,7 @@ const emptyState = {
   activeBranchId: null as string | null,
   conversationId: null as string | null,
   isConnected: false,
-  typingUsers: [] as string[],
+  typingUsers: new Map<string, string>(),
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -167,14 +173,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setConnected: (connected) => set({ isConnected: connected }),
 
-  setTyping: (userId, active) =>
-    set((state) => ({
-      typingUsers: active
-        ? state.typingUsers.includes(userId)
-          ? state.typingUsers
-          : [...state.typingUsers, userId]
-        : state.typingUsers.filter((u) => u !== userId),
-    })),
+  setTyping: (userId, displayName, active) =>
+    set((state) => {
+      const next = new Map(state.typingUsers)
+      if (active) {
+        next.set(userId, displayName)
+      } else {
+        next.delete(userId)
+      }
+      return { typingUsers: next }
+    }),
 
-  reset: () => set({ ...emptyState, nodes: new Map(), nodeOrder: [] }),
+  reset: () => set({ ...emptyState, nodes: new Map(), nodeOrder: [], typingUsers: new Map() }),
 }))
