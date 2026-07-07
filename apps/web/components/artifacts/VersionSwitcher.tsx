@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -27,10 +28,10 @@ export function VersionSwitcher({ versions, currentVersion, onSwitch }: VersionS
   const currentIndex = sorted.findIndex((v) => v.version === currentVersion)
   const hasPrev = currentIndex > 0
   const hasNext = currentIndex < sorted.length - 1
-  const latestVersion = sorted[sorted.length - 1]?.version ?? currentVersion
 
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Artifact version navigation">
+      {/* ← prev */}
       <Button
         variant="ghost"
         size="icon"
@@ -45,10 +46,26 @@ export function VersionSwitcher({ versions, currentVersion, onSwitch }: VersionS
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <span className="min-w-[72px] text-center text-xs text-muted-foreground" aria-live="polite">
-        v{currentVersion} / v{latestVersion}
-      </span>
+      {/* Dropdown showing all versions */}
+      <select
+        value={currentVersion}
+        onChange={(e) => onSwitch(Number(e.target.value))}
+        disabled={sorted.length <= 1}
+        aria-label="Select version"
+        className={cn(
+          'h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground',
+          'focus:outline-none focus:ring-2 focus:ring-ring',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+        )}
+      >
+        {sorted.map((v) => (
+          <option key={v.version} value={v.version}>
+            v{v.version}
+          </option>
+        ))}
+      </select>
 
+      {/* next → */}
       <Button
         variant="ghost"
         size="icon"

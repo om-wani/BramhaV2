@@ -7,8 +7,7 @@
  * make outbound network requests or escape the iframe sandbox.
  *
  * The route is intentionally excluded from the main-app middleware CSP so that
- * the `frame-ancestors 'self'` policy set here is the only one in effect (see
- * middleware.ts).
+ * the frame-ancestors policy set here is the only one in effect (see middleware.ts).
  *
  * Security model:
  *  - connect-src 'none' blocks all fetch/XHR from inside the frame
@@ -17,6 +16,12 @@
  *    removes same-origin access, so document.cookie / top.location are
  *    inaccessible regardless of CSP
  *  - Origin validation in ArtifactFrame.tsx ignores messages from wrong origins
+ *
+ * Cross-origin production setup:
+ *  - ARTIFACT_ORIGIN  (e.g. https://artifacts.bramha.io) — domain this route is served from
+ *  - APP_ORIGIN       (e.g. https://app.bramha.io)       — domain of the parent app that embeds frames
+ *  When both are set, frame-ancestors includes APP_ORIGIN so cross-domain embedding works.
+ *  In development (same origin), 'self' covers both without any env vars.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -40,20 +45,32 @@ const BASE_DIRECTIVES = [
   "img-src data: blob:",
 ]
 
+/**
+ * frame-ancestors directive:
+ *  - In dev / same-origin: 'self' is sufficient
+ *  - In prod cross-domain: include APP_ORIGIN (the parent app's origin) so
+ *    `https://app.bramha.io` can embed frames served from `https://artifacts.bramha.io`
+ */
+function buildFrameAncestors(): string {
+  const appOrigin = process.env.APP_ORIGIN?.trim()
+  return appOrigin ? `frame-ancestors 'self' ${appOrigin}` : "frame-ancestors 'self'"
+}
+
 function buildCsp(kind: ArtifactKind): string {
   // react kind loads React + ReactDOM + Babel from unpkg CDN
   const scriptSrc =
     kind === 'react'
       ? "script-src 'unsafe-inline' https://unpkg.com"
       : "script-src 'unsafe-inline'"
-  return [...BASE_DIRECTIVES, scriptSrc, "frame-ancestors 'self'"].join('; ')
+  return [...BASE_DIRECTIVES, scriptSrc, buildFrameAncestors()].join('; ')
 }
 
 const RESPONSE_HEADERS = (kind: ArtifactKind) =>
   ({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': buildCsp(kind),
-    // SAMEORIGIN so the parent Next.js app can embed this in an iframe
+    // SAMEORIGIN allows same-origin embedding in dev;
+    // in cross-origin prod the CSP frame-ancestors takes precedence over this header
     'X-Frame-Options': 'SAMEORIGIN',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',

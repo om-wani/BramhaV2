@@ -7,15 +7,17 @@
  * CSS transition). Shows tabs for each artifact; active tab renders:
  *   - ArtifactFrame (iframe) for react / html / svg kinds
  *   - Syntax-highlighted <pre><code> block for code / markdown / mermaid / csv
+ *   - Monaco DiffEditor (lazy) when diff mode is toggled for code kinds
  *
  * Data flow:
  *   1. Fetch artifact list via TanStack Query
  *   2. On artifact selection: fetch versions
  *   3. Fetch render-token → presigned URL (combined query)
- *   4. Build iframe src  OR  fetch raw content for code display
+ *   4. Build iframe src  OR  fetch raw content for code display / diff
  */
 
 import { useState, useCallback } from 'react'
+import dynamic from 'next/dynamic'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
@@ -29,13 +31,33 @@ import {
   X,
   Copy,
   Download,
+  GitCompare,
 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ArtifactFrame } from './ArtifactFrame'
 import { VersionSwitcher } from './VersionSwitcher'
+import { KIND_LANGUAGE } from './DiffView'
 import type { ArtifactVersion } from './VersionSwitcher'
+
+// ── Lazy Monaco diff (avoids ~3 MB in initial bundle) ─────────────────────────
+
+const DiffView = dynamic(
+  () => import('./DiffView').then((m) => ({ default: m.DiffView })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[500px] items-center justify-center bg-[#1e1e1e]">
+        <div
+          className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          role="status"
+          aria-label="Loading diff editor"
+        />
+      </div>
+    ),
+  },
+)
 
 // ── Zod schemas ────────────────────────────────────────────────────────────────
 
@@ -118,11 +140,26 @@ function EmptyState() {
   )
 }
 
+// ── Presigned URL query helper ─────────────────────────────────────────────────
+
+async function fetchPresignedUrl(
+  projectId: string,
+  artifactId: string,
+  version: number,
+  apiGet: typeof api.get,
+): Promise<string> {
+  const base = `/projects/${projectId}/artifacts/${artifactId}/versions/${version}`
+  const { token } = await apiGet(`${base}/render-token`, RenderTokenSchema)
+  const { url } = await apiGet(`${base}/url?token=${encodeURIComponent(token)}`, PresignedUrlSchema)
+  return url
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: ArtifactPaneProps) {
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null)
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
+  const [diffMode, setDiffMode] = useState(false)
 
   // ── 1. Fetch artifact list ─────────────────────────────────────────────────
 
@@ -136,10 +173,6 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
       api.get(`/projects/${projectId}/artifacts${queryString}`, z.array(ArtifactSchema)),
     enabled: isOpen,
     staleTime: 30_000,
-    select: (data) => {
-      // Auto-select first artifact when list loads and nothing is selected
-      return data
-    },
   })
 
   // Derive active artifact (auto-select first on load)
@@ -162,30 +195,49 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
   // Derive selected version (auto-select currentVersion from artifact)
   const currentVersionNum = selectedVersion ?? activeArtifact?.currentVersion ?? null
 
-  // ── 3. Fetch presigned URL (render-token → url) ───────────────────────────
+  // ── 3. Fetch presigned URL for current version ─────────────────────────────
 
   const { data: presignedUrl } = useQuery({
     queryKey: ['artifact-render-url', projectId, activeId, currentVersionNum],
-    queryFn: async () => {
-      const base = `/projects/${projectId}/artifacts/${activeId}/versions/${currentVersionNum}`
-      const { token } = await api.get(`${base}/render-token`, RenderTokenSchema)
-      const { url } = await api.get(`${base}/url?token=${encodeURIComponent(token)}`, PresignedUrlSchema)
-      return url
-    },
+    queryFn: () =>
+      fetchPresignedUrl(projectId, activeId!, currentVersionNum!, api.get),
     enabled: !!activeId && currentVersionNum != null && isOpen,
-    staleTime: 5 * 60_000, // presigned URLs last 15min; cache for 5
+    staleTime: 5 * 60_000,
     gcTime: 6 * 60_000,
   })
 
-  // ── 4. Fetch raw content (for code-kind inline display + copy/download) ───
+  // ── 4. Fetch raw content (for code-kind inline display + diff + copy/download)
 
-  const isCodeKind =
-    activeArtifact != null && !FRAME_KINDS.has(activeArtifact.kind)
+  const isCodeKind = activeArtifact != null && !FRAME_KINDS.has(activeArtifact.kind)
 
   const { data: rawContent } = useQuery({
     queryKey: ['artifact-content', presignedUrl],
     queryFn: () => fetch(presignedUrl!).then((r) => r.text()),
     enabled: !!presignedUrl && isCodeKind,
+    staleTime: 5 * 60_000,
+    gcTime: 6 * 60_000,
+  })
+
+  // ── 5. Diff mode — fetch previous version content ──────────────────────────
+
+  // Previous version is currentVersionNum - 1 (if it exists in the versions list)
+  const prevVersionNum =
+    currentVersionNum != null && currentVersionNum > 1 ? currentVersionNum - 1 : null
+  const prevVersionExists = prevVersionNum != null && versions.some((v) => v.version === prevVersionNum)
+
+  const { data: prevPresignedUrl } = useQuery({
+    queryKey: ['artifact-render-url', projectId, activeId, prevVersionNum],
+    queryFn: () =>
+      fetchPresignedUrl(projectId, activeId!, prevVersionNum!, api.get),
+    enabled: diffMode && isCodeKind && !!activeId && prevVersionExists && isOpen,
+    staleTime: 5 * 60_000,
+    gcTime: 6 * 60_000,
+  })
+
+  const { data: prevRawContent } = useQuery({
+    queryKey: ['artifact-content', prevPresignedUrl],
+    queryFn: () => fetch(prevPresignedUrl!).then((r) => r.text()),
+    enabled: diffMode && isCodeKind && !!prevPresignedUrl,
     staleTime: 5 * 60_000,
     gcTime: 6 * 60_000,
   })
@@ -198,18 +250,24 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
       ? `${artifactOrigin}/artifact-frame?url=${encodeURIComponent(presignedUrl)}&kind=${activeArtifact.kind}`
       : null
 
+  // Diff is available for code kinds when there is a previous version
+  const diffAvailable = isCodeKind && prevVersionExists
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  const handleVersionSwitch = useCallback(
-    (v: number) => {
-      setSelectedVersion(v)
-    },
-    [],
-  )
+  const handleVersionSwitch = useCallback((v: number) => {
+    setSelectedVersion(v)
+    setDiffMode(false) // reset diff when switching versions
+  }, [])
 
   const handleArtifactTab = useCallback((id: string) => {
     setActiveArtifactId(id)
-    setSelectedVersion(null) // reset to currentVersion of new artifact
+    setSelectedVersion(null)
+    setDiffMode(false)
+  }, [])
+
+  const handleToggleDiff = useCallback(() => {
+    setDiffMode((prev) => !prev)
   }, [])
 
   const handleCopy = useCallback(async () => {
@@ -242,17 +300,13 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
   return (
     <aside
       className={cn(
-        // Layout: fixed side panel, full viewport height
         'fixed inset-y-0 right-0 z-40 flex w-[600px] max-w-[90vw] flex-col',
         'border-l border-border bg-card shadow-xl',
-        // Slide-in transition
         'transform transition-transform duration-200 ease-in-out',
         isOpen ? 'translate-x-0' : 'translate-x-full',
       )}
       aria-label="Artifact viewer"
       aria-hidden={!isOpen}
-      // Prevent keyboard focus when closed (boolean attr — presence means inert)
-       
       // @ts-expect-error React types inert as boolean; empty string is the HTML idiom
       inert={!isOpen ? '' : undefined}
     >
@@ -302,7 +356,6 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
       {/* ── Body ── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {artifactsLoading ? (
-          // Loading skeleton
           <div className="flex flex-1 items-center justify-center">
             <div
               className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
@@ -327,6 +380,21 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
                 onSwitch={handleVersionSwitch}
               />
               <div className="flex items-center gap-1">
+                {/* Diff toggle — only for code kinds with a previous version */}
+                {diffAvailable && (
+                  <Button
+                    variant={diffMode ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={handleToggleDiff}
+                    aria-pressed={diffMode}
+                    aria-label={diffMode ? 'Exit diff view' : 'Compare with previous version'}
+                    title={`Compare v${prevVersionNum} → v${currentVersionNum}`}
+                  >
+                    <GitCompare className="h-3.5 w-3.5" />
+                    Diff
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -351,15 +419,39 @@ export function ArtifactPane({ projectId, conversationId, isOpen, onClose }: Art
             </div>
 
             {/* ── Content area ── */}
-            <div className="flex-1 p-4">
+            <div className={cn('flex-1', diffMode ? 'overflow-hidden' : 'overflow-y-auto p-4')}>
               {!presignedUrl ? (
-                // Loading presigned URL
                 <div className="flex h-32 items-center justify-center">
                   <div
                     className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent"
                     role="status"
                     aria-label="Loading artifact content"
                   />
+                </div>
+              ) : diffMode && isCodeKind ? (
+                // ── Diff view (Monaco) ──
+                <div className="h-full" aria-label={`Diff: v${prevVersionNum} → v${currentVersionNum}`}>
+                  {rawContent == null || (prevVersionExists && prevRawContent == null) ? (
+                    <div className="flex h-[500px] items-center justify-center bg-[#1e1e1e]">
+                      <div
+                        className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                        role="status"
+                        aria-label="Loading diff content"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="border-b border-border bg-card px-4 py-1 text-xs text-muted-foreground">
+                        v{prevVersionNum ?? '–'} → v{currentVersionNum}
+                      </p>
+                      <DiffView
+                        original={prevRawContent ?? ''}
+                        modified={rawContent}
+                        language={KIND_LANGUAGE[activeArtifact.kind] ?? 'plaintext'}
+                        height={500}
+                      />
+                    </>
+                  )}
                 </div>
               ) : FRAME_KINDS.has(activeArtifact.kind) ? (
                 // ── iframe renderer (react / html / svg) ──
