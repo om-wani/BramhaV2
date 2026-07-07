@@ -242,22 +242,26 @@ export class ArtifactsService {
     }
     const sha256 = this.computeSha256(input.content)
 
-    const versionDto = await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      // Verify artifact exists and belongs to project (RLS handles membership check)
-      const artifactRows = await tx<ArtifactRow[]>`
+    // Step 1: fetch artifact outside transaction to avoid holding a lock during S3 I/O
+    const artifactRows = await this.db.run({ userId, projectId }, async (tx: Tx) => {
+      const rows = await tx<ArtifactRow[]>`
         SELECT id, project_id, conversation_id, created_by_persona, created_by_user,
                kind, title, current_version, created_at, updated_at
         FROM artifacts
         WHERE id = ${artifactId} AND project_id = ${projectId}
       `
-      if (!artifactRows[0]) throw new NotFoundException({ code: 'artifact_not_found' })
+      return rows
+    })
+    if (!artifactRows[0]) throw new NotFoundException({ code: 'artifact_not_found' })
 
-      const nextVersion = artifactRows[0].current_version + 1
-      const key = this.s3Key(projectId, artifactId, nextVersion)
+    const nextVersion = artifactRows[0].current_version + 1
+    const key = this.s3Key(projectId, artifactId, nextVersion)
 
-      // Upload before any DB writes
-      await this.uploadToS3(key, buf)
+    // Step 2: upload to S3 outside any transaction — no DB lock held during network I/O
+    await this.uploadToS3(key, buf)
 
+    // Step 3: write DB rows in a short transaction
+    const versionDto = await this.db.run({ userId, projectId }, async (tx: Tx) => {
       const versionRows = await tx<ArtifactVersionRow[]>`
         INSERT INTO artifact_versions (artifact_id, version, content_key, content_sha256, size_bytes, created_by_node)
         VALUES (

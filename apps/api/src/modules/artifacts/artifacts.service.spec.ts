@@ -199,10 +199,10 @@ describe('ArtifactsService', () => {
       const currentArtifact = makeArtifactRow({ current_version: 3 })
       const newVersionRow = makeVersionRow({ version: 4, size_bytes: 50 })
 
-      vi.mocked(mocks.db.run!).mockImplementation(async (_ctx, fn) => {
-        // 1) SELECT artifact (version=3), 2) INSERT version row, 3) UPDATE artifact
-        return fn(makeTx([[currentArtifact], [newVersionRow], []]))
-      })
+      // Two db.run calls: 1) fetch artifact, 2) insert version + update artifact
+      vi.mocked(mocks.db.run!)
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[currentArtifact]])))
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[newVersionRow], []])))
       const result = await svc.createVersion(USER_ID, PROJECT_ID, ARTIFACT_ID, {
         content: 'updated content',
       })
@@ -214,9 +214,9 @@ describe('ArtifactsService', () => {
       const currentArtifact = makeArtifactRow({ current_version: 1 })
       const newVersionRow = makeVersionRow({ version: 2, size_bytes: 20 })
 
-      vi.mocked(mocks.db.run!).mockImplementation(async (_ctx, fn) => {
-        return fn(makeTx([[currentArtifact], [newVersionRow], []]))
-      })
+      vi.mocked(mocks.db.run!)
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[currentArtifact]])))
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[newVersionRow], []])))
       await svc.createVersion(USER_ID, PROJECT_ID, ARTIFACT_ID, { content: 'v2 content' })
       expect(publishSpy).toHaveBeenCalledWith(
         expect.stringContaining('artifact.stream.chunk'),
@@ -225,9 +225,8 @@ describe('ArtifactsService', () => {
     })
 
     it('throws NotFoundException when artifact does not exist', async () => {
-      vi.mocked(mocks.db.run!).mockImplementation(async (_ctx, fn) => {
-        return fn(makeTx([[]]))
-      })
+      // First db.run (fetch artifact) returns empty — artifact not found
+      vi.mocked(mocks.db.run!).mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]])))
       await expect(
         svc.createVersion(USER_ID, PROJECT_ID, ARTIFACT_ID, { content: 'x' }),
       ).rejects.toThrow(NotFoundException)
@@ -310,6 +309,24 @@ describe('ArtifactsService', () => {
     it('rejects token with wrong projectId', async () => {
       const { privateKey } = await setupKeys()
       const badToken = await signToken(privateKey, { projectId: 'other-project-id' })
+      await expect(
+        svc.getPresignedUrl(USER_ID, PROJECT_ID, ARTIFACT_ID, 1, badToken),
+      ).rejects.toThrow(UnauthorizedException)
+    })
+
+    it('rejects token with wrong version', async () => {
+      const { privateKey } = await setupKeys()
+      // Token says version=1 but request asks for version=2
+      const badToken = await signToken(privateKey, { version: 1 })
+      await expect(
+        svc.getPresignedUrl(USER_ID, PROJECT_ID, ARTIFACT_ID, 2, badToken),
+      ).rejects.toThrow(UnauthorizedException)
+    })
+
+    it('rejects token with wrong user (sub)', async () => {
+      const { privateKey } = await setupKeys()
+      const OTHER_USER = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      const badToken = await signToken(privateKey, { sub: OTHER_USER })
       await expect(
         svc.getPresignedUrl(USER_ID, PROJECT_ID, ARTIFACT_ID, 1, badToken),
       ).rejects.toThrow(UnauthorizedException)
