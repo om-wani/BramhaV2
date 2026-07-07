@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config'
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { extname } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { Queue } from 'bullmq'
 import type Redis from 'ioredis'
 import type postgres from 'postgres'
@@ -136,40 +137,40 @@ export class FilesService {
       throw new BadRequestException({ code: 'extension_not_allowed', message: 'File extension not allowed' })
     }
 
-    // 3. Rate limit: RATE_LIMIT_PER_HOUR uploads per user per hour
+    // 3. Rate limit: RATE_LIMIT_PER_HOUR uploads per user per hour (atomic pipeline)
     const hourKey = Math.floor(Date.now() / 3_600_000)
     const rateLimitKey = `file:ratelimit:${userId}:${hourKey}`
-    const count = await this.redis.incr(rateLimitKey)
-    // EXPIREAT to end of current hour (unix seconds)
     const endOfHour = (hourKey + 1) * 3600
-    await this.redis.expireat(rateLimitKey, endOfHour)
+    const pipelineResult = await this.redis
+      .pipeline()
+      .incr(rateLimitKey)
+      .expireat(rateLimitKey, endOfHour)
+      .exec()
+    const count = (pipelineResult?.[0]?.[1] as number) ?? 0
     if (count > RATE_LIMIT_PER_HOUR) {
       throw new HttpException({ code: 'rate_limit_exceeded' }, HttpStatus.TOO_MANY_REQUESTS)
     }
 
-    // 4. Quota check
-    const maxBytes = Number(this.config.get<number>('MAX_PROJECT_STORAGE_MB', DEFAULT_MAX_PROJECT_STORAGE_MB)) * 1024 * 1024
-    const quotaRows = await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      return tx<{ total: string }[]>`
-        SELECT COALESCE(SUM(size_bytes), 0)::text AS total
-        FROM files
-        WHERE project_id = ${projectId}
-      `
-    })
-    const usedBytes = Number(quotaRows[0]?.total ?? 0)
-    if (usedBytes + input.sizeBytes > maxBytes) {
-      throw new BadRequestException({ code: 'project_quota_exceeded', message: 'Project storage quota exceeded' })
-    }
-
-    // 5. Generate fileId
-    const { randomUUID } = await import('node:crypto')
+    // 4+5+7. Generate IDs then quota-check + insert atomically in one transaction
+    const maxBytes =
+      Number(this.config.get<number>('MAX_PROJECT_STORAGE_MB', DEFAULT_MAX_PROJECT_STORAGE_MB)) *
+      1024 *
+      1024
     const fileId = randomUUID()
-
-    // 6. S3 key
     const key = `staging/${projectId}/${fileId}`
 
-    // 7. Insert file row
     await this.db.run({ userId, projectId }, async (tx: Tx) => {
+      // Quota check inside the same transaction to prevent TOCTOU races
+      const quotaRows = await tx<{ total: string }[]>`
+        SELECT COALESCE(SUM(size_bytes), 0)::text AS total
+        FROM files
+        WHERE project_id = ${projectId}::uuid
+      `
+      const usedBytes = Number(quotaRows[0]?.total ?? 0)
+      if (usedBytes + input.sizeBytes > maxBytes) {
+        throw new BadRequestException({ code: 'project_quota_exceeded', message: 'Project storage quota exceeded' })
+      }
+
       await tx`
         INSERT INTO files (id, project_id, uploaded_by, room_id, name, declared_mime, size_bytes, storage_key, scan_status)
         VALUES (
@@ -204,38 +205,36 @@ export class FilesService {
   // ── Confirm upload ─────────────────────────────────────────────────────────
 
   async confirmUpload(userId: string, projectId: string, fileId: string): Promise<FileDto> {
-    // 1. Find file
-    const rows = await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      return tx<FileRow[]>`
-        SELECT id, project_id, uploaded_by, room_id, name, declared_mime, detected_mime,
-               size_bytes::text AS size_bytes, storage_key, scan_status, scan_report, created_at, updated_at
-        FROM files
-        WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid
-      `
-    })
-    if (!rows[0]) throw new NotFoundException({ code: 'file_not_found' })
-
-    const file = rows[0]
-
-    // 2. Enqueue BullMQ job
-    await this.ingestionQueue.add('ingest.file', {
-      fileId,
-      projectId,
-      storageKey: file.storage_key,
-    })
-
-    // 3. Update scan_status to 'scanning'
+    // 1. Atomically transition 'pending' → 'scanning' (idempotency guard prevents double-ingestion)
     const updated = await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      const upd = await tx<FileRow[]>`
+      return tx<FileRow[]>`
         UPDATE files
         SET scan_status = 'scanning', updated_at = now()
-        WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid
+        WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid AND scan_status = 'pending'
         RETURNING id, project_id, uploaded_by, room_id, name, declared_mime, detected_mime,
                   size_bytes::text AS size_bytes, storage_key, scan_status, scan_report, created_at, updated_at
       `
-      return upd
     })
-    if (!updated[0]) throw new NotFoundException({ code: 'file_not_found' })
+
+    if (!updated[0]) {
+      // No rows updated: either file not found or already past 'pending'.
+      // Distinguish by checking existence so we return the correct error.
+      const existing = await this.db.run({ userId, projectId }, async (tx: Tx) => {
+        return tx<{ id: string }[]>`
+          SELECT id FROM files WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid
+        `
+      })
+      if (!existing[0]) throw new NotFoundException({ code: 'file_not_found' })
+      // Already scanning/clean/etc — idempotent: return current state
+      return this.getFile(userId, projectId, fileId)
+    }
+
+    // 2. Enqueue BullMQ job only after DB transition succeeds
+    await this.ingestionQueue.add('ingest.file', {
+      fileId,
+      projectId,
+      storageKey: updated[0].storage_key,
+    })
 
     this.logger.log({ event: 'file.confirm_upload', actorId: userId, fileId, projectId })
 

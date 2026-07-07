@@ -152,12 +152,15 @@ export function FileDropzone({ projectId, roomId, onFileReady }: FileDropzonePro
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const pollTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const xhrMapRef = useRef<Map<string, XMLHttpRequest>>(new Map())
 
-  // Cleanup all polling timers on unmount
+  // Cleanup all polling timers and in-flight XHR uploads on unmount
   useEffect(() => {
     const timers = pollTimersRef.current
+    const xhrs = xhrMapRef.current
     return () => {
       timers.forEach((timer) => clearTimeout(timer))
+      xhrs.forEach((xhr) => xhr.abort())
     }
   }, [])
 
@@ -240,6 +243,7 @@ export function FileDropzone({ projectId, roomId, onFileReady }: FileDropzonePro
       try {
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest()
+          xhrMapRef.current.set(localId, xhr)
           xhr.upload.addEventListener('progress', (e) => {
             if (e.lengthComputable) {
               const pct = Math.round((e.loaded / e.total) * 100)
@@ -247,10 +251,18 @@ export function FileDropzone({ projectId, roomId, onFileReady }: FileDropzonePro
             }
           })
           xhr.addEventListener('load', () => {
+            xhrMapRef.current.delete(localId)
             if (xhr.status >= 200 && xhr.status < 300) resolve()
             else reject(new Error(`Upload failed: ${xhr.status}`))
           })
-          xhr.addEventListener('error', () => reject(new Error('Network error')))
+          xhr.addEventListener('error', () => {
+            xhrMapRef.current.delete(localId)
+            reject(new Error('Network error'))
+          })
+          xhr.addEventListener('abort', () => {
+            xhrMapRef.current.delete(localId)
+            reject(new Error('Upload aborted'))
+          })
           xhr.open('PUT', uploadUrl)
           xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
           xhr.send(file)
@@ -362,6 +374,8 @@ export function FileDropzone({ projectId, roomId, onFileReady }: FileDropzonePro
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    // Ignore when the pointer moves to a child element (prevents flicker)
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
     setIsDragOver(false)
   }, [])
 

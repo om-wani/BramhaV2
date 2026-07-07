@@ -73,9 +73,16 @@ function makeFileRow(overrides: Partial<Record<string, unknown>> = {}) {
 function buildMocks() {
   const db: Partial<RlsDbService> = { run: vi.fn() }
   const s3: Partial<S3Client> = { send: vi.fn().mockResolvedValue({}) }
+
+  // Pipeline mock — used by rate-limit logic (INCR + EXPIREAT atomically)
+  const pipelineMock = {
+    incr: vi.fn().mockReturnThis(),
+    expireat: vi.fn().mockReturnThis(),
+    // Default: count=1 (well under limit)
+    exec: vi.fn().mockResolvedValue([[null, 1], [null, 1]]),
+  }
   const redis = {
-    incr: vi.fn().mockResolvedValue(1),
-    expireat: vi.fn().mockResolvedValue(1),
+    pipeline: vi.fn().mockReturnValue(pipelineMock),
     publish: vi.fn().mockResolvedValue(0),
   }
   const config: Partial<ConfigService> = {
@@ -86,7 +93,7 @@ function buildMocks() {
     getOrThrow: vi.fn(),
   }
 
-  return { db, s3, redis, config }
+  return { db, s3, redis, pipelineMock, config }
 }
 
 function buildService(mocks: ReturnType<typeof buildMocks>): FilesService {
@@ -153,7 +160,8 @@ describe('FilesService', () => {
 
   describe('initiateUpload — rate limiting', () => {
     it('throws 429 when user exceeds 10 uploads per hour', async () => {
-      mocks.redis.incr = vi.fn().mockResolvedValue(11)
+      // Pipeline exec returns count=11 (over the 10/hr limit)
+      mocks.pipelineMock.exec.mockResolvedValueOnce([[null, 11], [null, 1]])
 
       await expect(
         svc.initiateUpload(USER_ID, PROJECT_ID, {
@@ -201,10 +209,9 @@ describe('FilesService', () => {
     it('calls S3 getSignedUrl with correct key format staging/projectId/fileId and expiresIn=60', async () => {
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner')
 
-      // Quota check returns 0 used; insert returns empty (no RETURNING clause)
-      vi.mocked(mocks.db.run!)
-        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[{ total: '0' }]])))
-        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]])))
+      // Quota check + INSERT are now in one db.run (two sequential tx calls)
+      vi.mocked(mocks.db.run!).mockImplementationOnce(async (_ctx, fn) =>
+        fn(makeTx([[{ total: '0' }], []])))
 
       const result = await svc.initiateUpload(USER_ID, PROJECT_ID, {
         name: 'report.pdf',
@@ -241,16 +248,16 @@ describe('FilesService', () => {
   describe('confirmUpload', () => {
     it('enqueues BullMQ ingest.file job with fileId, projectId, storageKey', async () => {
       const storageKey = `staging/${PROJECT_ID}/${FILE_ID}`
-      const fileRow = makeFileRow({ scan_status: 'pending', storage_key: storageKey })
+      // Single db.run: UPDATE with scan_status='pending' guard → returns updated row
       const updatedRow = makeFileRow({ scan_status: 'scanning', storage_key: storageKey })
 
-      vi.mocked(mocks.db.run!)
-        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[fileRow]])))
-        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[updatedRow]])))
+      vi.mocked(mocks.db.run!).mockImplementationOnce(async (_ctx, fn) =>
+        fn(makeTx([[updatedRow]])),
+      )
 
       const result = await svc.confirmUpload(USER_ID, PROJECT_ID, FILE_ID)
 
-      // BullMQ queue.add called with correct args
+      // BullMQ queue.add called with correct args after UPDATE succeeds
       const queueInstance = vi.mocked(Queue).mock.results[0]?.value as { add: ReturnType<typeof vi.fn> }
       expect(queueInstance.add).toHaveBeenCalledWith('ingest.file', {
         fileId: FILE_ID,
@@ -263,11 +270,35 @@ describe('FilesService', () => {
     })
 
     it('throws NotFoundException when file not found', async () => {
-      vi.mocked(mocks.db.run!).mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]])))
+      // First db.run (UPDATE pending→scanning) returns no rows → file not found or already past pending
+      // Second db.run (SELECT id existence check) also returns no rows → NotFoundException
+      vi.mocked(mocks.db.run!)
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]]))) // UPDATE → 0 rows
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]]))) // SELECT id → 0 rows
 
       await expect(
         svc.confirmUpload(USER_ID, PROJECT_ID, FILE_ID),
       ).rejects.toThrow(NotFoundException)
+    })
+
+    it('is idempotent: returns current state when file already past pending', async () => {
+      const storageKey = `staging/${PROJECT_ID}/${FILE_ID}`
+      const scanningRow = makeFileRow({ scan_status: 'scanning', storage_key: storageKey })
+
+      // First db.run (UPDATE pending→scanning): 0 rows (already scanning)
+      // Second db.run (SELECT id existence check): file exists
+      // Third db.run (getFile): returns scanning row
+      vi.mocked(mocks.db.run!)
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[]])))           // UPDATE → 0 rows
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[{ id: FILE_ID }]]))) // existence check
+        .mockImplementationOnce(async (_ctx, fn) => fn(makeTx([[scanningRow]]))) // getFile
+
+      const result = await svc.confirmUpload(USER_ID, PROJECT_ID, FILE_ID)
+      expect(result.scanStatus).toBe('scanning')
+
+      // Queue.add must NOT have been called (no double-ingestion)
+      const queueInstance = vi.mocked(Queue).mock.results[0]?.value as { add: ReturnType<typeof vi.fn> }
+      expect(queueInstance.add).not.toHaveBeenCalled()
     })
   })
 
