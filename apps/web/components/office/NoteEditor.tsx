@@ -137,10 +137,17 @@ export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: No
     }
   }, [])
 
+  // Cancel autosave timer when note changes
+  useEffect(() => {
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    }
+  }, [noteId])
+
   const scheduleAutosave = () => {
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
     autosaveTimer.current = setTimeout(async () => {
-      if (!editor) return
+      if (!editor || editor.isDestroyed) return
       setSyncState('syncing')
       try {
         await api.patch(`/projects/${projectId}/notes/${noteId}`, NoteSchema, {
