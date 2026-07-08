@@ -1,6 +1,62 @@
 import net from 'net'
 import { ClamAvDownError } from '../errors.js'
 
+/**
+ * Lightweight health check for the ClamAV daemon.
+ *
+ * Sends a PING command (null-terminated 'z' protocol) and expects PONG back.
+ * Resolves on success, rejects (throws) if the daemon is unreachable.
+ * Used by main.ts to poll for ClamAV recovery after a ClamAvDownError.
+ */
+export function checkClamAvHealth(
+  host = process.env['CLAMAV_HOST'] ?? 'localhost',
+  port = parseInt(process.env['CLAMAV_PORT'] ?? '3310', 10),
+  timeoutMs = 5_000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port })
+    let settled = false
+    let response = ''
+
+    function settle(fn: () => void) {
+      if (settled) return
+      settled = true
+      fn()
+      socket.destroy()
+    }
+
+    socket.setTimeout(timeoutMs, () => {
+      settle(() => reject(new Error('ClamAV PING timeout')))
+    })
+
+    socket.on('error', (err) => {
+      settle(() => reject(err))
+    })
+
+    socket.on('connect', () => {
+      socket.write('zPING\0')
+    })
+
+    socket.on('data', (data: Buffer) => {
+      response += data.toString()
+      const nullIdx = response.indexOf('\0')
+      if (nullIdx === -1) return
+      const resp = response.slice(0, nullIdx).trim()
+      if (resp === 'PONG') {
+        settle(() => resolve())
+      } else {
+        settle(() => reject(new Error(`Unexpected ClamAV PING response: ${resp}`)))
+      }
+    })
+
+    socket.on('end', () => {
+      if (!settled) {
+        settle(() => reject(new Error('ClamAV closed connection before PONG')))
+      }
+    })
+  })
+}
+
 export interface ClamAvResult {
   verdict: 'clean' | 'virus'
   threatName?: string
@@ -75,7 +131,7 @@ export function scanWithClamAv(
 
       const resp = response.slice(0, nullIdx).trim()
 
-      if (resp.endsWith('OK')) {
+      if (resp === 'stream: OK') {
         settle(() => resolve({ verdict: 'clean' }))
         return
       }
@@ -95,14 +151,16 @@ export function scanWithClamAv(
       if (!settled) {
         // Server closed connection before we got a response
         const resp = response.trim()
-        if (resp.endsWith('OK')) {
+        if (resp === 'stream: OK') {
           settle(() => resolve({ verdict: 'clean' }))
-        } else if (resp.includes('FOUND')) {
-          const foundMatch = /stream:\s+(.+)\s+FOUND$/i.exec(resp)
-          const endThreat = foundMatch?.[1] ?? 'unknown'
-          settle(() => resolve({ verdict: 'virus', threatName: endThreat }))
         } else {
-          settle(() => reject(new ClamAvDownError(new Error('ClamAV closed connection unexpectedly'))))
+          const foundMatch = /stream:\s+(.+)\s+FOUND$/i.exec(resp)
+          const endThreat = foundMatch?.[1]
+          if (endThreat) {
+            settle(() => resolve({ verdict: 'virus', threatName: endThreat }))
+          } else {
+            settle(() => reject(new ClamAvDownError(new Error('ClamAV closed connection unexpectedly'))))
+          }
         }
       }
     })

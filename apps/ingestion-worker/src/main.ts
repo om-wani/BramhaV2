@@ -14,8 +14,9 @@ import { EventPublisher } from '@bramha/event-bus'
 import { SecurityGateProcessor, type IngestFileJobData } from './security/security-gate.processor.js'
 import { updateFileStatus } from './security/update-file-status.js'
 import { quarantineFile } from './security/quarantine.js'
-import { promoteFile } from './security/promote.js'
-import { scanWithClamAv } from './security/steps/clamav-scan.js'
+import { promoteFile, deleteFromStaging } from './security/promote.js'
+import { scanWithClamAv, checkClamAvHealth } from './security/steps/clamav-scan.js'
+import { ClamAvDownError } from './security/errors.js'
 import { disarmImage } from './security/steps/disarm/image.js'
 import { disarmPdf } from './security/steps/disarm/pdf.js'
 import { disarmSvg } from './security/steps/disarm/svg.js'
@@ -116,15 +117,16 @@ const processor = new SecurityGateProcessor({
       fileId,
     }),
 
-  promoteFile: (cleanKey, buffer, storageKey, contentType) =>
+  promoteFile: (cleanKey, buffer, _storageKey, contentType) =>
     promoteFile(s3, {
-      stagingBucket: S3_BUCKET_STAGING,
       cleanBucket: S3_BUCKET_CLEAN,
-      storageKey,
       cleanKey,
       buffer,
       contentType,
     }),
+
+  deleteFromStaging: (storageKey) =>
+    deleteFromStaging(s3, S3_BUCKET_STAGING, storageKey),
 
   publisher,
   updateFileStatus,
@@ -146,6 +148,8 @@ const worker = new Worker(
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     connection: redisWorker as any,
+    // Memory budget: concurrency × MAX_FILE_BYTES (default 5 × 100 MB = 500 MB) plus disarmer overhead.
+    // Set NODE_OPTIONS=--max-old-space-size=1024 in the container environment if raising concurrency.
     concurrency: parseInt(process.env['WORKER_CONCURRENCY'] ?? '5', 10),
     // Exponential backoff for ClamAV-down retries
     settings: {
@@ -159,10 +163,30 @@ worker.on('completed', (job: Job) => {
   console.log(JSON.stringify({ event: 'worker.job_completed', jobId: job.id }))
 })
 
-worker.on('failed', (job: Job | undefined, err: Error) => {
+// ── ClamAV down: pause worker and resume when daemon is back ──────────────────
+
+let clamAvCheckInterval: NodeJS.Timeout | null = null
+
+worker.on('failed', async (job: Job | undefined, err: Error) => {
   console.error(
     JSON.stringify({ event: 'worker.job_failed', jobId: job?.id, err: err.message }),
   )
+
+  if (err instanceof ClamAvDownError && !clamAvCheckInterval) {
+    console.error(JSON.stringify({ event: 'clamav.down.worker_paused' }))
+    await worker.pause()
+    clamAvCheckInterval = setInterval(async () => {
+      try {
+        await checkClamAvHealth()
+        await worker.resume()
+        clearInterval(clamAvCheckInterval!)
+        clamAvCheckInterval = null
+        console.log(JSON.stringify({ event: 'clamav.up.worker_resumed' }))
+      } catch {
+        // ClamAV still down — keep waiting
+      }
+    }, 15_000)
+  }
 })
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

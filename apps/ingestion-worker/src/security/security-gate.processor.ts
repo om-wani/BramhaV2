@@ -1,22 +1,20 @@
+import { basename } from 'node:path'
 import type { Job } from 'bullmq'
 import type { ScanStatus } from '@bramha/shared'
+import {
+  FileCleanPayloadSchema,
+  FileQuarantinedPayloadSchema,
+  FileFailedPayloadSchema,
+} from '@bramha/shared'
 import { checkMagic } from './steps/magic-check.js'
 import { checkSize } from './steps/size-check.js'
 import { checkAllowlist, PASSTHROUGH_MIMES } from './steps/allowlist-check.js'
 import { ClamAvDownError } from './errors.js'
 import type { ClamAvResult } from './steps/clamav-scan.js'
+import { IngestFileJobDataSchema } from '../types.js'
+export type { IngestFileJobData } from '../types.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-export interface IngestFileJobData {
-  fileId: string
-  projectId: string
-  userId: string
-  storageKey: string
-  declaredMime: string
-  fileName: string
-  sizeBytes: number
-}
 
 /** Function signature for per-type disarmers. */
 export type Disarmer = (buffer: Buffer, mime: string) => Promise<Buffer>
@@ -33,13 +31,29 @@ export interface SecurityGateDeps {
   /** Move the file from staging → quarantine bucket. */
   quarantineFile: (storageKey: string, projectId: string, fileId: string) => Promise<void>
 
-  /** Write disarmed buffer to clean bucket and remove from staging. */
+  /**
+   * Write disarmed buffer to clean bucket (PutObject only — no staging delete).
+   * The staging delete is handled separately by deleteFromStaging() AFTER the
+   * DB has been committed to 'clean'.
+   *
+   * storageKey is the original staging key, passed so concrete implementations
+   * can use it for logging or deduplication if needed.
+   */
   promoteFile: (
     cleanKey: string,
     buffer: Buffer,
-    stagingKey: string,
+    storageKey: string,
     contentType: string,
   ) => Promise<void>
+
+  /**
+   * Delete the original file from staging (best-effort, called after DB commit).
+   * If this throws, the stale staging object is harmless and can be cleaned up
+   * by a background sweep.
+   *
+   * Optional: if not provided (e.g. in tests), the staging delete step is skipped.
+   */
+  deleteFromStaging?: (storageKey: string) => Promise<void>
 
   /** Redis event publisher. */
   publisher: IPublisher
@@ -131,14 +145,24 @@ function resolveDisarmer(mime: string, overrides?: Map<string, Disarmer>): Disar
  * SecurityGateProcessor — ordered fail-closed gate for file ingestion.
  *
  * Gate order:
+ *   0. Job payload validation (Zod)
  *   1. Size check         → fail → UPDATE failed, emit failed, ack
  *   2. S3 download
  *   3. Magic-byte check   → fail → quarantine, UPDATE quarantined, emit, ack
  *   4. Allowlist check    → fail → quarantine, UPDATE quarantined, emit, ack
  *   5. ClamAV scan        → virus → quarantine, UPDATE, emit; DOWN → THROW (retry)
  *   6. Per-type disarm    → fail → quarantine, UPDATE quarantined, emit, ack
- *   7. Promote to clean   → PUT to clean bucket, DELETE from staging
+ *   7. Promote to clean   → PUT to clean bucket (no staging delete yet)
  *   8. UPDATE clean, emit clean
+ *   9. Delete from staging (best-effort; failure is acceptable)
+ *
+ * Ordering invariant (race-condition fix): the DB status is committed to
+ * 'clean' (step 8) BEFORE the staging object is deleted (step 9). If a
+ * crash occurs between 7 and 8, the file is in the clean bucket but the DB
+ * still shows 'scanning'. A BullMQ retry will re-download from staging
+ * (still present), re-process, and complete correctly. If a crash occurs
+ * between 8 and 9, the staging object is stale but harmless — a background
+ * cleanup sweep can remove it.
  *
  * Any unexpected exception (except ClamAvDownError) is caught, the file is
  * quarantined (if downloaded) or failed, and the job is acked to prevent
@@ -147,9 +171,15 @@ function resolveDisarmer(mime: string, overrides?: Map<string, Disarmer>): Disar
 export class SecurityGateProcessor {
   constructor(private readonly deps: SecurityGateDeps) {}
 
-  async process(job: Job<IngestFileJobData>): Promise<void> {
+  async process(job: Job<unknown>): Promise<void> {
+    // ── Step 0: Validate job payload ─────────────────────────────────────────
+    // Throw on invalid payload — BullMQ moves the job to the failed set.
+    // We cannot update the DB without a valid fileId.
     const { fileId, projectId, storageKey, declaredMime, fileName, sizeBytes } =
-      job.data as IngestFileJobData
+      IngestFileJobDataSchema.parse(job.data)
+
+    // Sanitize fileName to prevent path traversal in S3 clean key
+    const safeFileName = basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_')
 
     const log = (event: string, extra?: Record<string, unknown>) =>
       console.log(JSON.stringify({ event, fileId, projectId, ...extra }))
@@ -162,11 +192,9 @@ export class SecurityGateProcessor {
       if (!sizeResult.ok) {
         log('security.gate.size_fail', { sizeBytes })
         await this.deps.updateFileStatus(fileId, 'failed', { reason: 'file_too_large', sizeBytes })
-        await this.deps.publisher.publish(failedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: 'file_too_large',
-        })
+        const failPayload = { fileId, projectId, reason: 'file_too_large' }
+        FileFailedPayloadSchema.parse(failPayload)
+        await this.deps.publisher.publish(failedChannel(projectId), failPayload)
         return
       }
 
@@ -177,11 +205,9 @@ export class SecurityGateProcessor {
       } catch (downloadErr) {
         log('security.gate.download_error', { err: String(downloadErr) })
         await this.deps.updateFileStatus(fileId, 'failed', { reason: 's3_download_error' })
-        await this.deps.publisher.publish(failedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: 's3_download_error',
-        })
+        const failPayload = { fileId, projectId, reason: 's3_download_error' }
+        FileFailedPayloadSchema.parse(failPayload)
+        await this.deps.publisher.publish(failedChannel(projectId), failPayload)
         return
       }
 
@@ -199,11 +225,9 @@ export class SecurityGateProcessor {
           declaredMime,
           detectedMime: magicResult.detectedMime,
         })
-        await this.deps.publisher.publish(quarantinedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: magicResult.reason ?? 'mime_mismatch',
-        })
+        const quarPayload = { fileId, projectId, reason: magicResult.reason ?? 'mime_mismatch' }
+        FileQuarantinedPayloadSchema.parse(quarPayload)
+        await this.deps.publisher.publish(quarantinedChannel(projectId), quarPayload)
         return
       }
 
@@ -216,11 +240,9 @@ export class SecurityGateProcessor {
           reason: 'mime_not_allowed',
           declaredMime,
         })
-        await this.deps.publisher.publish(quarantinedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: 'mime_not_allowed',
-        })
+        const quarPayload = { fileId, projectId, reason: 'mime_not_allowed' }
+        FileQuarantinedPayloadSchema.parse(quarPayload)
+        await this.deps.publisher.publish(quarantinedChannel(projectId), quarPayload)
         return
       }
 
@@ -237,12 +259,9 @@ export class SecurityGateProcessor {
           reason: 'virus_found',
           threatName: scanResult.threatName,
         })
-        await this.deps.publisher.publish(quarantinedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: 'virus_found',
-          threatName: scanResult.threatName,
-        })
+        const quarPayload = { fileId, projectId, reason: 'virus_found', threatName: scanResult.threatName }
+        FileQuarantinedPayloadSchema.parse(quarPayload)
+        await this.deps.publisher.publish(quarantinedChannel(projectId), quarPayload)
         return
       }
 
@@ -263,32 +282,38 @@ export class SecurityGateProcessor {
           declaredMime,
           error: String(disarmErr),
         })
-        await this.deps.publisher.publish(quarantinedChannel(projectId), {
-          fileId,
-          projectId,
-          reason: 'disarm_failed',
-        })
+        const quarPayload = { fileId, projectId, reason: 'disarm_failed' }
+        FileQuarantinedPayloadSchema.parse(quarPayload)
+        await this.deps.publisher.publish(quarantinedChannel(projectId), quarPayload)
         return
       }
 
-      // ── Steps 7 & 8: Promote + mark clean ───────────────────────────────
-      const cleanKey = `${projectId}/${fileId}/${fileName}`
+      // ── Step 7: Promote to clean bucket (PutObject only) ─────────────────
+      const cleanKey = `${projectId}/${fileId}/${safeFileName}`
       log('security.gate.promoting', { cleanKey })
-
       await this.deps.promoteFile(cleanKey, disarmedBuffer, storageKey, declaredMime)
 
+      // ── Step 8: Commit DB status + emit event (BEFORE staging delete) ─────
       const wasDisarmed = !PASSTHROUGH_MIMES.has(declaredMime)
       const scanReport = { verdict: 'clean' as const, disarmed: wasDisarmed }
 
       await this.deps.updateFileStatus(fileId, 'clean', scanReport)
-      await this.deps.publisher.publish(cleanChannel(projectId), {
-        fileId,
-        projectId,
-        storageKey: `clean/${cleanKey}`,
-        scanReport,
-      })
+
+      const cleanPayload = { fileId, projectId, storageKey: `clean/${cleanKey}`, scanReport }
+      FileCleanPayloadSchema.parse(cleanPayload)
+      await this.deps.publisher.publish(cleanChannel(projectId), cleanPayload)
 
       log('security.gate.clean', { disarmed: wasDisarmed })
+
+      // ── Step 9: Delete from staging (best-effort) ─────────────────────────
+      // DB is committed and event emitted. A stale staging object is harmless.
+      try {
+        if (this.deps.deleteFromStaging) {
+          await this.deps.deleteFromStaging(storageKey)
+        }
+      } catch (deleteErr) {
+        log('security.gate.staging_delete_failed', { err: String(deleteErr) })
+      }
     } catch (err) {
       // ── ClamAV down: rethrow so BullMQ retries ───────────────────────────
       if (err instanceof ClamAvDownError) {
@@ -312,18 +337,14 @@ export class SecurityGateProcessor {
         if (fileBuffer !== undefined) {
           await this.deps.quarantineFile(storageKey, projectId, fileId)
           await this.deps.updateFileStatus(fileId, 'quarantined', { reason: 'unexpected_error' })
-          await this.deps.publisher.publish(quarantinedChannel(projectId), {
-            fileId,
-            projectId,
-            reason: 'unexpected_error',
-          })
+          const quarPayload = { fileId, projectId, reason: 'unexpected_error' }
+          FileQuarantinedPayloadSchema.parse(quarPayload)
+          await this.deps.publisher.publish(quarantinedChannel(projectId), quarPayload)
         } else {
           await this.deps.updateFileStatus(fileId, 'failed', { reason: 'unexpected_error' })
-          await this.deps.publisher.publish(failedChannel(projectId), {
-            fileId,
-            projectId,
-            reason: 'unexpected_error',
-          })
+          const failPayload = { fileId, projectId, reason: 'unexpected_error' }
+          FileFailedPayloadSchema.parse(failPayload)
+          await this.deps.publisher.publish(failedChannel(projectId), failPayload)
         }
       } catch (fallbackErr) {
         console.error(

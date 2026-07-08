@@ -57,7 +57,10 @@ export async function disarmZip(buffer: Buffer, _mime?: string): Promise<Buffer>
           return
         }
 
-        // Per-entry ratio check
+        // Per-entry ratio check.
+        // Note: entry.compressedSize is attacker-controlled from the ZIP central directory.
+        // This per-entry check is best-effort; the overall ratio and absolute 500 MB cap
+        // (checked against real decompressed sizes) are the primary bomb-prevention guards.
         if (entry.compressedSize > 0) {
           const entryRatio = entry.uncompressedSize / entry.compressedSize
           if (entryRatio > MAX_RATIO) {

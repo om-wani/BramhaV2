@@ -33,6 +33,11 @@ export async function disarmSvg(buffer: Buffer, _mime?: string): Promise<Buffer>
       'onkeydown',
       'onkeyup',
       'onkeypress',
+      // Prevent SSRF via external references on <use> and <image> elements.
+      // DOMPurify may allow href/xlink:href pointing to external URLs in svg profile.
+      // Blocking both attributes entirely is the safest approach in this context.
+      'href',
+      'xlink:href',
     ],
     FORCE_BODY: false,
   })

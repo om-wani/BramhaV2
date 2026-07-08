@@ -21,11 +21,17 @@ import { PDFDocument } from 'pdf-lib'
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function disarmPdf(buffer: Buffer, _mime?: string): Promise<Buffer> {
-  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer), {
-    ignoreEncryption: true,
-    // Suppress errors from malformed PDFs so we can still re-save a cleaned copy
-    updateMetadata: false,
-  })
+  let pdfDoc: PDFDocument
+  try {
+    pdfDoc = await PDFDocument.load(new Uint8Array(buffer), {
+      // Do NOT set ignoreEncryption: encrypted PDFs hide catalog entries (JS, /OpenAction)
+      // behind encrypted streams — stripping them is impossible without decryption.
+      // Treat encrypted or corrupt PDFs as untrusted and quarantine them.
+      updateMetadata: false,
+    })
+  } catch {
+    throw new Error('encrypted_or_corrupt_pdf')
+  }
 
   // Attempt to remove dangerous catalog entries via low-level dict access.
   // This is best-effort; pdf-lib's re-serialization is the primary mechanism.

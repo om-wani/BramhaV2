@@ -63,7 +63,10 @@ function splitCsvLine(line: string): string[] {
 export async function disarmCsv(buffer: Buffer, _mime?: string): Promise<Buffer> {
   const input = buffer.toString('utf-8')
 
-  const sanitized = input
+  // Normalize line endings before splitting so CRLF files are handled correctly
+  const normalized = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  const sanitized = normalized
     .split('\n')
     .map((line) => {
       const cells = splitCsvLine(line)

@@ -26,8 +26,9 @@ const mockFileType = vi.mocked(fileTypeFromBuffer)
 
 // ── Test constants ────────────────────────────────────────────────────────────
 
-const BASE_FILE_ID = '00000000-0000-0000-0000-000000000001'
-const BASE_PROJECT_ID = '00000000-0000-0000-0000-000000000002'
+// Valid RFC 4122 v4 UUIDs (version digit = 4, variant = 8)
+const BASE_FILE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const BASE_PROJECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const BASE_STORAGE_KEY = 'uploads/test-file'
 
 function makeJobData(overrides: {
@@ -42,7 +43,7 @@ function makeJobData(overrides: {
   return {
     fileId: BASE_FILE_ID,
     projectId: BASE_PROJECT_ID,
-    userId: '00000000-0000-0000-0000-000000000003',
+    userId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     storageKey: BASE_STORAGE_KEY,
     declaredMime: 'application/pdf',
     fileName: 'test.pdf',
@@ -283,8 +284,43 @@ describe('SecurityGateProcessor', () => {
     expect(mocks.mockQuarantineFile).not.toHaveBeenCalled()
   })
 
-  // ── 6. Polyglot JPEG/HTML ─────────────────────────────────────────────────
-  it('6. Polyglot JPEG/HTML — mime_mismatch → quarantined', async () => {
+  // ── 6. Polyglot JPEG/HTML — magic passes, image disarmer re-encodes → clean ─
+  it('6. Polyglot JPEG/HTML — magic passes, sharp re-encodes, strips HTML → clean', async () => {
+    // True polyglot: valid JPEG magic bytes prefix + embedded HTML payload.
+    // Magic check detects image/jpeg (matches declared) → passes.
+    // ClamAV clears it. Image disarmer re-encodes through sharp, stripping HTML.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockFileType.mockResolvedValue({ mime: 'image/jpeg', ext: 'jpg' } as any)
+
+    const polyglotBuffer = Buffer.from('\xFF\xD8\xFF<html>evil</html>')
+    const disarmedBuffer = Buffer.from('\xFF\xD8\xFF\xE0clean-jpeg-bytes')
+
+    const mockImageDisarmer = vi
+      .fn<(b: Buffer, m: string) => Promise<Buffer>>()
+      .mockResolvedValue(disarmedBuffer)
+
+    const { processor, mocks } = makeProcessor({
+      downloadBuffer: polyglotBuffer,
+      disarmers: new Map<string, Disarmer>([['image/jpeg', mockImageDisarmer]]),
+    })
+
+    await processor.process(makeJob(makeJobData({ declaredMime: 'image/jpeg', fileName: 'photo.jpg' })))
+
+    expect(mockImageDisarmer).toHaveBeenCalledWith(polyglotBuffer, 'image/jpeg')
+    expect(mocks.mockUpdateFileStatus).toHaveBeenCalledWith(
+      BASE_FILE_ID, 'clean',
+      expect.objectContaining({ verdict: 'clean', disarmed: true }),
+    )
+    expect(mocks.mockPublish).toHaveBeenCalledWith(
+      `ingest.file.clean:${BASE_PROJECT_ID}`,
+      expect.objectContaining({ scanReport: { verdict: 'clean', disarmed: true } }),
+    )
+    expect(mocks.mockQuarantineFile).not.toHaveBeenCalled()
+  })
+
+  // ── 6b. HTML declared as JPEG — mime_mismatch → quarantined ──────────────
+  it('6b. HTML declared as JPEG — magic detects text/html → mime_mismatch → quarantined', async () => {
+    // Attacker renames an HTML file as photo.jpg. Magic check detects text/html.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockFileType.mockResolvedValue({ mime: 'text/html', ext: 'html' } as any)
 
