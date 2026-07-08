@@ -14,6 +14,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module'
 import { ArtifactsModule } from './modules/artifacts/artifacts.module'
 import { FilesModule } from './modules/files/files.module'
 import { KnowledgeModule } from './modules/knowledge/knowledge.module'
+import { NotesModule } from './modules/notes/notes.module'
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { KnowledgeModule } from './modules/knowledge/knowledge.module'
     ArtifactsModule,
     FilesModule,
     KnowledgeModule,
+    NotesModule,
   ],
 })
 export class AppModule {}

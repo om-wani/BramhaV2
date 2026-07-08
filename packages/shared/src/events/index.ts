@@ -38,3 +38,6 @@ export * from './conversations.js'
 
 // File ingestion scan events
 export * from './files.js'
+
+// Note delta events
+export * from './notes.js'

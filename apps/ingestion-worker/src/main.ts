@@ -32,6 +32,7 @@ import {
   ExtractionPipelineProcessor,
   type ExtractFileJobData,
 } from './extraction-pipeline.processor.js'
+import { NoteDeltaProcessor } from './note-delta.processor.js'
 import { sql } from './db.js'
 
 // ── Env validation ────────────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ const s3 = new S3Client({
 
 const redisWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisExtractionWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
+const redisNoteDeltaWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisPublisher = new Redis(REDIS_URL)
 const publisher = new EventPublisher(redisPublisher)
 
@@ -205,6 +207,23 @@ try {
   )
 }
 
+// ── Note delta processor ──────────────────────────────────────────────────────
+
+const noteDeltaProcessor = new NoteDeltaProcessor({
+  sql,
+  publisher,
+  // If no embedding provider is configured, pass a sentinel that throws
+  // 'no_embedding_provider' so the job fails with a clear error code.
+  embeddingProvider: embeddingProvider ?? {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async embed(_: string[]) {
+      throw new Error('no_embedding_provider')
+    },
+    dimension: 1536,
+    model: 'no-op',
+  },
+})
+
 // ── Extraction pipeline processor ────────────────────────────────────────────
 
 const extractionProcessor = new ExtractionPipelineProcessor({
@@ -224,6 +243,29 @@ const extractionProcessor = new ExtractionPipelineProcessor({
 })
 
 // ── BullMQ Workers ────────────────────────────────────────────────────────────
+
+const noteDeltaWorker = new Worker(
+  'note-delta',
+  async (job: Job<unknown>) => {
+    if (job.name !== 'note.delta') {
+      console.log(JSON.stringify({ event: 'note_delta_worker.unknown_job', jobName: job.name }))
+      return
+    }
+    await noteDeltaProcessor.process(job)
+  },
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    connection: redisNoteDeltaWorker as any,
+    concurrency: parseInt(process.env['NOTE_DELTA_CONCURRENCY'] ?? '5', 10),
+  },
+)
+
+noteDeltaWorker.on('completed', (job: Job) => {
+  console.log(JSON.stringify({ event: 'note_delta_worker.job_completed', jobId: job.id }))
+})
+noteDeltaWorker.on('failed', (job: Job | undefined, err: Error) => {
+  console.error(JSON.stringify({ event: 'note_delta_worker.job_failed', jobId: job?.id, err: err.message }))
+})
 
 const worker = new Worker(
   'ingestion',
@@ -309,10 +351,11 @@ extractionWorker.on('failed', (job: Job | undefined, err: Error) => {
 
 async function shutdown(signal: string) {
   console.log(JSON.stringify({ event: 'worker.shutdown', signal }))
-  await Promise.all([worker.close(), extractionWorker.close()])
+  await Promise.all([worker.close(), extractionWorker.close(), noteDeltaWorker.close()])
   await Promise.all([
     redisWorker.quit(),
     redisExtractionWorker.quit(),
+    redisNoteDeltaWorker.quit(),
     redisPublisher.quit(),
     redisQueueConn.quit(),
   ])
@@ -325,4 +368,4 @@ process.on('unhandledRejection', (reason) => {
   console.error(JSON.stringify({ event: 'worker.unhandled_rejection', err: String(reason) }))
 })
 
-console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction'] }))
+console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction', 'note-delta'] }))
