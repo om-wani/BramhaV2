@@ -29,7 +29,7 @@ export class PdfExtractor implements Extractor {
         sections.push({ headingTrail: ['Page 1'], text })
       }
     } else {
-      // Split full text evenly across page count
+      // Approximation: pdf-parse returns all text concatenated; splitting by line count is a best-effort heuristic.
       const lines = result.text.split('\n')
       const linesPerPage = Math.max(1, Math.ceil(lines.length / numpages))
 

@@ -31,6 +31,18 @@ import { chunkSections } from './chunking.js'
 import { embedChunks } from './embedder.js'
 import { upsertKnowledgeChunks } from './knowledge-writer.js'
 
+// ── Status type ───────────────────────────────────────────────────────────────
+
+export type IngestionJobStatus =
+  | 'queued'
+  | 'security_gate'
+  | 'extracting'
+  | 'chunking'
+  | 'embedding'
+  | 'done'
+  | 'failed'
+  | 'quarantined'
+
 // ── Job payload schema ────────────────────────────────────────────────────────
 
 export const ExtractFileJobDataSchema = z.object({
@@ -81,6 +93,24 @@ export class ExtractionPipelineProcessor {
     let jobId: string | undefined
 
     try {
+      // ── Pre-flight: Verify fileId belongs to this projectId ─────────────────
+      // Guards against tampered BullMQ job payloads that specify a fileId from
+      // a different project.
+      const fileRows = await this.deps.sql`
+        SELECT id FROM files WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid
+      `
+      if (fileRows.length === 0) {
+        console.error(
+          JSON.stringify({ event: 'extraction.file_not_found_in_project', fileId, projectId }),
+        )
+        // Cannot update ingestion_job since jobId is not yet created.
+        // Re-throw as a non-retryable error by returning cleanly (BullMQ acks).
+        const failedPayload = { fileId, projectId, reason: 'file_not_found_in_project' }
+        ExtractionFailedPayloadSchema.parse(failedPayload)
+        await this.deps.publisher.publish(extractionFailedChannel(projectId), failedPayload)
+        return
+      }
+
       // ── Step 1: INSERT ingestion_job ────────────────────────────────────────
       const inserted = await this.deps.sql<[{ id: string }]>`
         INSERT INTO ingestion_jobs
@@ -203,7 +233,7 @@ export class ExtractionPipelineProcessor {
     }
   }
 
-  private async updateJobStatus(jobId: string, status: string): Promise<void> {
+  private async updateJobStatus(jobId: string, status: IngestionJobStatus): Promise<void> {
     await this.deps.sql`
       UPDATE ingestion_jobs
       SET status = ${status}, updated_at = NOW()

@@ -208,14 +208,22 @@ export class FilesService {
 
   async confirmUpload(userId: string, projectId: string, fileId: string): Promise<FileDto> {
     // 1. Atomically transition 'pending' → 'scanning' (idempotency guard prevents double-ingestion)
+    // Also INSERT an ingestion_jobs row with status='queued' so the lifecycle is tracked from here.
     const updated = await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      return tx<FileRow[]>`
+      const rows = await tx<FileRow[]>`
         UPDATE files
         SET scan_status = 'scanning', updated_at = now()
         WHERE id = ${fileId}::uuid AND project_id = ${projectId}::uuid AND scan_status = 'pending'
         RETURNING id, project_id, uploaded_by, room_id, name, declared_mime, detected_mime,
                   size_bytes::text AS size_bytes, storage_key, scan_status, scan_report, created_at, updated_at
       `
+      if (rows[0]) {
+        await tx`
+          INSERT INTO ingestion_jobs (project_id, kind, file_id, status)
+          VALUES (${projectId}::uuid, 'file', ${fileId}::uuid, 'queued')
+        `
+      }
+      return rows
     })
 
     if (!updated[0]) {

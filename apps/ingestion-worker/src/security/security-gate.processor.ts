@@ -1,5 +1,6 @@
 import { basename } from 'node:path'
 import type { Job } from 'bullmq'
+import type postgres from 'postgres'
 import type { ScanStatus } from '@bramha/shared'
 import {
   FileCleanPayloadSchema,
@@ -91,6 +92,13 @@ export interface SecurityGateDeps {
    * the clean status is already committed at this point.
    */
   onFileCleaned?: (data: IngestFileJobData, cleanKey: string) => Promise<void>
+
+  /**
+   * Optional direct postgres.js Sql client (BYPASSRLS).
+   * Used to update ingestion_job lifecycle status. Best-effort — errors are
+   * logged and do not fail the gate.
+   */
+  sql?: postgres.Sql | undefined
 }
 
 // ── Channel helpers ──────────────────────────────────────────────────────────
@@ -194,6 +202,24 @@ export class SecurityGateProcessor {
 
     const log = (event: string, extra?: Record<string, unknown>) =>
       console.log(JSON.stringify({ event, fileId, projectId, ...extra }))
+
+    // ── Best-effort: mark ingestion_job as security_gate ─────────────────────
+    // Row was inserted as 'queued' during confirmUpload. Update to 'security_gate'
+    // so callers can observe the lifecycle. No-op if the row doesn't exist yet.
+    if (this.deps.sql) {
+      try {
+        await this.deps.sql`
+          UPDATE ingestion_jobs
+          SET status = 'security_gate', updated_at = now()
+          WHERE kind      = 'file'
+            AND file_id   = ${fileId}::uuid
+            AND project_id = ${projectId}::uuid
+            AND status    = 'queued'
+        `
+      } catch (lifecycleErr) {
+        log('security.gate.lifecycle_update_failed', { err: String(lifecycleErr) })
+      }
+    }
 
     let fileBuffer: Buffer | undefined
 

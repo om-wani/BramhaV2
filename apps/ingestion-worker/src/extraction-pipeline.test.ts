@@ -28,10 +28,15 @@ function makeEmbeddingProvider(
 function makeSql() {
   let insertIdCounter = 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sql = vi.fn(async (): Promise<any[]> => {
+  const sql: any = vi.fn(async (): Promise<any[]> => {
     insertIdCounter++
     return [{ id: `job-id-${insertIdCounter}` }]
   })
+  // Mock sql.begin() — runs the callback with the same sql mock as the transaction object
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sql.begin = async (cb: (tx: any) => Promise<void>) => {
+    await cb(sql)
+  }
   return sql
 }
 
@@ -106,12 +111,16 @@ describe('ExtractionPipelineProcessor', () => {
 
     const sqlCalls: string[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sql = vi.fn(async (...args: any[]): Promise<any[]> => {
+    const sql: any = vi.fn(async (...args: any[]): Promise<any[]> => {
       // Template literal first element is the query string array
       const queryStr: unknown = Array.isArray(args[0]) ? args[0][0] : ''
       sqlCalls.push(String(queryStr))
       return [{ id: 'job-123' }]
     })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sql.begin = async (cb: (tx: any) => Promise<void>) => {
+      await cb(sql)
+    }
 
     const publisher = makePublisher()
     const processor = new ExtractionPipelineProcessor({

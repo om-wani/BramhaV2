@@ -132,10 +132,12 @@ export function chunkSections(
 
     for (const chunk of sectionChunks) {
       if (chunk.tokenCount < MIN_CHUNK_TOKENS && rawChunks.length > 0) {
-        // Merge tiny chunk into previous
+        // Merge tiny chunk into previous; adopt the tiny chunk's headingTrail
+        // so the merged chunk reflects the section the appended content belongs to.
         const prev = rawChunks[rawChunks.length - 1]!
         prev.content = prev.content + '\n' + chunk.content
         prev.tokenCount = estimateTokenCount(prev.content)
+        prev.headingTrail = chunk.headingTrail
       } else {
         rawChunks.push(chunk)
       }

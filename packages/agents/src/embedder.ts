@@ -236,11 +236,15 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
  * Create an embedding provider based on environment configuration.
  *
  * If OLLAMA_EMBEDDING_MODEL is set → OllamaEmbeddingProvider.
- * Otherwise → OpenAIEmbeddingProvider (requires OPENAI_API_KEY).
+ * If OPENAI_API_KEY is set → OpenAIEmbeddingProvider.
+ * Otherwise → throws Error('no_embedding_provider').
  */
 export function createEmbeddingProvider(): EmbeddingProvider {
   if (process.env['OLLAMA_EMBEDDING_MODEL']) {
     return new OllamaEmbeddingProvider()
   }
-  return new OpenAIEmbeddingProvider()
+  if (process.env['OPENAI_API_KEY']) {
+    return new OpenAIEmbeddingProvider()
+  }
+  throw new Error('no_embedding_provider')
 }

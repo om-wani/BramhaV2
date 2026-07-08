@@ -12,7 +12,6 @@
 import { Worker, Queue, type Job } from 'bullmq'
 import { Redis } from 'ioredis'
 import { S3Client, GetObjectCommand, type GetObjectCommandOutput } from '@aws-sdk/client-s3'
-import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { Readable } from 'stream'
 import { EventPublisher } from '@bramha/event-bus'
 import { createEmbeddingProvider } from '@bramha/agents'
@@ -163,6 +162,8 @@ const processor = new SecurityGateProcessor({
   scanWithClamAv: (buf) => scanWithClamAv(buf),
   disarmers,
 
+  sql,
+
   // After marking file clean, enqueue extraction job
   onFileCleaned: async (data: IngestFileJobData, cleanKey: string) => {
     const jobData: ExtractFileJobData = {
@@ -189,15 +190,16 @@ const processor = new SecurityGateProcessor({
 
 // ── Embedding provider ────────────────────────────────────────────────────────
 
-// Lazily initialised — only created if OPENAI_API_KEY or OLLAMA_EMBEDDING_MODEL is set.
-// Silently skip embedding if neither is configured (e.g., in development).
+// createEmbeddingProvider() throws 'no_embedding_provider' when neither
+// OPENAI_API_KEY nor OLLAMA_EMBEDDING_MODEL is set. The extraction worker
+// will fail each job with that error code rather than silently zero-embed.
 let embeddingProvider: ReturnType<typeof createEmbeddingProvider> | null = null
 try {
   embeddingProvider = createEmbeddingProvider()
 } catch (err) {
   console.warn(
     JSON.stringify({
-      event: 'embedding_provider.init_skipped',
+      event: 'embedding_provider.init_failed',
       reason: String(err),
     }),
   )
@@ -209,10 +211,12 @@ const extractionProcessor = new ExtractionPipelineProcessor({
   downloadCleanFile,
   sql,
   publisher,
+  // If no embedding provider is configured, pass a sentinel that throws
+  // 'no_embedding_provider' so the job fails with a clear error code.
   embeddingProvider: embeddingProvider ?? {
-    // No-op fallback for when no embedding provider is configured
-    async embed(texts: string[]) {
-      return texts.map(() => new Array(1536).fill(0) as number[])
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async embed(_: string[]) {
+      throw new Error('no_embedding_provider')
     },
     dimension: 1536,
     model: 'no-op',
@@ -317,8 +321,8 @@ async function shutdown(signal: string) {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
 process.on('SIGINT', () => void shutdown('SIGINT'))
+process.on('unhandledRejection', (reason) => {
+  console.error(JSON.stringify({ event: 'worker.unhandled_rejection', err: String(reason) }))
+})
 
 console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction'] }))
-
-// ── Suppress unused import ────────────────────────────────────────────────────
-void (PutObjectCommand)
