@@ -1,13 +1,11 @@
-import { RoomPlaceholder } from '../components/room-placeholder'
+import { StorageRoom } from '@/components/storage/StorageRoom'
 
 export const metadata = { title: 'Storage Room — BramhaV2' }
 
-export default function StoragePage() {
-  return (
-    <RoomPlaceholder
-      icon="🗄"
-      name="Storage Room"
-      description="Files, artifacts, and knowledge sources for this project."
-    />
-  )
+interface PageProps {
+  params: { projectId: string }
+}
+
+export default function StoragePage({ params }: PageProps) {
+  return <StorageRoom projectId={params.projectId} />
 }
