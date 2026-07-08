@@ -46,6 +46,15 @@ CREATE POLICY note_links_tenant ON note_links
     from_note IN (SELECT id FROM notes WHERE project_id IN (
       SELECT project_id FROM project_members WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
     ))
+  )
+  WITH CHECK (
+    from_note IN (SELECT id FROM notes WHERE project_id IN (
+      SELECT project_id FROM project_members WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+    ))
+    AND
+    to_note IN (SELECT id FROM notes WHERE project_id IN (
+      SELECT project_id FROM project_members WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+    ))
   );
 
 GRANT SELECT, INSERT, DELETE ON note_links TO bramha_app;

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger, Inject } from '@nestjs/common'
+import { Injectable, BadRequestException, NotFoundException, Logger, Inject, OnModuleDestroy } from '@nestjs/common'
 import { Queue } from 'bullmq'
 import type Redis from 'ioredis'
 import type postgres from 'postgres'
@@ -59,7 +59,7 @@ const DEBOUNCE_TTL_SECONDS = 30
 const DEBOUNCE_DELAY_MS = 5000
 
 @Injectable()
-export class NotesService {
+export class NotesService implements OnModuleDestroy {
   private readonly logger = new Logger(NotesService.name)
   private readonly noteDeltaQueue: Queue
 
@@ -71,6 +71,10 @@ export class NotesService {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       connection: redis as any,
     })
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.noteDeltaQueue.close()
   }
 
   // ── Create ─────────────────────────────────────────────────────────────────

@@ -63,6 +63,7 @@ export class NoteDeltaProcessor {
       // Step 2: Empty content — ack job cleanly, no chunks
       if (!contentMd.trim()) {
         log('note_delta.empty_content')
+        await this.deps.publisher.publish(noteDeltaDoneChannel(projectId), { noteId, projectId, chunkCount: 0 })
         return
       }
 
@@ -77,6 +78,7 @@ export class NoteDeltaProcessor {
 
       if (chunks.length === 0) {
         log('note_delta.no_chunks')
+        await this.deps.publisher.publish(noteDeltaDoneChannel(projectId), { noteId, projectId, chunkCount: 0 })
         return
       }
 

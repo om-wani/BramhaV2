@@ -93,7 +93,7 @@ describe('NoteDeltaProcessor', () => {
     expect(failedCalls).toHaveLength(0)
   })
 
-  it('empty contentMd → job acked, no chunks, no event', async () => {
+  it('empty contentMd → job acked, no chunks, done event emitted with chunkCount=0', async () => {
     const sql = makeSql()
     const publisher = makePublisher()
 
@@ -106,8 +106,11 @@ describe('NoteDeltaProcessor', () => {
 
     await processor.process(makeJob({ contentMd: '   ' }))
 
-    // No events emitted at all
-    expect(publisher.calls).toHaveLength(0)
+    // Done event emitted with chunkCount=0
+    const doneCalls = publisher.calls.filter((c) => c.channel.startsWith('note.delta.done:'))
+    expect(doneCalls).toHaveLength(1)
+    const payload = doneCalls[0]!.payload as { chunkCount: number }
+    expect(payload.chunkCount).toBe(0)
     // SQL not called (no chunks to write)
     expect(sql).not.toHaveBeenCalled()
   })

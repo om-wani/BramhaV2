@@ -37,7 +37,7 @@ export const UpdateNoteInputSchema = z.object({
 export type UpdateNoteInput = z.infer<typeof UpdateNoteInputSchema>
 
 export const MoveFolderInputSchema = z.object({
-  folderPath: z.string().regex(/^\/[^<>:"\\|?*]*/),
+  folderPath: z.string().regex(/^\/[^<>:"\\|?*]*$/),
 }).strict()
 
 export type MoveFolderInput = z.infer<typeof MoveFolderInputSchema>
