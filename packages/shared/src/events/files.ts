@@ -1,6 +1,30 @@
 import { z } from 'zod'
 import { uuidSchema } from '../schemas/common.js'
 
+// ── ingest.extraction.done ────────────────────────────────────────────────────
+
+export const ExtractionDonePayloadSchema = z
+  .object({
+    fileId: uuidSchema,
+    projectId: uuidSchema,
+    chunkCount: z.number().int().nonnegative(),
+  })
+  .strict()
+
+export type ExtractionDonePayload = z.infer<typeof ExtractionDonePayloadSchema>
+
+// ── ingest.extraction.failed ──────────────────────────────────────────────────
+
+export const ExtractionFailedPayloadSchema = z
+  .object({
+    fileId: uuidSchema,
+    projectId: uuidSchema,
+    reason: z.string().min(1),
+  })
+  .strict()
+
+export type ExtractionFailedPayload = z.infer<typeof ExtractionFailedPayloadSchema>
+
 // ── ingest.file.clean ─────────────────────────────────────────────────────────
 
 export const FileCleanPayloadSchema = z

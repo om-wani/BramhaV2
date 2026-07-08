@@ -1,16 +1,21 @@
 /**
  * Ingestion Worker — entry point.
  *
- * Starts a BullMQ Worker listening to the 'ingestion' queue.
- * Routes 'ingest.file' jobs through the SecurityGateProcessor.
- * Gracefully drains on SIGTERM / SIGINT.
+ * Starts two BullMQ Workers:
+ *   1. 'ingestion' queue  → SecurityGateProcessor (ingest.file jobs)
+ *   2. 'extraction' queue → ExtractionPipelineProcessor (extract.file jobs)
+ *
+ * The security gate enqueues an 'extract.file' job after marking a file clean.
+ * Gracefully drains both workers on SIGTERM / SIGINT.
  */
 
-import { Worker, type Job } from 'bullmq'
+import { Worker, Queue, type Job } from 'bullmq'
 import { Redis } from 'ioredis'
 import { S3Client, GetObjectCommand, type GetObjectCommandOutput } from '@aws-sdk/client-s3'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { Readable } from 'stream'
 import { EventPublisher } from '@bramha/event-bus'
+import { createEmbeddingProvider } from '@bramha/agents'
 import { SecurityGateProcessor, type IngestFileJobData } from './security/security-gate.processor.js'
 import { updateFileStatus } from './security/update-file-status.js'
 import { quarantineFile } from './security/quarantine.js'
@@ -24,6 +29,11 @@ import { disarmZip } from './security/steps/disarm/zip.js'
 import { disarmCsv } from './security/steps/disarm/csv.js'
 import { passthroughDisarm } from './security/steps/disarm/passthrough.js'
 import type { Disarmer } from './security/security-gate.processor.js'
+import {
+  ExtractionPipelineProcessor,
+  type ExtractFileJobData,
+} from './extraction-pipeline.processor.js'
+import { sql } from './db.js'
 
 // ── Env validation ────────────────────────────────────────────────────────────
 
@@ -57,6 +67,7 @@ const s3 = new S3Client({
 // ── Redis clients ─────────────────────────────────────────────────────────────
 
 const redisWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
+const redisExtractionWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisPublisher = new Redis(REDIS_URL)
 const publisher = new EventPublisher(redisPublisher)
 
@@ -74,10 +85,29 @@ async function downloadFile(storageKey: string): Promise<Buffer> {
   const response = (await s3.send(
     new GetObjectCommand({ Bucket: S3_BUCKET_STAGING, Key: storageKey }),
   )) as GetObjectCommandOutput
-
   if (!response.Body) throw new Error(`Empty S3 body for key: ${storageKey}`)
   return streamToBuffer(response.Body as Readable)
 }
+
+async function downloadCleanFile(storageKey: string): Promise<Buffer> {
+  // Clean keys are stored without the 'clean/' prefix in the event payload
+  // but the actual S3 key may include it. Normalise by stripping leading 'clean/'
+  const key = storageKey.startsWith('clean/') ? storageKey.slice(6) : storageKey
+  const response = (await s3.send(
+    new GetObjectCommand({ Bucket: S3_BUCKET_CLEAN, Key: key }),
+  )) as GetObjectCommandOutput
+  if (!response.Body) throw new Error(`Empty S3 body for clean key: ${key}`)
+  return streamToBuffer(response.Body as Readable)
+}
+
+// ── Extraction queue ──────────────────────────────────────────────────────────
+
+// Shared Redis connection for queue enqueueing (not the worker connection)
+const redisQueueConn = new Redis(REDIS_URL)
+const extractionQueue = new Queue('extraction', {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  connection: redisQueueConn as any,
+})
 
 // ── Disarmer registry ─────────────────────────────────────────────────────────
 
@@ -103,7 +133,7 @@ const disarmers = new Map<string, Disarmer>([
   ],
 ])
 
-// ── Processor ─────────────────────────────────────────────────────────────────
+// ── Security gate processor ───────────────────────────────────────────────────
 
 const processor = new SecurityGateProcessor({
   downloadFile,
@@ -132,9 +162,64 @@ const processor = new SecurityGateProcessor({
   updateFileStatus,
   scanWithClamAv: (buf) => scanWithClamAv(buf),
   disarmers,
+
+  // After marking file clean, enqueue extraction job
+  onFileCleaned: async (data: IngestFileJobData, cleanKey: string) => {
+    const jobData: ExtractFileJobData = {
+      fileId: data.fileId,
+      projectId: data.projectId,
+      // storageKey for clean file (without 'clean/' prefix — downloadCleanFile normalises)
+      storageKey: cleanKey,
+      fileName: data.fileName,
+      declaredMime: data.declaredMime,
+    }
+    await extractionQueue.add('extract.file', jobData, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2_000 },
+    })
+    console.log(
+      JSON.stringify({
+        event: 'extraction.enqueued',
+        fileId: data.fileId,
+        projectId: data.projectId,
+      }),
+    )
+  },
 })
 
-// ── BullMQ Worker ─────────────────────────────────────────────────────────────
+// ── Embedding provider ────────────────────────────────────────────────────────
+
+// Lazily initialised — only created if OPENAI_API_KEY or OLLAMA_EMBEDDING_MODEL is set.
+// Silently skip embedding if neither is configured (e.g., in development).
+let embeddingProvider: ReturnType<typeof createEmbeddingProvider> | null = null
+try {
+  embeddingProvider = createEmbeddingProvider()
+} catch (err) {
+  console.warn(
+    JSON.stringify({
+      event: 'embedding_provider.init_skipped',
+      reason: String(err),
+    }),
+  )
+}
+
+// ── Extraction pipeline processor ────────────────────────────────────────────
+
+const extractionProcessor = new ExtractionPipelineProcessor({
+  downloadCleanFile,
+  sql,
+  publisher,
+  embeddingProvider: embeddingProvider ?? {
+    // No-op fallback for when no embedding provider is configured
+    async embed(texts: string[]) {
+      return texts.map(() => new Array(1536).fill(0) as number[])
+    },
+    dimension: 1536,
+    model: 'no-op',
+  },
+})
+
+// ── BullMQ Workers ────────────────────────────────────────────────────────────
 
 const worker = new Worker(
   'ingestion',
@@ -148,10 +233,7 @@ const worker = new Worker(
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     connection: redisWorker as any,
-    // Memory budget: concurrency × MAX_FILE_BYTES (default 5 × 100 MB = 500 MB) plus disarmer overhead.
-    // Set NODE_OPTIONS=--max-old-space-size=1024 in the container environment if raising concurrency.
     concurrency: parseInt(process.env['WORKER_CONCURRENCY'] ?? '5', 10),
-    // Exponential backoff for ClamAV-down retries
     settings: {
       backoffStrategy: (attemptsMade: number) =>
         Math.min(1000 * Math.pow(2, attemptsMade - 1), 60_000),
@@ -159,8 +241,28 @@ const worker = new Worker(
   },
 )
 
+const extractionWorker = new Worker(
+  'extraction',
+  async (job: Job<ExtractFileJobData>) => {
+    if (job.name !== 'extract.file') {
+      console.log(JSON.stringify({ event: 'extraction_worker.unknown_job', jobName: job.name }))
+      return
+    }
+    await extractionProcessor.process(job)
+  },
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    connection: redisExtractionWorker as any,
+    concurrency: parseInt(process.env['EXTRACTION_CONCURRENCY'] ?? '3', 10),
+  },
+)
+
 worker.on('completed', (job: Job) => {
   console.log(JSON.stringify({ event: 'worker.job_completed', jobId: job.id }))
+})
+
+extractionWorker.on('completed', (job: Job) => {
+  console.log(JSON.stringify({ event: 'extraction_worker.job_completed', jobId: job.id }))
 })
 
 // ── ClamAV down: pause worker and resume when daemon is back ──────────────────
@@ -189,17 +291,34 @@ worker.on('failed', async (job: Job | undefined, err: Error) => {
   }
 })
 
+extractionWorker.on('failed', (job: Job | undefined, err: Error) => {
+  console.error(
+    JSON.stringify({
+      event: 'extraction_worker.job_failed',
+      jobId: job?.id,
+      err: err.message,
+    }),
+  )
+})
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 
 async function shutdown(signal: string) {
   console.log(JSON.stringify({ event: 'worker.shutdown', signal }))
-  await worker.close()
-  await redisWorker.quit()
-  await redisPublisher.quit()
+  await Promise.all([worker.close(), extractionWorker.close()])
+  await Promise.all([
+    redisWorker.quit(),
+    redisExtractionWorker.quit(),
+    redisPublisher.quit(),
+    redisQueueConn.quit(),
+  ])
   process.exit(0)
 }
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'))
 process.on('SIGINT', () => void shutdown('SIGINT'))
 
-console.log(JSON.stringify({ event: 'worker.started', queue: 'ingestion' }))
+console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction'] }))
+
+// ── Suppress unused import ────────────────────────────────────────────────────
+void (PutObjectCommand)

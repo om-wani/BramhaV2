@@ -12,6 +12,7 @@ import { checkAllowlist, PASSTHROUGH_MIMES } from './steps/allowlist-check.js'
 import { ClamAvDownError } from './errors.js'
 import type { ClamAvResult } from './steps/clamav-scan.js'
 import { IngestFileJobDataSchema } from '../types.js'
+import type { IngestFileJobData } from '../types.js'
 export type { IngestFileJobData } from '../types.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -80,6 +81,16 @@ export interface SecurityGateDeps {
 
   /** Override default max file size (bytes). Defaults to MAX_FILE_BYTES env. */
   maxFileBytes?: number | undefined
+
+  /**
+   * Optional hook called after a file has been promoted to the clean bucket
+   * and the DB status committed to 'clean'. Use this to enqueue downstream
+   * processing (e.g., extraction pipeline).
+   *
+   * Errors thrown here are logged but do NOT fail the security gate job —
+   * the clean status is already committed at this point.
+   */
+  onFileCleaned?: (data: IngestFileJobData, cleanKey: string) => Promise<void>
 }
 
 // ── Channel helpers ──────────────────────────────────────────────────────────
@@ -313,6 +324,19 @@ export class SecurityGateProcessor {
         }
       } catch (deleteErr) {
         log('security.gate.staging_delete_failed', { err: String(deleteErr) })
+      }
+
+      // ── Step 10: Trigger downstream extraction (best-effort) ───────────────
+      // DB is clean, event emitted. Extraction failure is handled independently.
+      if (this.deps.onFileCleaned) {
+        try {
+          await this.deps.onFileCleaned(
+            IngestFileJobDataSchema.parse(job.data),
+            cleanKey,
+          )
+        } catch (hookErr) {
+          log('security.gate.on_file_cleaned_failed', { err: String(hookErr) })
+        }
       }
     } catch (err) {
       // ── ClamAV down: rethrow so BullMQ retries ───────────────────────────
