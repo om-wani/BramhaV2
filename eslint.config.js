@@ -76,7 +76,8 @@ export default [
             { from: { type: 'app-web' }, allow: { to: { type: ['pkg-shared'] } } },
             {
               from: { type: 'app-api' },
-              allow: { to: { type: ['pkg-shared', 'pkg-db', 'pkg-event-bus'] } },
+              // pkg-agents allowed for hybrid search embedding (T2.3.4)
+              allow: { to: { type: ['pkg-shared', 'pkg-db', 'pkg-event-bus', 'pkg-agents'] } },
             },
             {
               from: { type: 'app-agent-runtime' },

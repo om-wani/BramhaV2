@@ -91,3 +91,45 @@ export const KnowledgeChunkSchema = z
   .strict()
 
 export type KnowledgeChunk = z.infer<typeof KnowledgeChunkSchema>
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export const SearchKnowledgeInputSchema = z
+  .object({
+    query: z.string().min(1).max(2048),
+    origins: z
+      .array(
+        z.enum(['upload', 'source', 'ceo_office', 'conversation_summary', 'artifact']),
+      )
+      .optional(),
+    limit: z.number().int().min(1).max(20).optional().default(10),
+  })
+  .strict()
+
+export type SearchKnowledgeInput = z.infer<typeof SearchKnowledgeInputSchema>
+
+export const KnowledgeSearchResultItemSchema = z
+  .object({
+    chunkId: z.string().uuid(),
+    origin: z.enum(['upload', 'source', 'ceo_office', 'conversation_summary', 'artifact']),
+    originId: z.string().uuid(),
+    chunkIndex: z.number().int(),
+    headingTrail: z.array(z.string()),
+    snippet: z.string(),
+    score: z.number(),
+  })
+  .strict()
+
+export type KnowledgeSearchResultItem = z.infer<typeof KnowledgeSearchResultItemSchema>
+
+export const KnowledgeSearchResultSchema = z
+  .object({
+    items: z.array(KnowledgeSearchResultItemSchema),
+    query: z.string(),
+    lexicalCount: z.number().int(),
+    vectorCount: z.number().int(),
+    durationMs: z.number(),
+  })
+  .strict()
+
+export type KnowledgeSearchResult = z.infer<typeof KnowledgeSearchResultSchema>

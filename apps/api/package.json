@@ -13,6 +13,7 @@
     "start:dev": "tsx watch src/main.ts"
   },
   "dependencies": {
+    "@bramha/agents": "workspace:*",
     "@bramha/db": "workspace:*",
     "@bramha/event-bus": "workspace:*",
     "@bramha/shared": "workspace:*",

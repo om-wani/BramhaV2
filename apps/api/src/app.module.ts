@@ -13,6 +13,7 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { RealtimeModule } from './modules/realtime/realtime.module'
 import { ArtifactsModule } from './modules/artifacts/artifacts.module'
 import { FilesModule } from './modules/files/files.module'
+import { KnowledgeModule } from './modules/knowledge/knowledge.module'
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { FilesModule } from './modules/files/files.module'
     RealtimeModule,
     ArtifactsModule,
     FilesModule,
+    KnowledgeModule,
   ],
 })
 export class AppModule {}

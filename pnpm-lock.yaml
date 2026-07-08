@@ -81,6 +81,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.700.0
         version: 3.1079.0
+      '@bramha/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@bramha/db':
         specifier: workspace:*
         version: link:../../packages/db
