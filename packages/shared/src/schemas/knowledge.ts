@@ -96,7 +96,7 @@ export type KnowledgeChunk = z.infer<typeof KnowledgeChunkSchema>
 
 export const SearchKnowledgeInputSchema = z
   .object({
-    query: z.string().min(1).max(2048),
+    query: z.string().max(2048),
     origins: z
       .array(
         z.enum(['upload', 'source', 'ceo_office', 'conversation_summary', 'artifact']),

@@ -97,7 +97,17 @@ export class KnowledgeService {
 
   private async checkRateLimit(userId: string): Promise<void> {
     const key = `ratelimit:search:${userId}`
-    const count = (await this.redis.eval(LUA_RATE_LIMIT, 1, key)) as number
+    let count: number
+    try {
+      count = (await this.redis.eval(LUA_RATE_LIMIT, 1, key)) as number
+    } catch (err) {
+      // Redis unavailable: fail-closed (deny) to prevent unbounded compute under outage
+      this.logger.error({ event: 'knowledge.rate_limit_redis_error', err: String(err) })
+      throw new HttpException(
+        { statusCode: 503, code: 'service_unavailable', message: 'Search temporarily unavailable' },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      )
+    }
     if (count > RATE_LIMIT_SEARCH_PER_MIN) {
       throw new HttpException(
         { statusCode: 429, code: 'rate_limit_exceeded', message: 'Too many searches' },
@@ -243,12 +253,14 @@ export class KnowledgeService {
   }): Promise<KnowledgeSearchResult> {
     // 1. Truncate to max chars (estimate: 4 chars / token → 512 tokens max)
     const query = params.query.slice(0, QUERY_MAX_CHARS)
+
+    // 2. Rate limit check (atomic Lua token bucket) — runs even for empty queries
+    await this.checkRateLimit(params.userId)
+
+    // Return empty result for blank queries (after rate limit is consumed)
     if (!query.trim()) {
       return { items: [], query: '', lexicalCount: 0, vectorCount: 0, durationMs: 0 }
     }
-
-    // 2. Rate limit check (atomic Lua token bucket)
-    await this.checkRateLimit(params.userId)
 
     const t0 = Date.now()
     const limit = Math.min(params.limit ?? 10, 20)
