@@ -14,6 +14,7 @@ const DownloadUrlSchema = z.object({ url: z.string() })
 
 const MAX_TEXT_DISPLAY = 50 * 1024 // 50KB
 const MAX_CSV_ROWS = 10000
+const MAX_PREVIEW_BYTES = 1024 * 1024 // 1MB — enough for ~10k typical CSV rows
 
 interface PreviewPaneProps {
   file: FileDto
@@ -31,10 +32,29 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function parseCsvRow(line: string): string[] {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++ } // escaped quote
+      else inQuotes = !inQuotes
+    } else if (ch === ',' && !inQuotes) {
+      cells.push(current); current = ''
+    } else {
+      current += ch
+    }
+  }
+  cells.push(current)
+  return cells
+}
+
 function CsvTable({ text }: { text: string }) {
   const rows = text.split('\n').slice(0, MAX_CSV_ROWS).filter(Boolean)
   if (rows.length === 0) return <p className="text-xs text-muted-foreground">Empty CSV</p>
-  const parsed = rows.map(r => r.split(',').map(c => c.trim()))
+  const parsed = rows.map(r => parseCsvRow(r))
   const [header, ...body] = parsed
   return (
     <div className="overflow-auto max-h-96">
@@ -63,6 +83,7 @@ function CsvTable({ text }: { text: string }) {
 function TextPreview({ url, isMd }: { url: string; isMd: boolean }) {
   const [content, setContent] = useState<string | null>(null)
   const [truncated, setTruncated] = useState(false)
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -78,11 +99,12 @@ function TextPreview({ url, isMd }: { url: string; isMd: boolean }) {
         }
       })
       .catch(() => {
-        if (!cancelled) setContent(null)
+        if (!cancelled) setFetchError(true)
       })
     return () => { cancelled = true }
   }, [url])
 
+  if (fetchError) return <p className="text-xs text-muted-foreground">Failed to load text preview</p>
   if (content === null) return <p className="text-xs text-muted-foreground">Loading…</p>
 
   return (
@@ -103,20 +125,25 @@ function TextPreview({ url, isMd }: { url: string; isMd: boolean }) {
 
 function CsvPreview({ url }: { url: string }) {
   const [content, setContent] = useState<string | null>(null)
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
-    fetch(url)
-      .then(r => r.text())
+    fetch(url, { headers: { Range: `bytes=0-${MAX_PREVIEW_BYTES - 1}` } })
+      .then(r => {
+        if (!r.ok && r.status !== 206) throw new Error('fetch failed')
+        return r.text()
+      })
       .then(text => {
         if (!cancelled) setContent(text)
       })
       .catch(() => {
-        if (!cancelled) setContent(null)
+        if (!cancelled) setFetchError(true)
       })
     return () => { cancelled = true }
   }, [url])
 
+  if (fetchError) return <p className="text-xs text-muted-foreground">Failed to load CSV preview</p>
   if (content === null) return <p className="text-xs text-muted-foreground">Loading CSV…</p>
   return <CsvTable text={content} />
 }
@@ -145,7 +172,7 @@ function FilePreview({ file, url }: { file: FileDto; url: string }) {
         <iframe
           src={url}
           title={`PDF preview: ${file.name}`}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-same-origin"
           className="w-full h-96 rounded border border-border"
         />
       </div>
@@ -200,7 +227,7 @@ export function PreviewPane({ file, projectId, onClose }: PreviewPaneProps) {
   const { data: downloadUrlData } = useQuery({
     queryKey: ['download-url', projectId, file.id],
     queryFn: () => api.get(`/projects/${projectId}/files/${file.id}/download-url`, DownloadUrlSchema),
-    enabled: isClean && !isQuarantined,
+    enabled: isClean,
     staleTime: 10 * 60 * 1000, // 10 min (URL is 15 min TTL)
     gcTime: 15 * 60 * 1000,
   })

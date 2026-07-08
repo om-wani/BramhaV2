@@ -21,6 +21,7 @@ export function StorageRoom({ projectId }: { projectId: string }) {
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [connectOpen, setConnectOpen] = useState(false)
+  const [connectInitialTab, setConnectInitialTab] = useState<'upload' | 'github'>('upload')
 
   const { data: files = [], isLoading } = useQuery({
     queryKey: ['files', projectId],
@@ -67,11 +68,11 @@ export function StorageRoom({ projectId }: { projectId: string }) {
               aria-label="Search files"
             />
           </div>
-          <Button size="sm" onClick={() => setConnectOpen(true)} variant="default" className="h-8 gap-1.5 text-xs">
+          <Button size="sm" onClick={() => { setConnectInitialTab('upload'); setConnectOpen(true) }} variant="default" className="h-8 gap-1.5 text-xs">
             <Upload className="h-3.5 w-3.5" aria-hidden="true" />
             Upload
           </Button>
-          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs opacity-50 cursor-not-allowed" disabled aria-label="Connect source (available in Phase 3)">
+          <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" onClick={() => { setConnectInitialTab('github'); setConnectOpen(true) }} aria-label="Connect source">
             <PlugZap className="h-3.5 w-3.5" aria-hidden="true" />
             Connect
           </Button>
@@ -118,6 +119,7 @@ export function StorageRoom({ projectId }: { projectId: string }) {
         open={connectOpen}
         onOpenChange={setConnectOpen}
         projectId={projectId}
+        initialTab={connectInitialTab}
       />
     </div>
   )

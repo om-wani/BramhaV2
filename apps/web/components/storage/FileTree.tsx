@@ -50,7 +50,7 @@ export function FileTree({ selectedFolder, onSelectFolder, uploadsCount, quarant
                 <button
                   type="button"
                   onClick={() => onSelectFolder(item.id as FolderType)}
-                  aria-current={isActive ? 'true' : undefined}
+                  aria-current={isActive ? 'location' : undefined}
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors text-left',
                     isActive

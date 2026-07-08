@@ -57,6 +57,20 @@ describe('FileGrid', () => {
     expect(screen.getByText('Scanning')).toBeInTheDocument()
   })
 
+  it('renders pending file with Pending badge', () => {
+    const pendingFile = makeFile({ scanStatus: 'pending', name: 'pending.pdf' })
+    render(<FileGrid {...baseProps} files={[pendingFile]} />)
+
+    expect(screen.getByText('Pending')).toBeInTheDocument()
+  })
+
+  it('renders failed file with Failed badge', () => {
+    const failedFile = makeFile({ scanStatus: 'failed', name: 'failed.pdf' })
+    render(<FileGrid {...baseProps} files={[failedFile]} />)
+
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+  })
+
   it('filters files by search query', () => {
     const files = [
       makeFile({ name: 'invoice-2024.pdf' }),

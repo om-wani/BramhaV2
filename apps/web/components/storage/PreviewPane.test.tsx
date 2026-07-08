@@ -1,6 +1,6 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PreviewPane } from './PreviewPane'
 import type { FileDto } from '@bramha/shared'
@@ -11,6 +11,8 @@ vi.mock('@/lib/api-client', () => ({
     get: vi.fn().mockResolvedValue({ url: 'https://example.com/presigned-url' }),
   },
 }))
+
+import { api } from '@/lib/api-client'
 
 function makeFile(overrides: Partial<FileDto> = {}): FileDto {
   return {
@@ -37,6 +39,10 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('PreviewPane', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('shows quarantine alert and no download button for quarantined file', () => {
     const file = makeFile({ scanStatus: 'quarantined', name: 'virus.zip' })
     render(
@@ -48,6 +54,11 @@ describe('PreviewPane', () => {
     expect(alert).toBeInTheDocument()
     expect(alert).toHaveTextContent(/quarantined/i)
     expect(screen.queryByRole('link', { name: /download/i })).toBeNull()
+    // download-url query must NOT be triggered for quarantined files
+    expect(vi.mocked(api.get)).not.toHaveBeenCalledWith(
+      expect.stringContaining('download-url'),
+      expect.anything(),
+    )
   })
 
   it('shows file metadata for non-quarantined file', () => {

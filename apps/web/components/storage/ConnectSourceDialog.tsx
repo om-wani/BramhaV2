@@ -1,7 +1,7 @@
 'use client'
 
 import * as Dialog from '@radix-ui/react-dialog'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { FileDropzone } from '@/components/chat/FileDropzone'
 import { cn } from '@/lib/utils'
@@ -86,10 +86,16 @@ interface ConnectSourceDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   projectId: string
+  initialTab?: Tab
 }
 
-export function ConnectSourceDialog({ open, onOpenChange, projectId }: ConnectSourceDialogProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('upload')
+export function ConnectSourceDialog({ open, onOpenChange, projectId, initialTab }: ConnectSourceDialogProps) {
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab ?? 'upload')
+
+  // Reset to initialTab whenever the dialog opens
+  useEffect(() => {
+    if (open) setActiveTab(initialTab ?? 'upload')
+  }, [open, initialTab])
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -116,24 +122,30 @@ export function ConnectSourceDialog({ open, onOpenChange, projectId }: ConnectSo
 
           {/* Tab bar */}
           <div className="flex border-b px-6" role="tablist" aria-label="Source type">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                role="tab"
-                type="button"
-                aria-selected={activeTab === tab.id}
-                aria-controls={`panel-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'border-b-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary',
-                  activeTab === tab.id
-                    ? 'border-primary text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const isExternal = tab.id !== 'upload'
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  type="button"
+                  aria-selected={activeTab === tab.id}
+                  aria-controls={`panel-${tab.id}`}
+                  disabled={isExternal}
+                  aria-disabled={isExternal ? 'true' : undefined}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'border-b-2 px-3 py-3 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-primary',
+                    isExternal && 'opacity-50 cursor-not-allowed',
+                    activeTab === tab.id
+                      ? 'border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
           </div>
 
           {/* Tab panels */}
