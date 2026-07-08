@@ -20,8 +20,11 @@ export type Note = z.infer<typeof NoteSchema>
 export const CreateNoteInputSchema = z.object({
   title: z.string().min(1).max(500),
   contentMd: z.string().max(500_000),
-  contentJson: z.unknown().optional(),
-  folderPath: z.string().regex(/^\/[^<>:"\\|?*]*$/),
+  contentJson: z.unknown().optional().refine(
+    (v) => v === undefined || JSON.stringify(v).length <= 100_000,
+    'contentJson exceeds 100KB limit',
+  ),
+  folderPath: z.string().regex(/^\/(?!.*\.\.)[^<>:"\\|?*]*$/),
   isDaily: z.boolean().optional(),
 }).strict()
 
@@ -30,14 +33,17 @@ export type CreateNoteInput = z.infer<typeof CreateNoteInputSchema>
 export const UpdateNoteInputSchema = z.object({
   title: z.string().min(1).max(500).optional(),
   contentMd: z.string().max(500_000).optional(),
-  contentJson: z.unknown().optional(),
-  folderPath: z.string().regex(/^\/[^<>:"\\|?*]*$/).optional(),
+  contentJson: z.unknown().optional().refine(
+    (v) => v === undefined || JSON.stringify(v).length <= 100_000,
+    'contentJson exceeds 100KB limit',
+  ),
+  folderPath: z.string().regex(/^\/(?!.*\.\.)[^<>:"\\|?*]*$/).optional(),
 }).strict()
 
 export type UpdateNoteInput = z.infer<typeof UpdateNoteInputSchema>
 
 export const MoveFolderInputSchema = z.object({
-  folderPath: z.string().regex(/^\/[^<>:"\\|?*]*$/),
+  folderPath: z.string().regex(/^\/(?!.*\.\.)[^<>:"\\|?*]*$/),
 }).strict()
 
 export type MoveFolderInput = z.infer<typeof MoveFolderInputSchema>

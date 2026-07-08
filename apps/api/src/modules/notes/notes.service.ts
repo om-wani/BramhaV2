@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException, Logger, Inject, OnModuleDestroy } from '@nestjs/common'
+import { z } from 'zod'
 import { Queue } from 'bullmq'
 import type Redis from 'ioredis'
 import type postgres from 'postgres'
@@ -21,6 +22,9 @@ function parseWikilinks(content: string): string[] {
   const matches = content.matchAll(/\[\[([^\]]+)\]\]/g)
   return [...matches].map(m => m[1]!.trim())
 }
+
+// Folder path validator — blocks traversal and disallowed characters
+const FOLDER_PATH_SCHEMA = z.string().regex(/^\/(?!.*\.\.)[^<>:"\\|?*]*$/)
 
 // Row type from DB
 interface NoteRow {
@@ -55,6 +59,7 @@ function mapNote(r: NoteRow): Note {
 
 type Tx = postgres.TransactionSql
 
+// Must outlive the job delay (5s) plus expected queue poll latency; 30s is a safe margin.
 const DEBOUNCE_TTL_SECONDS = 30
 const DEBOUNCE_DELAY_MS = 5000
 
@@ -82,6 +87,7 @@ export class NotesService implements OnModuleDestroy {
   async create(userId: string, projectId: string, input: CreateNoteInput): Promise<Note> {
     sanitizeContentMd(input.contentMd)
 
+    // Fold note insert + wikilink sync into one atomic transaction
     const row = await this.db.run({ userId, projectId }, async (tx: Tx) => {
       const rows = await tx<NoteRow[]>`
         INSERT INTO notes (project_id, author_id, title, content_md, content_json, folder_path, is_daily)
@@ -97,11 +103,17 @@ export class NotesService implements OnModuleDestroy {
         RETURNING id, project_id, author_id, title, content_md, content_json, folder_path, is_daily,
                   deleted_at, created_at, updated_at
       `
-      return rows[0]!
+      const inserted = rows[0]!
+      await this.updateNoteLinksInTx(tx, inserted.id, projectId, input.contentMd)
+      return inserted
     })
 
-    // After insert: sync wikilinks + enqueue note.delta
-    await this.syncWikilinksAndEnqueue(userId, projectId, row.id, input.contentMd)
+    // Enqueue note.delta AFTER tx committed (best-effort; re-triggered on next save if this fails)
+    try {
+      await this.enqueueNoteDelta(row.id, projectId, input.contentMd)
+    } catch (err) {
+      this.logger.warn({ event: 'notes.enqueue_delta_failed', noteId: row.id, err: String(err) })
+    }
 
     this.logger.log({ event: 'note.created', userId, projectId, noteId: row.id })
     return mapNote(row)
@@ -110,6 +122,11 @@ export class NotesService implements OnModuleDestroy {
   // ── List ───────────────────────────────────────────────────────────────────
 
   async list(userId: string, projectId: string, folderPath?: string): Promise<Note[]> {
+    if (folderPath !== undefined) {
+      const result = FOLDER_PATH_SCHEMA.safeParse(folderPath)
+      if (!result.success) throw new BadRequestException('Invalid folder path')
+    }
+
     const rows = await this.db.run({ userId, projectId }, async (tx: Tx) => {
       if (folderPath !== undefined) {
         return tx<NoteRow[]>`
@@ -153,6 +170,7 @@ export class NotesService implements OnModuleDestroy {
       sanitizeContentMd(input.contentMd)
     }
 
+    // Fold note update + wikilink sync into one atomic transaction
     const row = await this.db.run({ userId, projectId }, async (tx: Tx) => {
       const rows = await tx<NoteRow[]>`
         UPDATE notes
@@ -166,14 +184,22 @@ export class NotesService implements OnModuleDestroy {
         RETURNING id, project_id, author_id, title, content_md, content_json, folder_path, is_daily,
                   deleted_at, created_at, updated_at
       `
-      return rows[0]
+      const updated = rows[0]
+      if (updated !== undefined && input.contentMd !== undefined) {
+        await this.updateNoteLinksInTx(tx, noteId, projectId, input.contentMd)
+      }
+      return updated
     })
 
     if (!row) throw new NotFoundException({ code: 'note_not_found' })
 
-    // Sync wikilinks + enqueue note.delta if content changed
+    // Enqueue note.delta AFTER tx committed (best-effort; re-triggered on next save if this fails)
     if (input.contentMd !== undefined) {
-      await this.syncWikilinksAndEnqueue(userId, projectId, noteId, row.content_md)
+      try {
+        await this.enqueueNoteDelta(noteId, projectId, row.content_md)
+      } catch (err) {
+        this.logger.warn({ event: 'notes.enqueue_delta_failed', noteId, err: String(err) })
+      }
     }
 
     this.logger.log({ event: 'note.updated', userId, projectId, noteId })
@@ -270,45 +296,33 @@ export class NotesService implements OnModuleDestroy {
     return rows.map(mapNote)
   }
 
-  // ── Internal: wikilink sync + note.delta enqueue ───────────────────────────
+  // ── Internal: update note_links in-transaction ─────────────────────────────
 
-  private async syncWikilinksAndEnqueue(
-    userId: string,
-    projectId: string,
-    noteId: string,
-    contentMd: string,
-  ): Promise<void> {
-    // 1. Parse wikilinks
+  private async updateNoteLinksInTx(tx: Tx, noteId: string, projectId: string, contentMd: string): Promise<void> {
     const titles = parseWikilinks(contentMd)
 
-    // 2. Resolve titles to IDs, then upsert note_links
-    await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      // Resolve titles → note IDs
-      const resolved = titles.length > 0
-        ? await tx<{ id: string }[]>`
-            SELECT id FROM notes
-            WHERE project_id = ${projectId}::uuid
-              AND title = ANY(${titles})
-              AND deleted_at IS NULL
-          `
-        : []
+    const resolved = titles.length > 0
+      ? await tx<{ id: string }[]>`
+          SELECT id FROM notes
+          WHERE project_id = ${projectId}::uuid
+            AND title = ANY(${titles})
+            AND deleted_at IS NULL
+        `
+      : []
 
-      // Replace note_links for this note
-      await tx`DELETE FROM note_links WHERE from_note = ${noteId}::uuid`
-      for (const { id: toNoteId } of resolved) {
-        if (toNoteId !== noteId) {
-          await tx`
-            INSERT INTO note_links (from_note, to_note)
-            VALUES (${noteId}::uuid, ${toNoteId}::uuid)
-            ON CONFLICT DO NOTHING
-          `
-        }
+    await tx`DELETE FROM note_links WHERE from_note = ${noteId}::uuid`
+    for (const { id: toNoteId } of resolved) {
+      if (toNoteId !== noteId) {
+        await tx`
+          INSERT INTO note_links (from_note, to_note)
+          VALUES (${noteId}::uuid, ${toNoteId}::uuid)
+          ON CONFLICT DO NOTHING
+        `
       }
-    })
-
-    // 3. Enqueue note.delta with debounce (5s delay, replace if pending)
-    await this.enqueueNoteDelta(noteId, projectId, contentMd)
+    }
   }
+
+  // ── Internal: enqueue note.delta with debounce ─────────────────────────────
 
   private async enqueueNoteDelta(noteId: string, projectId: string, contentMd: string): Promise<void> {
     const DEBOUNCE_KEY = `note_delta_job:${noteId}`

@@ -40,6 +40,15 @@ function noteDeltaFailedChannel(projectId: string): string {
   return `note.delta.failed:${projectId}`
 }
 
+async function publishDone(
+  publisher: IPublisher,
+  projectId: string,
+  payload: { noteId: string; projectId: string; chunkCount: number },
+): Promise<void> {
+  NoteDeltaDonePayloadSchema.parse(payload)
+  await publisher.publish(noteDeltaDoneChannel(projectId), payload)
+}
+
 export interface NoteDeltaDeps {
   sql: postgres.Sql
   publisher: IPublisher
@@ -63,7 +72,7 @@ export class NoteDeltaProcessor {
       // Step 2: Empty content — ack job cleanly, no chunks
       if (!contentMd.trim()) {
         log('note_delta.empty_content')
-        await this.deps.publisher.publish(noteDeltaDoneChannel(projectId), { noteId, projectId, chunkCount: 0 })
+        await publishDone(this.deps.publisher, projectId, { noteId, projectId, chunkCount: 0 })
         return
       }
 
@@ -78,7 +87,7 @@ export class NoteDeltaProcessor {
 
       if (chunks.length === 0) {
         log('note_delta.no_chunks')
-        await this.deps.publisher.publish(noteDeltaDoneChannel(projectId), { noteId, projectId, chunkCount: 0 })
+        await publishDone(this.deps.publisher, projectId, { noteId, projectId, chunkCount: 0 })
         return
       }
 
@@ -97,13 +106,11 @@ export class NoteDeltaProcessor {
       })
 
       // Step 6: Emit done event
-      const donePayload = { noteId, projectId, chunkCount: embeddedChunks.length }
-      NoteDeltaDonePayloadSchema.parse(donePayload)
-      await this.deps.publisher.publish(noteDeltaDoneChannel(projectId), donePayload)
+      await publishDone(this.deps.publisher, projectId, { noteId, projectId, chunkCount: embeddedChunks.length })
 
       log('note_delta.done', { chunkCount: embeddedChunks.length })
     } catch (err) {
-      const reason = String(err)
+      const reason = err instanceof Error ? err.message : String(err)
       console.error(JSON.stringify({ event: 'note_delta.failed', noteId, projectId, err: reason }))
 
       try {
