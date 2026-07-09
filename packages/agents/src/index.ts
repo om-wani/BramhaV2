@@ -27,3 +27,7 @@ export type {
 // Semantic cache
 export { SemanticCache, cosineSimilarity } from './semantic-cache.js'
 export type { CachedResult } from './semantic-cache.js'
+
+// Persona compiler
+export { compilePersona, bustPersonaCache, getPersonaCacheSize } from './persona.js'
+export type { CompileOptions, CompiledPersona } from './persona.js'
