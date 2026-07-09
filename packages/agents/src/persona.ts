@@ -92,7 +92,7 @@ function sanitizeBrief(brief: string): string {
  */
 function injectSection(text: string, placeholder: string, content: string, append: boolean): string {
   if (text.includes(placeholder)) {
-    return text.replace(placeholder, content)
+    return text.split(placeholder).join(content)
   }
   if (append) {
     return `${text}\n\n${content}`
