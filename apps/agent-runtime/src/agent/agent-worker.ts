@@ -27,7 +27,8 @@ import { EventPublisher } from '@bramha/event-bus'
 
 // ── Production dep implementations ────────────────────────────────────────────
 
-const SYSTEM_USER_ID = process.env['SYSTEM_USER_ID'] ?? ''
+const SYSTEM_USER_ID = process.env['SYSTEM_USER_ID']
+if (!SYSTEM_USER_ID) throw new Error('SYSTEM_USER_ID environment variable is required')
 
 /**
  * Build the production AgentGraphDeps, wiring DB/Redis/queue I/O.
