@@ -22,7 +22,9 @@
     "@bramha/event-bus": "workspace:*",
     "@bramha/agents": "workspace:*",
     "@bramha/mcp-connectors": "workspace:*",
-    "bullmq": "^5.34.7"
+    "bullmq": "^5.34.7",
+    "ioredis": "^5.11.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

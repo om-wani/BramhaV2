@@ -68,6 +68,12 @@ importers:
       bullmq:
         specifier: ^5.34.7
         version: 5.79.2
+      ioredis:
+        specifier: ^5.11.1
+        version: 5.11.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ^5.5.0
