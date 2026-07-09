@@ -400,12 +400,12 @@ export async function processTurnJob(
           emptyWorkingMemory(firstAgent.personaId, conversationId, projectId))
       : null
 
-    if (firstMem && defaultBranchId) {
+    if (firstMem) {
       const summaryCheck = checkSummaryThreshold(
         threadNodes,
         firstMem.lastSummaryNode,
         conversationId,
-        defaultBranchId,
+        defaultBranchId ?? conversationId,
         projectId,
       )
       if (summaryCheck.shouldSummarize && summaryCheck.jobPayload) {

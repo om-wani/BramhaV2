@@ -231,7 +231,7 @@ describe('T3 — convergence guard: depth ≥ 4 with agent trigger', () => {
     // At depth=3 scheduling is still permitted
     const turns = capturedAgentTurns(deps)
     // At least someone should speak given high eagerness + mentions
-    expect(turns.length).toBeGreaterThanOrEqual(0)
+    expect(turns.length).toBeGreaterThanOrEqual(1)
     // turnDepth is incremented (would be 4)
     if (turns.length > 0) {
       expect(turns[0]!.turnDepth).toBe(4)
