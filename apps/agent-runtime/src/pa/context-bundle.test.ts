@@ -88,7 +88,8 @@ describe('buildContextBundle', () => {
     const fp = bundle.fullPrompt
     const pos = (s: string) => fp.indexOf(s)
     expect(pos(bundle.sections.systemPrompt)).toBeLessThan(pos('project brief'))
-    expect(pos('project brief')).toBeLessThan(pos('Open Questions'))
+    expect(pos('project brief')).toBeLessThan(pos(bundle.sections.workingMemorySummary))
+    expect(pos(bundle.sections.workingMemorySummary)).toBeLessThan(pos('Open Questions'))
     expect(pos('Open Questions')).toBeLessThan(pos('untrusted_context'))
     expect(pos('untrusted_context')).toBeLessThan(pos('Hello world'))
     expect(pos('Hello world')).toBeLessThan(pos('You are speaking now'))
