@@ -21,7 +21,8 @@
     "@bramha/db": "workspace:*",
     "@bramha/event-bus": "workspace:*",
     "@bramha/agents": "workspace:*",
-    "@bramha/mcp-connectors": "workspace:*"
+    "@bramha/mcp-connectors": "workspace:*",
+    "bullmq": "^5.34.7"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
