@@ -63,7 +63,23 @@ export class AnthropicProvider implements StreamProvider {
   ): AsyncGenerator<ProviderChunk> {
     const client = this.getClient()
     const aiTools = buildToolSet(tools)
-    const aiMessages = messages as AiCoreMessage[]
+
+    // When promptCaching is enabled, attach Anthropic's ephemeral cache_control
+    // to the first message (stable prefix — usually the system message).
+    // The Vercel AI SDK surfaces this via experimental_providerMetadata.
+    const firstMsg = messages[0]
+    const aiMessages: AiCoreMessage[] =
+      opts.promptCaching === true && firstMsg !== undefined
+        ? [
+            {
+              ...(firstMsg as AiCoreMessage),
+              experimental_providerMetadata: {
+                anthropic: { cacheControl: { type: 'ephemeral' } },
+              },
+            },
+            ...(messages.slice(1) as AiCoreMessage[]),
+          ]
+        : (messages as AiCoreMessage[])
 
     // Build args step by step so exactOptionalPropertyTypes is satisfied:
     // optional properties are added via spread only when they carry a real value.

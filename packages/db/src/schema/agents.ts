@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   pgTable,
   uuid,
@@ -117,6 +118,6 @@ export const tokenUsage = pgTable(
   },
   (t) => [
     index('idx_token_usage_project').on(t.projectId, t.createdAt),
-    index('idx_token_usage_persona').on(t.personaId),
+    index('idx_token_usage_persona').on(t.personaId).where(sql`persona_id IS NOT NULL`),
   ],
 )
