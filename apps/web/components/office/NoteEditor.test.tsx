@@ -24,8 +24,15 @@ const { mockEditor } = vi.hoisted(() => {
     destroy: vi.fn(),
     isDestroyed: false,
     getText: vi.fn(() => ''),
+    view: {
+      coordsAtPos: vi.fn(() => ({ top: 50, bottom: 60, left: 100, right: 110 })),
+      dom: { getBoundingClientRect: vi.fn(() => ({ top: 0, left: 0, width: 800, height: 600 })) },
+    },
     state: {
-      doc: { textContent: '' },
+      doc: {
+        textContent: '',
+        textBetween: vi.fn(() => ''),
+      },
       selection: { from: 0 },
     },
   }
@@ -43,6 +50,9 @@ vi.mock('@tiptap/extension-placeholder', () => ({
 }))
 vi.mock('tiptap-markdown', () => ({
   Markdown: { configure: vi.fn(() => ({})) },
+}))
+vi.mock('./WikilinkExtension', () => ({
+  WikilinkExtension: { name: 'wikilink' },
 }))
 
 // Mock api-client (no external vars in the factory)
@@ -75,6 +85,7 @@ vi.mock('turndown', () => ({
 // -- Imports after mocks --
 import { NoteEditor, sanitizeHtml } from './NoteEditor'
 import { api } from '@/lib/api-client'
+import { useEditor } from '@tiptap/react'
 
 const mockNote = {
   id: 'note-1', projectId: 'proj-1', authorId: 'user-1',
@@ -97,6 +108,7 @@ describe('NoteEditor', () => {
     mockEditor.getJSON.mockReturnValue({ type: 'doc', content: [] })
     mockEditor.storage.markdown.getMarkdown.mockReturnValue('')
     mockEditor.state.doc.textContent = ''
+    ;(mockEditor.state.doc as Record<string, unknown>).textBetween = vi.fn(() => '')
     ;(mockEditor.state as Record<string, unknown>).selection = { from: 0 }
   })
 
@@ -261,5 +273,54 @@ describe('NoteEditor', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // ── Test 8: Wikilink autocomplete ────────────────────────────────────────────
+  it('shows wikilink dropdown on [[ and inserts [[NoteTitle]] on select', async () => {
+    // notes list returns one note; current note query also resolves
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if ((path as string).match(/\/notes\/note-1$/)) return Promise.resolve(mockNote)
+      // allNotes query — return array with one note
+      return Promise.resolve([mockNote])
+    })
+
+    // Intercept insertContent so we can assert on it
+    const mockInsertContent = vi.fn(() => ({ run: vi.fn() }))
+    mockEditor.chain = vi.fn(() => ({
+      focus: vi.fn(() => ({
+        deleteRange: vi.fn(() => ({ insertContent: mockInsertContent })),
+      })),
+    }))
+
+    render(
+      <NoteEditor projectId="proj-1" noteId="note-1" onOutlineChange={vi.fn()} />,
+      { wrapper: makeWrapper() }
+    )
+
+    // Wait for editor area to render
+    await screen.findByTestId('editor-content')
+
+    // Simulate typing [[ by calling the onUpdate callback captured from useEditor
+    const editorOptions = vi.mocked(useEditor).mock.calls[0]?.[0] as unknown as {
+      onUpdate?: (args: { editor: typeof mockEditor }) => void
+    }
+
+    // Make textBetween return text ending in [[ + partial title
+    ;(mockEditor.state.doc as Record<string, unknown>).textBetween = vi.fn(() => 'prefix [[Test')
+    ;(mockEditor.state as Record<string, unknown>).selection = { from: 14 }
+
+    await act(async () => {
+      editorOptions?.onUpdate?.({ editor: mockEditor })
+    })
+
+    // Dropdown should be visible with the matching note
+    expect(await screen.findByTestId('wikilink-dropdown')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /test note/i })).toBeInTheDocument()
+
+    // Selecting the note inserts [[Note Title]]
+    // textBetween for handleWikilinkSelect must also return text with [[
+    fireEvent.mouseDown(screen.getByRole('option', { name: /test note/i }))
+
+    expect(mockInsertContent).toHaveBeenCalledWith('[[Test Note]]')
   })
 })

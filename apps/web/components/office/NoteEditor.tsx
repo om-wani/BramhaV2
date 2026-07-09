@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { NoteSchema } from '@bramha/shared'
+import { NoteSchema, InitiateUploadResponseSchema, FileSchema } from '@bramha/shared'
 import { api } from '@/lib/api-client'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor, JSONContent } from '@tiptap/core'
@@ -11,6 +11,9 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Markdown } from 'tiptap-markdown'
 import TurndownService from 'turndown'
+import { WikilinkExtension } from './WikilinkExtension'
+
+const DownloadUrlSchema = z.object({ url: z.string() })
 
 type SyncState = 'synced' | 'syncing' | 'error'
 
@@ -19,6 +22,63 @@ interface NoteEditorProps {
   noteId: string
   onOutlineChange: (headings: Array<{ level: number; text: string; id: string }>) => void
   editorRef?: React.MutableRefObject<Editor | null>
+  /** Bearer token for API calls. Optional — API falls back to cookie auth when omitted. */
+  token?: string
+}
+
+// token param intentionally omitted: API uses cookie auth; add as param when bearer auth is needed
+async function uploadImageAndInsert(
+  editor: Editor,
+  file: File,
+  projectId: string,
+): Promise<void> {
+  const placeholder = `![uploading…]()`
+  // Insert placeholder at cursor so the user sees feedback immediately
+  editor.chain().focus().insertContent(placeholder).run()
+
+  const getMd = () =>
+    (editor.storage as unknown as Record<string, { getMarkdown: () => string } | undefined>)
+      .markdown?.getMarkdown() ?? ''
+
+  try {
+    // 1. Initiate upload — get presigned URL
+    const { fileId, uploadUrl } = await api.post(
+      `/projects/${projectId}/files/initiate`,
+      InitiateUploadResponseSchema,
+      { name: file.name, declaredMime: file.type, sizeBytes: file.size },
+    )
+
+    // 2. Upload directly to presigned URL (no auth header required)
+    await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    })
+
+    // 3. Confirm upload with API
+    await api.post(
+      `/projects/${projectId}/files/${fileId}/confirm`,
+      FileSchema,
+      {},
+    )
+
+    // 4. Fetch a presigned download URL
+    const { url: downloadUrl } = await api.get(
+      `/projects/${projectId}/files/${fileId}/download-url`,
+      DownloadUrlSchema,
+    )
+
+    // 5. Replace placeholder with actual markdown image
+    const updated = getMd().replace(placeholder, `![${file.name}](${downloadUrl})`)
+    editor.commands.setContent(updated)
+  } catch {
+    // On failure, remove the placeholder to leave the doc clean
+    const current = getMd()
+    const cleaned = current.replace(placeholder, '')
+    if (cleaned !== current) {
+      editor.commands.setContent(cleaned)
+    }
+  }
 }
 
 // Exported for testing
@@ -48,7 +108,7 @@ function extractOutlineHeadings(json: JSONContent): Array<{ level: number; text:
   return headings
 }
 
-export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: NoteEditorProps) {
+export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef, token }: NoteEditorProps) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [syncState, setSyncState] = useState<SyncState>('synced')
@@ -56,6 +116,11 @@ export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: No
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const titleRef = useRef(title)
   titleRef.current = title
+  // Refs keep paste handler closure fresh without stale values
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const tokenRef = useRef(token)
+  tokenRef.current = token
 
   // Fetch all notes for wikilink autocomplete
   const { data: allNotes = [] } = useQuery({
@@ -75,10 +140,30 @@ export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: No
       StarterKit,
       Placeholder.configure({ placeholder: 'Start writing…' }),
       Markdown.configure({ html: false, tightLists: true }),
+      WikilinkExtension,
     ],
     editorProps: {
       attributes: { class: 'prose prose-sm dark:prose-invert max-w-none p-4 focus:outline-none min-h-[200px]' },
       handlePaste: (_view, event) => {
+        // ── 1. Image file items → secure upload pipeline (no blob:// URLs) ──
+        const files = Array.from(event.clipboardData?.items ?? [])
+          .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+          .map((item) => item.getAsFile())
+          .filter(Boolean) as File[]
+
+        if (files.length > 0) {
+          event.preventDefault()
+          if (editor) {
+            void (async () => {
+              for (const file of files) {
+                await uploadImageAndInsert(editor, file, projectIdRef.current)
+              }
+            })()
+          }
+          return true
+        }
+
+        // ── 2. HTML paste → sanitize to markdown ────────────────────────────
         const types = event.clipboardData?.types ?? []
         if (types.includes('text/html')) {
           const html = event.clipboardData!.getData('text/html')
@@ -227,12 +312,29 @@ export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: No
       <div className="flex-1 overflow-y-auto relative">
         <EditorContent editor={editor} />
 
-        {/* Wikilink autocomplete dropdown */}
-        {wikilinkSearch !== null && filteredNotes.length > 0 && (
+        {/* Wikilink autocomplete dropdown — positioned at cursor */}
+        {wikilinkSearch !== null && filteredNotes.length > 0 && (() => {
+          let dropdownTop = 100
+          let dropdownLeft = 16
+          if (editor) {
+            try {
+              const { from } = editor.state.selection
+              const coords = editor.view.coordsAtPos(from)
+              const editorRect = editor.view.dom.getBoundingClientRect()
+              const rawTop = coords.bottom - editorRect.top
+              const rawLeft = coords.left - editorRect.left
+              // Clamp so the 256px-wide dropdown stays within the editor area
+              dropdownTop = Math.max(0, rawTop)
+              dropdownLeft = Math.min(rawLeft, editorRect.width - 264)
+            } catch {
+              // coordsAtPos can throw if pos is out of range; fall back to defaults
+            }
+          }
+          return (
           <div
             data-testid="wikilink-dropdown"
             className="absolute z-50 w-64 bg-popover border rounded-md shadow-lg py-1"
-            style={{ top: '100px', left: '1rem' }}
+            style={{ top: `${dropdownTop}px`, left: `${dropdownLeft}px` }}
             role="listbox"
             aria-label="Wikilink suggestions"
           >
@@ -251,16 +353,27 @@ export function NoteEditor({ projectId, noteId, onOutlineChange, editorRef }: No
               </button>
             ))}
           </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Sync indicator */}
-      <div className="flex items-center justify-end px-4 py-2 shrink-0 border-t">
-        <span className="text-xs text-muted-foreground" aria-live="polite">
-          {syncState === 'synced' && '✓ Saved'}
-          {syncState === 'syncing' && 'Saving…'}
-          {syncState === 'error' && '⚠ Sync failed'}
-        </span>
+      <div className="flex items-center justify-end px-4 py-2 shrink-0 border-t" aria-live="polite">
+        {syncState === 'synced' && (
+          <span className="text-xs text-muted-foreground">✓ Saved</span>
+        )}
+        {syncState === 'syncing' && (
+          <span className="flex items-center gap-1 text-muted-foreground text-xs">
+            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Saving…
+          </span>
+        )}
+        {syncState === 'error' && (
+          <span className="text-xs text-destructive">⚠ Sync failed</span>
+        )}
       </div>
     </div>
   )

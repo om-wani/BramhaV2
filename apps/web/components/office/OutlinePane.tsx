@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import type { Editor } from '@tiptap/core'
 import { List } from 'lucide-react'
 
@@ -19,14 +19,35 @@ const INDENT_MAP: Record<number, string> = {
 }
 
 export function OutlinePane({ headings, editorRef }: OutlinePaneProps) {
-  const handleHeadingClick = () => {
-    // Focus the editor — simple approach as described in spec
-    if (editorRef.current) {
-      editorRef.current.commands?.focus?.()
+  // Derive headings with ProseMirror positions from editor state.
+  // `headings` (from props) acts as the reactivity trigger: it updates whenever
+  // the doc changes, causing this memo to recompute fresh positions.
+  const headingsWithPos = useMemo(() => {
+    const editor = editorRef.current
+    if (!editor) {
+      return headings.map((h) => ({ ...h, pos: 0 }))
     }
+    const result: Array<{ level: number; text: string; id: string; pos: number }> = []
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'heading') {
+        const level = node.attrs.level as number
+        const text = node.textContent
+        const id = `heading-${level}-${text.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`
+        result.push({ level, text, id, pos })
+      }
+    })
+    return result
+  // `headings` is the reactivity proxy: it changes when the doc changes, triggering
+  // a re-render that recomputes positions from editorRef.current (mutable ref).
+  }, [headings])
+
+  const handleHeadingClick = (pos: number) => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.chain().focus().setTextSelection(pos).scrollIntoView().run()
   }
 
-  if (headings.length === 0) {
+  if (headingsWithPos.length === 0) {
     return (
       <div className="px-4 py-6 text-xs text-muted-foreground text-center">
         No headings in this note
@@ -41,10 +62,10 @@ export function OutlinePane({ headings, editorRef }: OutlinePaneProps) {
         Outline
       </div>
       <nav aria-label="Note outline">
-        {headings.map((heading) => (
+        {headingsWithPos.map((heading) => (
           <button
             key={heading.id}
-            onClick={() => handleHeadingClick()}
+            onClick={() => handleHeadingClick(heading.pos)}
             className={[
               'w-full text-left px-3 py-1 text-xs hover:bg-accent hover:text-accent-foreground transition-colors rounded mx-1',
               INDENT_MAP[heading.level] ?? 'pl-0',

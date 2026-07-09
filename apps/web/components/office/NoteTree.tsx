@@ -31,6 +31,11 @@ export function NoteTree({
     queryFn: () => api.get(`/projects/${projectId}/notes`, z.array(NoteSchema)),
   })
 
+  const { data: deletedNotes = [] } = useQuery({
+    queryKey: ['notes-deleted', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/notes/deleted`, z.array(NoteSchema)),
+  })
+
   const createNote = useMutation({
     mutationFn: (input: { title: string; folderPath: string; contentMd: string; isDaily?: boolean }) =>
       api.post(`/projects/${projectId}/notes`, NoteSchema, input),
@@ -164,6 +169,11 @@ export function NoteTree({
         >
           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
           Trash
+          {(deletedNotes as Note[]).length > 0 && (
+            <span className="ml-1 rounded-full bg-muted px-1.5 text-xs">
+              {(deletedNotes as Note[]).length}
+            </span>
+          )}
         </button>
       </div>
     </div>

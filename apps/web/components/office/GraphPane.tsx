@@ -16,15 +16,8 @@ interface GraphPaneProps {
   onSelectNote: (id: string) => void
 }
 
-const WIKILINK_RE = /\[\[([^\]]+)\]\]/g
-
 function extractWikilinks(contentMd: string): string[] {
-  const links: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = WIKILINK_RE.exec(contentMd)) !== null) {
-    links.push(m[1]!)
-  }
-  return links
+  return [...contentMd.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => m[1]!)
 }
 
 export function GraphPane({ projectId, noteId, notes, onSelectNote }: GraphPaneProps) {
