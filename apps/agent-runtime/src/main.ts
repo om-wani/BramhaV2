@@ -22,6 +22,7 @@ import { withTenant } from '@bramha/db'
 import type { WorkingMemory } from './pa/working-memory.js'
 import type { ScoringNode } from './pa/relevance.js'
 import { processTurnJob, type TurnEngineDeps } from './orchestrator/turn-engine.js'
+import { createAgentTurnsWorker } from './agent/agent-worker.js'
 
 // ── Environment ───────────────────────────────────────────────────────────────
 
@@ -263,6 +264,9 @@ async function main(): Promise<void> {
   const housekeepingQueue = new Queue('housekeeping', {
     connection: sharedRedis,
   })
+  const delegationsQueue = new Queue('delegations', {
+    connection: sharedRedis,
+  })
 
   // ── Deps object ──────────────────────────────────────────────────────────
   const deps: TurnEngineDeps = {
@@ -288,6 +292,10 @@ async function main(): Promise<void> {
       concurrency: 10,
     },
   )
+
+  // ── agent-turns Worker ───────────────────────────────────────────────────
+  const agentTurnsWorker = createAgentTurnsWorker(sharedRedis, delegationsQueue)
+  console.info('[agent-runtime] agent-turns worker running')
 
   worker.on('failed', (job, err) => {
     console.error('[agent-runtime] worker job failed', {
@@ -339,10 +347,12 @@ async function main(): Promise<void> {
     console.info(`[agent-runtime] received ${signal}, shutting down gracefully`)
     subscriber.destroy()
     await worker.close()
+    await agentTurnsWorker.close()
     await convEventsQueue.close()
     await agentTurnsQueue.close()
     await dlqQueue.close()
     await housekeepingQueue.close()
+    await delegationsQueue.close()
     await sharedRedis.quit()
     await subscriberRedis.quit()
     console.info('[agent-runtime] shutdown complete')
