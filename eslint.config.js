@@ -99,7 +99,10 @@ export default [
             },
             // packages can only import from shared
             { from: { type: 'pkg-db' }, allow: { to: { type: ['pkg-shared'] } } },
-            { from: { type: 'pkg-agents' }, allow: { to: { type: ['pkg-shared'] } } },
+            // pkg-agents may import from pkg-agents-providers for types + dynamic-import wiring;
+            // actual vendor-SDK imports are separately forbidden by no-restricted-imports above.
+            { from: { type: 'pkg-agents' }, allow: { to: { type: ['pkg-shared', 'pkg-agents-providers'] } } },
+            // pkg-agents-providers is implementation-only; no imports back into pkg-agents allowed.
             { from: { type: 'pkg-agents-providers' }, allow: { to: { type: ['pkg-shared'] } } },
             { from: { type: 'pkg-event-bus' }, allow: { to: { type: ['pkg-shared'] } } },
             { from: { type: 'pkg-mcp-connectors' }, allow: { to: { type: ['pkg-shared'] } } },

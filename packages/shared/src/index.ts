@@ -12,6 +12,7 @@ export * from './schemas/artifacts.js'
 export * from './schemas/files.js'
 export * from './schemas/knowledge.js'
 export * from './schemas/notes.js'
+export * from './schemas/agents.js'
 
 // Events
 export * from './events/index.js'
