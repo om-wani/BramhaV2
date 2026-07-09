@@ -56,9 +56,13 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 
 export class SemanticCache {
   private readonly entries: CacheEntry[] = []
+  private getCount = 0
 
   /**
    * Look up a cached result by embedding similarity.
+   *
+   * Runs lazy TTL eviction every 100 reads to bound memory without blocking
+   * the hot-path on every call.
    *
    * @param queryEmbedding - Embedding of the current query
    * @param threshold - Minimum cosine similarity to consider a cache hit (default: 0.92)
@@ -66,6 +70,13 @@ export class SemanticCache {
    */
   get(queryEmbedding: number[], threshold = 0.92): CachedResult | null {
     const now = Date.now()
+
+    // Lazy eviction: run every 100 reads to amortise the scan cost
+    this.getCount++
+    if (this.getCount % 100 === 0) {
+      this.evictExpired(now)
+    }
+
     let bestSimilarity = -Infinity
     let bestResult: CachedResult | null = null
 

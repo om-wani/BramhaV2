@@ -9,25 +9,11 @@
 
 // ── Vendor SDK imports (allowed only in packages/agents/src/providers/**) ─────
 import { createOpenAI } from '@ai-sdk/openai'
-import { streamText, jsonSchema, type ToolSet, type CoreMessage as AiCoreMessage } from 'ai'
+import { streamText, type CoreMessage as AiCoreMessage } from 'ai'
 
 import type { StreamProvider, CoreMessage, ToolDefinition, ProviderStreamOptions, ProviderChunk } from './types.js'
 import { ProviderError } from './types.js'
-
-// ── Tools builder ─────────────────────────────────────────────────────────────
-
-function buildToolSet(toolDefs: ToolDefinition[]): ToolSet | undefined {
-  if (toolDefs.length === 0) return undefined
-  return toolDefs.reduce<ToolSet>((acc, t) => {
-    const params = jsonSchema(t.parameters as Parameters<typeof jsonSchema>[0])
-    if (t.description !== undefined) {
-      acc[t.name] = { parameters: params, description: t.description }
-    } else {
-      acc[t.name] = { parameters: params }
-    }
-    return acc
-  }, {})
-}
+import { buildToolSet } from './utils.js'
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
@@ -59,16 +45,8 @@ export class OllamaProvider implements StreamProvider {
     const withTools = aiTools !== undefined ? { ...base, tools: aiTools } : base
     const callArgs = opts.signal !== undefined ? { ...withTools, abortSignal: opts.signal } : withTools
 
-    let result
-    try {
-      result = streamText(callArgs)
-    } catch (err: unknown) {
-      const status = (err as { status?: number })?.status
-      if (typeof status === 'number' && (status === 429 || status >= 500)) {
-        throw new ProviderError(`Ollama error ${status}`, status, this.name)
-      }
-      throw err
-    }
+    // streamText() returns synchronously — errors come through fullStream, not here.
+    const result = streamText(callArgs)
 
     try {
       for await (const chunk of result.fullStream) {

@@ -42,24 +42,48 @@ CREATE POLICY agent_personas_select ON agent_personas
     )
   );
 
+-- INSERT: bramha_app may only insert project-scoped personas.
+-- Global personas are owned by bramha_migrator (BYPASSRLS) only.
 DROP POLICY IF EXISTS agent_personas_insert ON agent_personas;
 CREATE POLICY agent_personas_insert ON agent_personas
-  FOR INSERT
+  FOR INSERT TO bramha_app
   WITH CHECK (
-    scope = 'global'
-    OR project_id IN (
+    scope = 'project'
+    AND project_id IN (
       SELECT project_id FROM project_members
       WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
         AND role IN ('owner', 'admin')
     )
   );
 
+-- UPDATE: same restriction — only project-scoped personas the user administers.
 DROP POLICY IF EXISTS agent_personas_update ON agent_personas;
 CREATE POLICY agent_personas_update ON agent_personas
-  FOR UPDATE
+  FOR UPDATE TO bramha_app
   USING (
-    scope = 'global'
-    OR project_id IN (
+    scope = 'project'
+    AND project_id IN (
+      SELECT project_id FROM project_members
+      WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+        AND role IN ('owner', 'admin')
+    )
+  )
+  WITH CHECK (
+    scope = 'project'
+    AND project_id IN (
+      SELECT project_id FROM project_members
+      WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
+        AND role IN ('owner', 'admin')
+    )
+  );
+
+-- DELETE: project-scoped personas only, by project owners/admins.
+DROP POLICY IF EXISTS agent_personas_delete ON agent_personas;
+CREATE POLICY agent_personas_delete ON agent_personas
+  FOR DELETE TO bramha_app
+  USING (
+    scope = 'project'
+    AND project_id IN (
       SELECT project_id FROM project_members
       WHERE user_id = NULLIF(current_setting('app.user_id', TRUE), '')::uuid
         AND role IN ('owner', 'admin')

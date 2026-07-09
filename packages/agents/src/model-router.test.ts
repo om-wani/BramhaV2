@@ -9,12 +9,20 @@
  *   5. Circuit breaker — opens after 5 failures, skips provider
  *   6. Hot-reload — different policy → different provider called
  *   7. writeTokenUsage callback — called on success and budget breach
+ *   8. Per-day budget — DailyBudgetExceededError thrown before any provider call
+ *
+ * NOTE on hot-reload DB path: the test in section 6 validates that a fresh
+ * policy object routes to the correct provider on each call. The end-to-end
+ * DB hot-reload scenario (update agent_model_policies row → next turn loads
+ * new model) is tested at the orchestrator service layer in T3.3.1, where
+ * fresh policies are fetched from DB per turn. No code change needed here.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   ModelRouter,
   BudgetExceededError,
+  DailyBudgetExceededError,
   clearCircuitBreakers,
   clearProviderCache,
 } from './model-router.js'
@@ -354,9 +362,41 @@ describe('ModelRouter.chat', () => {
     expect(call.personaId).toBe('persona-1')
   })
 
-  // ── 8. Non-retryable errors propagate immediately ─────────────────────────
+  // ── 8. Per-day budget enforcement ────────────────────────────────────────
 
-  it('propagates non-retryable errors without failover', async () => {
+  it('throws DailyBudgetExceededError before any provider call when daily limit reached', async () => {
+    const streamSpy = vi.fn(async function* (): AsyncGenerator<ProviderChunk> {
+      yield { type: 'content', text: 'should not reach here' }
+    })
+    const mockFactory = () => ({ name: 'mock-a', stream: streamSpy })
+
+    // getDailyUsageUSD returns a value >= perDayUSD
+    const getDailyUsageUSD = vi.fn().mockResolvedValue(10.0)
+
+    const policy = makePolicy({ budget: { perTurnUSD: 1.0, perDayUSD: 10.0 } })
+
+    let err: DailyBudgetExceededError | null = null
+    try {
+      await collectEvents(policy, {
+        providerFactory: mockFactory,
+        writeTokenUsageContext: { projectId: 'proj-1', personaId: 'persona-1' },
+        getDailyUsageUSD,
+      })
+    } catch (e) {
+      if (e instanceof DailyBudgetExceededError) err = e
+    }
+
+    expect(err).not.toBeNull()
+    expect(err!.spentUsd).toBeCloseTo(10.0)
+    expect(err!.limitUsd).toBeCloseTo(10.0)
+    // Provider must not have been called — abort happens before streaming
+    expect(streamSpy).not.toHaveBeenCalled()
+    expect(getDailyUsageUSD).toHaveBeenCalledWith('persona-1', 'proj-1')
+  })
+
+  // ── 9. Non-retryable errors propagate immediately ─────────────────────────
+
+  it('propagates non-retryable errors without attempting failover', async () => {
     const fallbackProvider = makeProvider('mock-fallback', [
       { type: 'content', text: 'should not reach here' },
     ])

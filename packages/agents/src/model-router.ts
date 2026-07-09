@@ -12,21 +12,14 @@
  *   - Provider errors are normalised before propagation (raw SDK errors redacted).
  */
 
+import type { ModelPolicy } from '@bramha/shared'
 import type { StreamProvider, CoreMessage, ToolDefinition, ProviderChunk } from './providers/types.js'
 import { ProviderError } from './providers/types.js'
 
-// ── Public types ──────────────────────────────────────────────────────────────
+// Re-export ModelPolicy so existing callers can still import from './model-router.js'
+export type { ModelPolicy }
 
-export interface ModelPolicy {
-  tier: 'csuite' | 'specialist' | 'utility'
-  primary: { provider: string; model: string }
-  fallbacks: { provider: string; model: string }[]
-  maxInputTokens: number
-  maxOutputTokens: number
-  temperature: number
-  budget: { perTurnUSD: number; perDayUSD: number }
-  cache: { promptCaching: boolean; semanticCacheTTLs: number }
-}
+// ── Public types ──────────────────────────────────────────────────────────────
 
 export type StreamEvent =
   | { type: 'thought'; text: string }
@@ -57,13 +50,21 @@ export interface ModelRouterChatOptions {
     turnId?: string | undefined
   }
   /**
+   * Called once before streaming to check the per-day budget.
+   * Should return total USD spent today for the given (personaId, projectId).
+   * If the returned value >= policy.budget.perDayUSD, chat() throws DailyBudgetExceededError
+   * before making any provider call.
+   * If omitted, per-day enforcement is skipped.
+   */
+  getDailyUsageUSD?: (personaId: string, projectId: string) => Promise<number>
+  /**
    * Injectable provider factory — used in tests to supply mock providers.
    * Production callers omit this; ModelRouter uses dynamic imports.
    */
   providerFactory?: (providerName: string) => StreamProvider
 }
 
-// ── Budget exceeded error ──────────────────────────────────────────────────────
+// ── Budget errors ─────────────────────────────────────────────────────────────
 
 export class BudgetExceededError extends Error {
   constructor(
@@ -72,6 +73,16 @@ export class BudgetExceededError extends Error {
   ) {
     super(`Budget exceeded: spent $${spentUsd.toFixed(6)} of $${limitUsd.toFixed(4)} limit`)
     this.name = 'BudgetExceededError'
+  }
+}
+
+export class DailyBudgetExceededError extends Error {
+  constructor(
+    public readonly spentUsd: number,
+    public readonly limitUsd: number,
+  ) {
+    super(`Daily budget exceeded: spent $${spentUsd.toFixed(4)} of $${limitUsd.toFixed(2)} daily limit`)
+    this.name = 'DailyBudgetExceededError'
   }
 }
 
@@ -199,8 +210,9 @@ export class ModelRouter {
    *   policy.primary → policy.fallbacks[0] → ... → throws AllProvidersFailedError
    *
    * Budget enforcement:
-   *   Accumulates estimatedUsd from each `usage` event. If the running total
-   *   exceeds policy.budget.perTurnUSD, throws BudgetExceededError and writes
+   *   Per-day: checked once before streaming via getDailyUsageUSD callback.
+   *   Per-turn: accumulates estimatedUsd from each `usage` event. If running
+   *   total >= policy.budget.perTurnUSD, throws BudgetExceededError and writes
    *   partial usage.
    *
    * @param policy - Agent model policy (loaded from DB, hot-reloadable per call)
@@ -216,6 +228,20 @@ export class ModelRouter {
     signal?: AbortSignal,
     opts?: ModelRouterChatOptions,
   ): AsyncGenerator<StreamEvent> {
+    // Guard: projectId is required when writeTokenUsage is provided (avoids silent FK violation)
+    if (opts?.writeTokenUsage && !opts.writeTokenUsageContext?.projectId) {
+      throw new Error('writeTokenUsageContext.projectId is required when writeTokenUsage is provided')
+    }
+
+    // Per-day budget enforcement — check before any provider call
+    const ctx = opts?.writeTokenUsageContext
+    if (opts?.getDailyUsageUSD && ctx?.personaId !== undefined && ctx?.projectId !== undefined) {
+      const dailySpent = await opts.getDailyUsageUSD(ctx.personaId, ctx.projectId)
+      if (dailySpent >= policy.budget.perDayUSD) {
+        throw new DailyBudgetExceededError(dailySpent, policy.budget.perDayUSD)
+      }
+    }
+
     // Build the ordered candidate list: primary first, then fallbacks
     const candidates: { provider: string; model: string }[] = [
       policy.primary,
@@ -262,7 +288,7 @@ export class ModelRouter {
             totalOutputTokens += chunk.outputTokens
             totalUsd += chunk.estimatedUsd
 
-            // Yield the usage event before budget check
+            // Yield the usage event before budget check (usage is already spent)
             yield {
               type: 'usage',
               inputTokens: chunk.inputTokens,
@@ -270,8 +296,8 @@ export class ModelRouter {
               estimatedUsd: chunk.estimatedUsd,
             }
 
-            // Budget check — abort mid-stream if exceeded
-            if (totalUsd > policy.budget.perTurnUSD) {
+            // Per-turn budget check — abort mid-stream if limit reached or exceeded
+            if (totalUsd >= policy.budget.perTurnUSD) {
               // Write partial usage before aborting
               await opts?.writeTokenUsage?.({
                 ...opts.writeTokenUsageContext,

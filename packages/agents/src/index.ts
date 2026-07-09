@@ -12,6 +12,7 @@ export { ProviderError } from './providers/types.js'
 export {
   ModelRouter,
   BudgetExceededError,
+  DailyBudgetExceededError,
   clearCircuitBreakers,
   clearProviderCache,
 } from './model-router.js'
