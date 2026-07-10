@@ -20,6 +20,7 @@
  * spinning up Redis/Postgres/BullMQ.
  */
 
+import { z } from 'zod'
 import type { Redis } from 'ioredis'
 import type { AgentScore } from '../pa/relevance.js'
 
@@ -34,6 +35,17 @@ export const INTERRUPT_TTL_SEC = 30
  * and score above interrupt_threshold on ANOTHER agent's streaming message.
  */
 export const INTERJECT_DELTA = 0.8
+
+// ── Zod schema (used at event-bus subscriber boundary) ────────────────────────
+
+export const InterruptEventSchema = z.object({
+  reason: z.enum(['stop', 'redirect', 'summon']),
+  conversationId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  raisedBy: z.object({ kind: z.enum(['user', 'agent']), id: z.string().uuid() }),
+  personaId: z.string().uuid().optional(),
+  branchId: z.string().uuid().optional(),
+})
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

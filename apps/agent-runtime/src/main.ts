@@ -23,7 +23,7 @@ import type { WorkingMemory } from './pa/working-memory.js'
 import type { ScoringNode } from './pa/relevance.js'
 import { processTurnJob, type TurnEngineDeps } from './orchestrator/turn-engine.js'
 import { createAgentTurnsWorker } from './agent/agent-worker.js'
-import { handleInterrupt, type InterruptDeps, type InterruptEvent } from './orchestrator/interrupts.js'
+import { handleInterrupt, InterruptEventSchema, type InterruptDeps } from './orchestrator/interrupts.js'
 
 // ── Environment ───────────────────────────────────────────────────────────────
 
@@ -541,8 +541,12 @@ async function main(): Promise<void> {
     'interrupt.raise:*',
     async (_channel: string, payload: unknown) => {
       try {
-        const event = payload as InterruptEvent
-        await handleInterrupt(event, interruptDeps)
+        const parsed = InterruptEventSchema.safeParse(payload)
+        if (!parsed.success) {
+          console.error('[agent-runtime] malformed interrupt.raise payload', { errors: parsed.error.issues })
+          return
+        }
+        await handleInterrupt(parsed.data, interruptDeps)
       } catch (err) {
         console.error('[agent-runtime] interrupt handler error', { err })
       }
