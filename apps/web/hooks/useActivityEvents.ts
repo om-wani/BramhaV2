@@ -33,7 +33,7 @@ export function useActivityEvents(projectId: string): void {
       if (!p.delegationId) return
       useActivityStore.getState().upsertEntry({
         delegationId: p.delegationId,
-        projectId: p.projectId ?? projectId,
+        projectId,
         workerSlug: p.workerSlug ?? '',
         objective: p.objective ?? '',
         status: 'queued',
