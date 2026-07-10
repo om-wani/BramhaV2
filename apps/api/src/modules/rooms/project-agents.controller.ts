@@ -17,7 +17,7 @@ import {
   ProjectViewerGuard,
   ProjectEditorGuard,
 } from '../common/guards/project-member.guard'
-import { RoomsService, type HiredPersonaDto, type RoomDto } from './rooms.service'
+import { RoomsService, type HiredPersonaDto, type RoomDto, type TokenUsageDto } from './rooms.service'
 
 class HirePersonaDto extends createZodDto(HirePersonaInputSchema) {}
 
@@ -68,5 +68,20 @@ export class ProjectAgentsController {
     @Param('personaId') personaId: string,
   ): Promise<RoomDto> {
     return this.rooms.getOrCreateCallRoom(user.userId, projectId, personaId)
+  }
+}
+
+/** GET /projects/:projectId/token-usage — list token usage rows with room type */
+@Controller('projects/:projectId/token-usage')
+export class TokenUsageController {
+  constructor(private readonly rooms: RoomsService) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, ProjectViewerGuard)
+  listTokenUsage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+  ): Promise<TokenUsageDto[]> {
+    return this.rooms.listTokenUsage(user.userId, projectId)
   }
 }

@@ -376,6 +376,64 @@ describe('RoomsService', () => {
     })
   })
 
+  // ── listTokenUsage ────────────────────────────────────────────────────────────
+
+  describe('listTokenUsage', () => {
+    it('returns token usage rows mapped with roomType', async () => {
+      const row = {
+        id: 'ffffffff-0000-0000-0000-000000000001',
+        persona_id: PERSONA_ID,
+        conversation_node_id: null,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        input_tokens: 1200,
+        output_tokens: 300,
+        estimated_usd: '0.012000',
+        created_at: '2024-01-01T00:00:00+00:00',
+        room_type: 'meeting',
+      }
+      const { db, relay } = buildMocks([[row]])
+
+      const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
+      const result = await service.listTokenUsage(USER_ID, PROJECT_ID)
+
+      expect(result).toHaveLength(1)
+      expect(result[0]!.roomType).toBe('meeting')
+      expect(result[0]!.inputTokens).toBe(1200)
+      expect(result[0]!.provider).toBe('anthropic')
+    })
+
+    it('returns empty array when no usage rows exist', async () => {
+      const { db, relay } = buildMocks([[]])
+
+      const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
+      const result = await service.listTokenUsage(USER_ID, PROJECT_ID)
+
+      expect(result).toEqual([])
+    })
+
+    it('maps null roomType when no room context on the usage row', async () => {
+      const row = {
+        id: 'ffffffff-0000-0000-0000-000000000002',
+        persona_id: null,
+        conversation_node_id: null,
+        provider: 'openai',
+        model: 'gpt-4o',
+        input_tokens: 500,
+        output_tokens: 100,
+        estimated_usd: '0.003000',
+        created_at: '2024-01-01T00:00:00+00:00',
+        room_type: null,
+      }
+      const { db, relay } = buildMocks([[row]])
+
+      const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
+      const result = await service.listTokenUsage(USER_ID, PROJECT_ID)
+
+      expect(result[0]!.roomType).toBeNull()
+    })
+  })
+
   // ── firePersona ───────────────────────────────────────────────────────────────
 
   describe('firePersona', () => {

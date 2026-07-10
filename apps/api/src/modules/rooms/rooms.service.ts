@@ -43,6 +43,19 @@ export interface HiredPersonaDto {
   hiredAt: string
 }
 
+export interface TokenUsageDto {
+  id: string
+  personaId: string | null
+  conversationNodeId: string | null
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  estimatedUsd: string
+  createdAt: string
+  roomType: string | null
+}
+
 // ── Row types ─────────────────────────────────────────────────────────────────
 
 interface RoomRow {
@@ -74,6 +87,19 @@ interface HiredPersonaRow {
   color: string | null
   avatar_key: string | null
   hired_at: string
+}
+
+interface TokenUsageRow {
+  id: string
+  persona_id: string | null
+  conversation_node_id: string | null
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  estimated_usd: string
+  created_at: string
+  room_type: string | null
 }
 
 function mapRoom(r: RoomRow): RoomDto {
@@ -110,6 +136,21 @@ function mapHiredPersona(r: HiredPersonaRow): HiredPersonaDto {
     accentColor: r.color,
     avatarUrl: r.avatar_key,
     hiredAt: r.hired_at,
+  }
+}
+
+function mapTokenUsage(r: TokenUsageRow): TokenUsageDto {
+  return {
+    id: r.id,
+    personaId: r.persona_id,
+    conversationNodeId: r.conversation_node_id,
+    provider: r.provider,
+    model: r.model,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    estimatedUsd: r.estimated_usd,
+    createdAt: r.created_at,
+    roomType: r.room_type,
   }
 }
 
@@ -360,6 +401,34 @@ export class RoomsService {
         targetId: participantId,
         action: 'remove_participant',
       })
+    })
+  }
+
+  // ── Token usage ───────────────────────────────────────────────────────────────
+
+  async listTokenUsage(userId: string, projectId: string): Promise<TokenUsageDto[]> {
+    return this.db.run({ userId, projectId }, async (tx) => {
+      const rows = await tx<TokenUsageRow[]>`
+        SELECT
+          tu.id,
+          tu.persona_id,
+          tu.conversation_node_id,
+          tu.provider,
+          tu.model,
+          tu.input_tokens,
+          tu.output_tokens,
+          tu.estimated_usd,
+          tu.created_at,
+          r.type AS room_type
+        FROM token_usage tu
+        LEFT JOIN conversation_nodes cn ON cn.id = tu.conversation_node_id
+        LEFT JOIN conversations c ON c.id = cn.conversation_id
+        LEFT JOIN rooms r ON r.id = c.room_id
+        WHERE tu.project_id = ${projectId}
+        ORDER BY tu.created_at DESC
+        LIMIT 100
+      `
+      return rows.map(mapTokenUsage)
     })
   }
 

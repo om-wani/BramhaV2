@@ -238,30 +238,31 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
    * agent-runtime must be active with at least one completed turn in both a
    * meeting room and a call room.
    */
-  test.skip('turn policies (θ) written to usage rows by room type', async ({ request }) => {
-    const projectId = e2eProjectId
-    if (!projectId) return
+  test('turn policies (θ) written to usage rows by room type', async ({ request }) => {
+    // θ = per-room-type turn budget (docs/04_agent_orchestration.md §2)
+    // Each room type has its own θ value (θ_meeting, θ_call, θ_conference) that
+    // caps how many tokens/$ an agent may spend per turn.  The agent-runtime
+    // records a token_usage row per turn; this test verifies those rows carry
+    // room_type context so budget enforcement can be audited.
+    //
+    // Requires: running API + agent-runtime + at least one completed AI turn in
+    // both a meeting room and a call room.
+    // Set E2E_API_URL + E2E_PROJECT_ID + E2E_AUTH_TOKEN to enable.
+    const apiUrl = process.env.E2E_API_URL
+    const projectId = process.env.E2E_PROJECT_ID
+    const authToken = process.env.E2E_AUTH_TOKEN
+    test.skip(!apiUrl || !projectId, 'E2E_API_URL and E2E_PROJECT_ID required')
 
-    // After sending a turn in a meeting room, assert:
-    //   GET /projects/:projectId/token-usage returns at least one row
-    //   where the row was created in context of a meeting room
-    const meetingUsageResp = await request.get(
-      `/api/projects/${projectId}/token-usage?roomType=meeting&limit=1`,
-    )
-    expect(meetingUsageResp.ok()).toBeTruthy()
-    const meetingUsage: unknown[] = await meetingUsageResp.json()
-    expect(meetingUsage.length).toBeGreaterThan(0)
+    const res = await request.get(`${apiUrl}/projects/${projectId}/token-usage`, {
+      headers: { Authorization: `Bearer ${authToken ?? ''}` },
+    })
+    expect(res.ok()).toBeTruthy()
+    const rows: { roomType: string | null }[] = await res.json()
 
-    // After sending a turn in a call room, assert room_type = 'call' row present
-    const callUsageResp = await request.get(
-      `/api/projects/${projectId}/token-usage?roomType=call&limit=1`,
-    )
-    expect(callUsageResp.ok()).toBeTruthy()
-    const callUsage: unknown[] = await callUsageResp.json()
-    expect(callUsage.length).toBeGreaterThan(0)
-
-    // Both room types should have separate θ-governed rows — verifies that the
-    // agent-runtime applies per-room-type turn budgets (θ_meeting ≠ θ_call)
-    // and records them in the token_usage table for auditing.
+    // At minimum, rows with roomType 'meeting' and 'call' exist after prior tests ran
+    const meetingRow = rows.find((r) => r.roomType === 'meeting')
+    const callRow = rows.find((r) => r.roomType === 'call')
+    expect(meetingRow).toBeDefined()
+    expect(callRow).toBeDefined()
   })
 })
