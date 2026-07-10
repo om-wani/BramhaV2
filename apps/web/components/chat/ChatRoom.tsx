@@ -11,6 +11,8 @@ import { MessageList } from './MessageList'
 import { Composer } from './Composer'
 import { RoomHeader } from './RoomHeader'
 import { useAgentStream } from '@/hooks/useAgentStream'
+import { useActivityEvents } from '@/hooks/useActivityEvents'
+import { ActivityPane } from '@/components/activity/ActivityPane'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────────
 
@@ -397,6 +399,9 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
     })
   }, [room?.id, currentUserId, currentUser?.displayName])
 
+  // ── Activity events (background delegation feed) ────────────────────────────
+  useActivityEvents(projectId)
+
   // ── Agent stream controls ────────────────────────────────────────────────────
   const { stopAgent } = useAgentStream(conversationId ?? '')
 
@@ -415,6 +420,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
         onStopAgent={stopAgent}
       />
       <Composer onSend={handleSend} onTyping={handleTyping} />
+      <ActivityPane projectId={projectId} />
     </div>
   )
 }
