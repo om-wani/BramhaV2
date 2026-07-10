@@ -434,6 +434,7 @@ export async function runSpecialistLoop(
       turnDepth: 0,
       triggerReason: 'follow-up',
       otherSpeakers: [],
+      forceSummon: true,
     }
 
     await deps.enqueueTurn(reportBackJob, { priority: 10 })

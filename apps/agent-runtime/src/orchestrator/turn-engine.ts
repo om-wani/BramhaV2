@@ -90,6 +90,8 @@ export interface AgentTurnJobData {
   triggerReason: 'mention' | 'expertise' | 'follow-up'
   /** Display names of co-speakers this turn (for context instruction). */
   otherSpeakers: string[]
+  /** When true, turn engine bypasses normal score threshold and always enqueues this agent. */
+  forceSummon?: boolean
 }
 
 // ── Housekeeping job payload ───────────────────────────────────────────────────

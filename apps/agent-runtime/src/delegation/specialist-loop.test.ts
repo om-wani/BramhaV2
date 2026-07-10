@@ -229,6 +229,31 @@ describe('runSpecialistLoop', () => {
     expect(timeoutCall).toBeDefined()
   })
 
+  it('3b. sets status=timeout on elapsed-seconds budget breach', async () => {
+    // maxSeconds=0 ensures the budget check fires immediately before the first loop iteration
+    const chatModel = makeChatModel([
+      [{ type: 'content', text: 'Should not complete.' }],
+    ])
+    const deps = makeDeps({ chatModel })
+
+    const jobWithTimeBudget: DelegationJobData = {
+      ...baseJob,
+      budget: { maxSeconds: 0 },
+    }
+
+    await runSpecialistLoop(jobWithTimeBudget, deps)
+
+    const upsertCalls = vi.mocked(deps.upsertDelegation).mock.calls
+    const timeoutCall = upsertCalls.find(([, u]) => u.status === 'timeout')
+    expect(timeoutCall).toBeDefined()
+    expect(timeoutCall![1].result).toMatchObject({ budget_breach: true })
+
+    const publishCalls = vi.mocked(deps.publishEvent).mock.calls
+    const timeoutEvent = publishCalls.find(([ch]) => ch.startsWith('delegation.timeout:'))
+    expect(timeoutEvent).toBeDefined()
+    expect(timeoutEvent![0]).toBe(`delegation.timeout:${PROJECT_ID}`)
+  })
+
   it('4. SECURITY: context bundle passed to model contains NO room transcript', async () => {
     let capturedMessages: CoreMessage[] = []
 
