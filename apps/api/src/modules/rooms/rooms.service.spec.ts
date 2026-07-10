@@ -98,11 +98,11 @@ describe('RoomsService', () => {
       const hiredRow = makeHiredPersonaRow()
       const callRoom = makeRoomRow({ type: 'call' })
 
-      // tx calls in order:
-      // 1. SELECT persona
+      // tx calls in order (skipHiredCheck=true + personaName hint skips name query):
+      // 1. SELECT agent_personas (persona exists + name)
       // 2. INSERT INTO project_agents
-      // 3. SELECT hired persona
-      // 4. SELECT existing call room (none found)
+      // 3. SELECT hired row
+      // 4. SELECT existing call room (none found)   ← getOrCreateCallRoom
       // 5. INSERT new call room
       // 6. INSERT user participant
       // 7. INSERT agent participant
@@ -111,7 +111,7 @@ describe('RoomsService', () => {
         [],            // INSERT project_agents ON CONFLICT DO NOTHING
         [hiredRow],    // SELECT hired row
         [],            // SELECT existing call room (not found)
-        [{ ...callRoom, type: 'call', name: '1:1 with ' + PERSONA_ID }], // INSERT call room
+        [{ ...callRoom, type: 'call', name: '1:1 with Ledger' }], // INSERT call room
         [],            // INSERT user participant
         [],            // INSERT agent participant
       ])
@@ -282,10 +282,15 @@ describe('RoomsService', () => {
   // ── getOrCreateCallRoom ────────────────────────────────────────────────────────
 
   describe('getOrCreateCallRoom', () => {
-    it('returns existing call room when one already exists', async () => {
+    it('returns existing call room when persona is hired', async () => {
       const existingRoom = makeRoomRow({ type: 'call' })
 
-      const { db, relay } = buildMocks([[existingRoom]])
+      // External call (skipHiredCheck=false):
+      // tx[0] = hired check + name, tx[1] = existing room query
+      const { db, relay } = buildMocks([
+        [{ name: 'Ledger' }],  // project_agents JOIN agent_personas (hired + name)
+        [existingRoom],         // existing call room found
+      ])
 
       const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
       const result = await service.getOrCreateCallRoom(USER_ID, PROJECT_ID, PERSONA_ID)
@@ -294,20 +299,55 @@ describe('RoomsService', () => {
       expect(result.type).toBe('call')
     })
 
-    it('creates a new call room with user and agent participants when none exists', async () => {
-      const newRoom = makeRoomRow({ type: 'call', name: '1:1 with ' + PERSONA_ID })
+    it('creates a new call room using persona name when none exists', async () => {
+      const newRoom = makeRoomRow({ type: 'call', name: '1:1 with Ledger' })
 
+      // External call:
+      // tx[0] = hired check (found, name='Ledger')
+      // tx[1] = existing call room (not found)
+      // tx[2] = INSERT room
+      // tx[3] = INSERT user participant
+      // tx[4] = INSERT agent participant
       const { db, relay } = buildMocks([
-        [],          // no existing call room
-        [newRoom],   // INSERT room
-        [],          // INSERT user participant
-        [],          // INSERT agent participant
+        [{ name: 'Ledger' }],
+        [],
+        [newRoom],
+        [],
+        [],
       ])
 
       const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
       const result = await service.getOrCreateCallRoom(USER_ID, PROJECT_ID, PERSONA_ID)
 
       expect(result.type).toBe('call')
+      expect(result.name).toBe('1:1 with Ledger')
+    })
+
+    it('throws ForbiddenException when persona is not hired (external call)', async () => {
+      // tx[0] = hired check returns empty
+      const { db, relay } = buildMocks([[]])
+
+      const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
+
+      await expect(
+        service.getOrCreateCallRoom(USER_ID, PROJECT_ID, PERSONA_ID),
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('skips hired check when skipHiredCheck=true and uses provided name', async () => {
+      const existingRoom = makeRoomRow({ type: 'call' })
+
+      // With skipHiredCheck=true and personaName provided:
+      // tx[0] = existing call room (nameHint skips agent_personas query)
+      const { db, relay } = buildMocks([[existingRoom]])
+
+      const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
+      const result = await service.getOrCreateCallRoom(
+        USER_ID, PROJECT_ID, PERSONA_ID, undefined,
+        { skipHiredCheck: true, personaName: 'Ledger' },
+      )
+
+      expect(result.id).toBe(ROOM_ID)
     })
   })
 

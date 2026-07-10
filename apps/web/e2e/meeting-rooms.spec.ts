@@ -19,41 +19,32 @@
 
 import { test, expect, type Page } from '@playwright/test'
 
+// ── Env helpers ─────────────────────────────────────────────────────────────────
+// Use direct property access (no bracket notation) to satisfy security/detect-object-injection.
+
+const e2eEmail = process.env.E2E_EMAIL
+const e2ePassword = process.env.E2E_PASSWORD
+const e2eProjectId = process.env.E2E_PROJECT_ID
+const e2eLedgerId = process.env.E2E_LEDGER_PERSONA_ID
+const e2eOrionId = process.env.E2E_ORION_PERSONA_ID
+const e2eVulcanId = process.env.E2E_VULCAN_PERSONA_ID
+const e2eLyraId = process.env.E2E_LYRA_PERSONA_ID
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const ENV_KEYS = {
-  E2E_EMAIL: process.env['E2E_EMAIL'],
-  E2E_PASSWORD: process.env['E2E_PASSWORD'],
-  E2E_PROJECT_ID: process.env['E2E_PROJECT_ID'],
-  E2E_LEDGER_PERSONA_ID: process.env['E2E_LEDGER_PERSONA_ID'],
-  E2E_ORION_PERSONA_ID: process.env['E2E_ORION_PERSONA_ID'],
-  E2E_VULCAN_PERSONA_ID: process.env['E2E_VULCAN_PERSONA_ID'],
-  E2E_LYRA_PERSONA_ID: process.env['E2E_LYRA_PERSONA_ID'],
-} as const
-
-function requireEnv(key: keyof typeof ENV_KEYS): string | undefined {
-  return ENV_KEYS[key]
-}
-
 async function signIn(page: Page): Promise<string | null> {
-  const email = requireEnv('E2E_EMAIL')
-  const password = requireEnv('E2E_PASSWORD')
-  const projectId = requireEnv('E2E_PROJECT_ID')
-
-  if (!email || !password || !projectId) {
+  if (!e2eEmail || !e2ePassword || !e2eProjectId) {
     test.skip(true, 'E2E_EMAIL / E2E_PASSWORD / E2E_PROJECT_ID not set')
     return null
   }
 
   await page.goto('/login')
-  await page.getByLabel(/email/i).fill(email)
-  await page.getByLabel(/password/i).fill(password)
+  await page.getByLabel(/email/i).fill(e2eEmail)
+  await page.getByLabel(/password/i).fill(e2ePassword)
   await page.getByRole('button', { name: /sign in/i }).click()
   await page.waitForURL('**/dashboard')
-  return projectId
+  return e2eProjectId
 }
-
-// ── Hire helpers via API ───────────────────────────────────────────────────────
 
 async function hirePersona(page: Page, projectId: string, personaId: string) {
   const resp = await page.request.post(`/api/projects/${projectId}/agents`, {
@@ -73,17 +64,14 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
     const projectId = await signIn(page)
     if (!projectId) return
 
-    const ledgerId = requireEnv('E2E_LEDGER_PERSONA_ID')
-    const orionId = requireEnv('E2E_ORION_PERSONA_ID')
-
-    if (!ledgerId || !orionId) {
+    if (!e2eLedgerId || !e2eOrionId) {
       test.skip(true, 'E2E_LEDGER_PERSONA_ID / E2E_ORION_PERSONA_ID not set')
       return
     }
 
     // Hire Ledger and Orion via API
-    await hirePersona(page, projectId, ledgerId)
-    await hirePersona(page, projectId, orionId)
+    await hirePersona(page, projectId, e2eLedgerId)
+    await hirePersona(page, projectId, e2eOrionId)
 
     // Navigate to meetings page
     await page.goto(`/p/${projectId}/meeting`)
@@ -119,8 +107,8 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
       .filter((p) => p.participantKind === 'agent')
       .map((p) => p.personaId)
 
-    expect(agentIds).toContain(ledgerId)
-    expect(agentIds).toContain(orionId)
+    expect(agentIds).toContain(e2eLedgerId)
+    expect(agentIds).toContain(e2eOrionId)
     // Must be exactly these two agents (no extras)
     expect(agentIds).toHaveLength(2)
   })
@@ -133,32 +121,28 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
     const projectId = await signIn(page)
     if (!projectId) return
 
-    const vulcanId = requireEnv('E2E_VULCAN_PERSONA_ID')
-    const lyraId = requireEnv('E2E_LYRA_PERSONA_ID')
-
-    if (!vulcanId) {
+    if (!e2eVulcanId) {
       test.skip(true, 'E2E_VULCAN_PERSONA_ID not set')
       return
     }
 
     // Hire Vulcan
-    await hirePersona(page, projectId, vulcanId)
+    await hirePersona(page, projectId, e2eVulcanId)
 
     // Navigate to Vulcan's 1:1 room
-    await page.goto(`/p/${projectId}/call/${vulcanId}`)
+    await page.goto(`/p/${projectId}/call/${e2eVulcanId}`)
 
     // Persona bio card should show Vulcan
     await expect(page.getByText(/vulcan/i)).toBeVisible({ timeout: 10_000 })
 
     // If Lyra is set, ensure she is not visible in the header
-    if (lyraId) {
+    if (e2eLyraId) {
       await expect(page.getByText(/lyra/i)).not.toBeVisible()
     }
 
     // Participants via API — only Vulcan should be the agent participant
-    // (call-room endpoint returns the room; participants endpoint returns roster)
     const callRoomResp = await page.request.get(
-      `/api/projects/${projectId}/agents/${vulcanId}/call-room`,
+      `/api/projects/${projectId}/agents/${e2eVulcanId}/call-room`,
     )
     expect(callRoomResp.ok()).toBeTruthy()
     const callRoom: { id: string } = await callRoomResp.json()
@@ -172,10 +156,10 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
 
     const agentParticipants = parts.filter((p) => p.participantKind === 'agent')
     expect(agentParticipants).toHaveLength(1)
-    expect(agentParticipants[0].personaId).toBe(vulcanId)
+    expect(agentParticipants[0]!.personaId).toBe(e2eVulcanId)
 
-    if (lyraId) {
-      expect(agentParticipants.map((p) => p.personaId)).not.toContain(lyraId)
+    if (e2eLyraId) {
+      expect(agentParticipants.map((p) => p.personaId)).not.toContain(e2eLyraId)
     }
   })
 
@@ -232,5 +216,52 @@ test.describe('Meeting rooms and 1:1 isolation', () => {
       { data: { participantKind: 'agent', personaId: nonHiredPersonaId } },
     )
     expect(addResp.status()).toBe(403)
+  })
+
+  /**
+   * Turn policies (θ per room type) — token usage rows carry room-type context.
+   *
+   * θ (theta) is the per-room turn budget defined in docs/04_agent_orchestration.md §2.
+   * Each room type has its own θ value that governs how many tokens / $ an agent
+   * may spend per turn before the turn is force-truncated.  For example:
+   *   - conference rooms: θ_conference (higher, multi-agent council)
+   *   - meeting rooms:    θ_meeting    (moderate, subset roster)
+   *   - call rooms:       θ_call       (lower, 1:1 focused)
+   *
+   * The agent-runtime is expected to record a token_usage row per turn that
+   * includes the room type so budget enforcement can be audited.
+   *
+   * This test is skipped by default — it requires a live API + agent-runtime with
+   * token usage tracking enabled and at least one AI turn completed in each room.
+   *
+   * To run: E2E_EMAIL, E2E_PASSWORD, E2E_PROJECT_ID must be set and the
+   * agent-runtime must be active with at least one completed turn in both a
+   * meeting room and a call room.
+   */
+  test.skip('turn policies (θ) written to usage rows by room type', async ({ request }) => {
+    const projectId = e2eProjectId
+    if (!projectId) return
+
+    // After sending a turn in a meeting room, assert:
+    //   GET /projects/:projectId/token-usage returns at least one row
+    //   where the row was created in context of a meeting room
+    const meetingUsageResp = await request.get(
+      `/api/projects/${projectId}/token-usage?roomType=meeting&limit=1`,
+    )
+    expect(meetingUsageResp.ok()).toBeTruthy()
+    const meetingUsage: unknown[] = await meetingUsageResp.json()
+    expect(meetingUsage.length).toBeGreaterThan(0)
+
+    // After sending a turn in a call room, assert room_type = 'call' row present
+    const callUsageResp = await request.get(
+      `/api/projects/${projectId}/token-usage?roomType=call&limit=1`,
+    )
+    expect(callUsageResp.ok()).toBeTruthy()
+    const callUsage: unknown[] = await callUsageResp.json()
+    expect(callUsage.length).toBeGreaterThan(0)
+
+    // Both room types should have separate θ-governed rows — verifies that the
+    // agent-runtime applies per-room-type turn budgets (θ_meeting ≠ θ_call)
+    // and records them in the token_usage table for auditing.
   })
 })

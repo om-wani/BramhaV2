@@ -414,8 +414,12 @@ export class RoomsService {
       `
       if (!hired[0]) throw new Error('project_agents row not found after insert')
 
-      // Auto-create 1:1 call room if not already present
-      await this.getOrCreateCallRoom(userId, projectId, personaId, tx)
+      // Auto-create 1:1 call room if not already present.
+      // skipHiredCheck=true: we just inserted the row; personaName from above fetch.
+      await this.getOrCreateCallRoom(userId, projectId, personaId, tx, {
+        skipHiredCheck: true,
+        personaName: persona[0].name,
+      })
 
       this.logger.log({ event: 'persona.hired', actorId: userId, personaId, projectId })
       return mapHiredPersona(hired[0])
@@ -436,21 +440,53 @@ export class RoomsService {
 
   /**
    * Find or create the 1:1 call room for (userId, projectId, personaId).
-   * Accepts an optional tx for use inside hirePersona transaction.
+   *
+   * @param externalTx  Optional transaction for use inside hirePersona (same tx).
+   * @param options.skipHiredCheck  When true (called from hirePersona which just
+   *   inserted the row), skips the project_agents membership guard.
+   *   Defaults to false — external callers (controller) must be hired.
+   * @param options.personaName  Pre-fetched persona name; avoids an extra query when
+   *   called from hirePersona. If omitted, fetched from agent_personas.
    */
   async getOrCreateCallRoom(
     userId: string,
     projectId: string,
     personaId: string,
     externalTx?: import('postgres').TransactionSql,
+    options: { skipHiredCheck?: boolean; personaName?: string } = {},
   ): Promise<RoomDto> {
+    const { skipHiredCheck = false, personaName: nameHint } = options
+
     const run = externalTx
       ? (fn: (tx: import('postgres').TransactionSql) => Promise<RoomDto>) => fn(externalTx)
       : (fn: (tx: import('postgres').TransactionSql) => Promise<RoomDto>) =>
           this.db.run({ userId, projectId }, fn)
 
     return run(async (tx) => {
-      // Look for an existing call room where this user AND this persona are both participants
+      // ── Hired-persona guard (external calls only) ─────────────────────────
+      let personaName: string
+      if (!skipHiredCheck) {
+        // Verify persona is hired AND retrieve name in one query
+        const hired = await tx<{ name: string }[]>`
+          SELECT ap.name
+          FROM project_agents pa
+          JOIN agent_personas ap ON ap.id = pa.persona_id
+          WHERE pa.project_id = ${projectId} AND pa.persona_id = ${personaId}
+          LIMIT 1
+        `
+        if (!hired[0]) throw new ForbiddenException({ code: 'persona_not_hired' })
+        personaName = hired[0].name
+      } else if (nameHint) {
+        personaName = nameHint
+      } else {
+        // Fallback: fetch name directly from agent_personas
+        const ap = await tx<{ name: string }[]>`
+          SELECT name FROM agent_personas WHERE id = ${personaId} LIMIT 1
+        `
+        personaName = ap[0]?.name ?? personaId
+      }
+
+      // ── Find existing call room ───────────────────────────────────────────
       const existing = await tx<RoomRow[]>`
         SELECT r.id, r.project_id, r.type, r.name, r.seed_prompt, r.created_by,
                r.archived_at, r.created_at, r.updated_at
@@ -468,8 +504,8 @@ export class RoomsService {
       `
       if (existing[0]) return mapRoom(existing[0])
 
-      // Create new call room
-      const name = `1:1 with ${personaId}`
+      // ── Create new call room ──────────────────────────────────────────────
+      const name = `1:1 with ${personaName}`
       const rooms = await tx<RoomRow[]>`
         INSERT INTO rooms (project_id, type, name, created_by)
         VALUES (${projectId}, 'call', ${name}, ${userId})
@@ -486,7 +522,7 @@ export class RoomsService {
         ON CONFLICT DO NOTHING
       `
 
-      // Add agent participant (no roster check needed — triggered from hirePersona)
+      // Add agent participant
       await tx`
         INSERT INTO room_participants (room_id, participant_kind, persona_id)
         VALUES (${newRoom.id}, 'agent', ${personaId})
