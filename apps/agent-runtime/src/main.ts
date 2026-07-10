@@ -23,6 +23,7 @@ import type { WorkingMemory } from './pa/working-memory.js'
 import type { ScoringNode } from './pa/relevance.js'
 import { processTurnJob, type TurnEngineDeps } from './orchestrator/turn-engine.js'
 import { createAgentTurnsWorker } from './agent/agent-worker.js'
+import { createDelegationWorker } from './delegation/delegation-worker.js'
 import { handleInterrupt, InterruptEventSchema, type InterruptDeps } from './orchestrator/interrupts.js'
 
 // ── Environment ───────────────────────────────────────────────────────────────
@@ -458,6 +459,10 @@ async function main(): Promise<void> {
   const agentTurnsWorker = createAgentTurnsWorker(sharedRedis, delegationsQueue)
   console.info('[agent-runtime] agent-turns worker running')
 
+  // ── delegations Worker ───────────────────────────────────────────────────
+  const delegationWorker = createDelegationWorker(sharedRedis, agentTurnsQueue)
+  console.info('[agent-runtime] delegation worker running')
+
   worker.on('failed', (job, err) => {
     console.error('[agent-runtime] worker job failed', {
       jobId: job?.id,
@@ -562,6 +567,7 @@ async function main(): Promise<void> {
     interruptSubscriber.destroy()
     await worker.close()
     await agentTurnsWorker.close()
+    await delegationWorker.close()
     await convEventsQueue.close()
     await agentTurnsQueue.close()
     await dlqQueue.close()

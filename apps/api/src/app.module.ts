@@ -15,6 +15,7 @@ import { ArtifactsModule } from './modules/artifacts/artifacts.module'
 import { FilesModule } from './modules/files/files.module'
 import { KnowledgeModule } from './modules/knowledge/knowledge.module'
 import { NotesModule } from './modules/notes/notes.module'
+import { DelegationsModule } from './modules/delegations/delegations.module'
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { NotesModule } from './modules/notes/notes.module'
     FilesModule,
     KnowledgeModule,
     NotesModule,
+    DelegationsModule,
   ],
 })
 export class AppModule {}
