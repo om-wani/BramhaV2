@@ -11,7 +11,7 @@ export const ConnectorToolSchema = z.object({
   name: z.string().min(1).max(128),
   scope: z.string().min(1).max(256),
   classification: z.enum(['read', 'write', 'execute']),
-  inputSchema: z.record(z.unknown()),
+  inputSchema: z.record(z.string(), z.unknown()),
   limits: z.object({
     maxResultBytes: z.number().int().positive(),
     timeoutMs: z.number().int().positive(),

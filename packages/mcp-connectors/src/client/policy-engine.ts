@@ -18,11 +18,50 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import Ajv from 'ajv'
 import { signJwt } from './jwt-utils.js'
 import type { PolicyResult, ConnectorTool, RedisLike } from '../types.js'
 
-const ajv = new Ajv({ strict: false })
+// ── Minimal JSON Schema validator (subset: type + required + additionalProperties) ──
+
+function validateJsonSchema(
+  schema: Record<string, unknown>,
+  args: Record<string, unknown>,
+): boolean {
+  const properties = schema['properties'] as Record<string, { type?: string }> | undefined
+  const required = schema['required'] as string[] | undefined
+
+  if (required) {
+    for (const field of required) {
+      if (!(field in args)) return false
+    }
+  }
+
+  if (properties) {
+    for (const [key, propSchema] of Object.entries(properties)) {
+      if (key in args && propSchema.type) {
+        const val = args[key]
+        if (propSchema.type === 'string' && typeof val !== 'string') return false
+        if (propSchema.type === 'number' && typeof val !== 'number') return false
+        if (propSchema.type === 'boolean' && typeof val !== 'boolean') return false
+        if (propSchema.type === 'array' && !Array.isArray(val)) return false
+        if (
+          propSchema.type === 'object' &&
+          (typeof val !== 'object' || Array.isArray(val) || val === null)
+        )
+          return false
+      }
+    }
+  }
+
+  if (schema['additionalProperties'] === false && properties) {
+    const allowed = new Set(Object.keys(properties))
+    for (const key of Object.keys(args)) {
+      if (!allowed.has(key)) return false
+    }
+  }
+
+  return true
+}
 
 // ── Deps ──────────────────────────────────────────────────────────────────────
 
@@ -74,8 +113,7 @@ export class PolicyEngine {
 
     // Step 3.5 — JSON Schema validation against tool.inputSchema (§6.2 invariant #3)
     if (tool.inputSchema && Object.keys(tool.inputSchema).length > 0) {
-      const validate = ajv.compile(tool.inputSchema)
-      if (!validate(args)) {
+      if (!validateJsonSchema(tool.inputSchema, args)) {
         return { allowed: false, reason: 'scope_mismatch' }
       }
     }
