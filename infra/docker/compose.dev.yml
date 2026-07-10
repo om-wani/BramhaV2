@@ -196,6 +196,7 @@ services:
       PORT: "4103"
     networks:
       - mcp-isolated
+      - mcp-web-egress
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4103/health || exit 1"]
@@ -211,6 +212,8 @@ networks:
   mcp-isolated:
     driver: bridge
     internal: true
+  mcp-web-egress:
+    driver: bridge
 
 volumes:
   postgres_data:

@@ -46,6 +46,27 @@ describe('resolveSafePath', () => {
     )
   })
 
+  it('denies symlink that resolves outside project root', async () => {
+    const { mkdtemp, symlink, writeFile: writeF, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+
+    // Create a real temp dir as the project root and a real outside file
+    const tempRoot = await mkdtemp(join(tmpdir(), 'mcp-fs-test-'))
+    const outsideFile = join(tmpdir(), `mcp-outside-${Date.now()}.txt`)
+    const symlinkPath = join(tempRoot, 'evil-link')
+    try {
+      await writeF(outsideFile, 'secret')
+      await symlink(outsideFile, symlinkPath)
+      // resolveSafePath sees 'evil-link' inside tempRoot, but realpath → outside
+      await expect(resolveSafePath(tempRoot, 'evil-link')).rejects.toThrow(PathTraversalError)
+    } finally {
+      await rm(symlinkPath, { force: true })
+      await rm(outsideFile, { force: true })
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('accepts a valid relative path ("files/doc.txt")', async () => {
     // The path does not exist on disk — realpath will throw ENOENT which is OK for write
     const result = await resolveSafePath(PROJECT_ROOT, 'files/doc.txt')
