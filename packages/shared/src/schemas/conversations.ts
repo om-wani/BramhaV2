@@ -92,10 +92,31 @@ export const CreateRoomInputSchema = z
   .object({
     type: z.enum(['meeting', 'call']),
     name: z.string().min(1).max(100),
+    seedPrompt: z.string().max(2000).optional(),
   })
   .strict()
 
 export type CreateRoomInput = z.infer<typeof CreateRoomInputSchema>
+
+// ── Project agents (roster) ───────────────────────────────────────────────────
+
+export const HirePersonaInputSchema = z
+  .object({ personaId: z.string().uuid() })
+  .strict()
+
+export type HirePersonaInput = z.infer<typeof HirePersonaInputSchema>
+
+export const HiredPersonaSchema = z.object({
+  personaId: z.string().uuid(),
+  name: z.string(),
+  slug: z.string(),
+  role: z.string().nullable(),
+  accentColor: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  hiredAt: z.string(),
+})
+
+export type HiredPersona = z.infer<typeof HiredPersonaSchema>
 
 export const UpdateRoomInputSchema = z
   .object({

@@ -61,6 +61,16 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Disconnect all Socket.IO clients currently in a room channel.
+   * Called when a room is archived so clients are evicted within ~5 s.
+   */
+  kickRoom(roomId: string): void {
+    if (!this.server) return
+    this.server.in(`room:${roomId}`).disconnectSockets(true)
+    this.logger.log({ event: 'event_relay.kick_room', roomId })
+  }
+
+  /**
    * Relay a pub/sub message to the matching Socket.IO room.
    * Channel format: `conv.{event_suffix}:{projectId}`
    * Payload must include `roomId`.

@@ -15,5 +15,6 @@ import { RlsDbService } from '../common/db/rls-db.service'
     RlsDbService,
   ],
   controllers: [SseController],
+  exports: [EventRelayService],
 })
 export class RealtimeModule {}

@@ -118,11 +118,13 @@ function storeConvId(projectId: string, roomId: string, convId: string): void {
 
 interface ChatRoomProps {
   projectId: string
-  /** Room type used to locate the room within the project. */
+  /** Room type used to locate the room within the project (ignored when roomId is set). */
   roomType?: string
+  /** When provided, fetch this specific room directly instead of searching by type. */
+  roomId?: string
 }
 
-export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) {
+export function ChatRoom({ projectId, roomType = 'conference', roomId: specificRoomId }: ChatRoomProps) {
   const [isTransitioning, setIsTransitioning] = useState(false)
 
   const {
@@ -165,15 +167,27 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
   })
   const currentUserId = currentUser?.id ?? null
 
-  // ── Step 2: Fetch rooms, find the target room ────────────────────────────────
+  // ── Step 2: Fetch room(s) — by specific ID or by type ───────────────────────
 
-  const { data: rooms } = useQuery({
-    queryKey: ['rooms', projectId],
-    queryFn: () => api.get(`/projects/${projectId}/rooms`, z.array(RoomSchema)),
+  // Path A: specific room ID provided → fetch that room directly
+  const { data: specificRoom } = useQuery({
+    queryKey: ['room', projectId, specificRoomId],
+    queryFn: () => api.get(`/projects/${projectId}/rooms/${specificRoomId}`, RoomSchema),
+    enabled: !!specificRoomId,
     staleTime: 5 * 60 * 1000,
   })
 
-  const room = rooms?.find((r) => r.type === roomType) ?? null
+  // Path B: no specific ID → fetch all rooms and find by type
+  const { data: rooms } = useQuery({
+    queryKey: ['rooms', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/rooms`, z.array(RoomSchema)),
+    enabled: !specificRoomId,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const room = specificRoomId
+    ? (specificRoom ?? null)
+    : (rooms?.find((r) => r.type === roomType) ?? null)
 
   // ── Step 3: Get-or-create conversation ─────────────────────────────────────
 

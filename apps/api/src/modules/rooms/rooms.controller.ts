@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -44,14 +45,15 @@ export class RoomsController {
     return this.rooms.create(user.userId, projectId, body)
   }
 
-  /** GET /projects/:projectId/rooms — List rooms (viewer+) */
+  /** GET /projects/:projectId/rooms?type=meeting — List rooms (viewer+), optional type filter */
   @Get()
   @UseGuards(JwtAuthGuard, ProjectViewerGuard)
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Param('projectId') projectId: string,
+    @Query('type') type?: string,
   ): Promise<RoomDto[]> {
-    return this.rooms.list(user.userId, projectId)
+    return this.rooms.list(user.userId, projectId, type)
   }
 
   /** GET /projects/:projectId/rooms/:roomId — Get room (viewer+) */
@@ -75,6 +77,17 @@ export class RoomsController {
     @Body() body: UpdateRoomDto,
   ): Promise<RoomDto> {
     return this.rooms.update(user.userId, projectId, roomId, body)
+  }
+
+  /** GET /projects/:projectId/rooms/:roomId/participants — List participants (viewer+) */
+  @Get(':roomId/participants')
+  @UseGuards(JwtAuthGuard, ProjectViewerGuard)
+  listParticipants(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('projectId') projectId: string,
+    @Param('roomId') roomId: string,
+  ): Promise<ParticipantDto[]> {
+    return this.rooms.listParticipants(user.userId, projectId, roomId)
   }
 
   /** POST /projects/:projectId/rooms/:roomId/participants — Add participant (editor+) */

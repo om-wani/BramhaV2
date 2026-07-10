@@ -145,7 +145,11 @@ export function MessageList({
               }}
             >
               {item.type === 'node' ? (
-                <MessageBubble node={item.node} onBranch={onBranch} onStopAgent={onStopAgent} />
+                <MessageBubble
+                  node={item.node}
+                  onBranch={onBranch}
+                  {...(onStopAgent ? { onStopAgent } : {})}
+                />
               ) : (
                 // Pass only the sibling branches for this fork point
                 <BranchChips
