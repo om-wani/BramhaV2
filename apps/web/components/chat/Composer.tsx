@@ -4,11 +4,26 @@ import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useChatStore } from '@/lib/stores/chat-store'
 import { cn } from '@/lib/utils'
+import { MentionMenu } from './MentionMenu'
+import type { AgentOption } from './MentionMenu'
 
 interface ComposerProps {
   onSend: (text: string) => Promise<void>
   /** Called (throttled, once per second) when the user is actively typing. */
   onTyping?: () => void
+  /** Agent list for @mention autocomplete. */
+  agents?: AgentOption[]
+}
+
+/**
+ * Extract the @mention query from the text before a cursor position.
+ * Returns the word after the last `@` if there is no whitespace between
+ * the `@` and the cursor, otherwise returns null (no active mention).
+ */
+function extractMentionQuery(value: string, cursorPos: number): string | null {
+  const textBeforeCursor = value.slice(0, cursorPos)
+  const match = textBeforeCursor.match(/@(\w*)$/)
+  return match ? (match[1] ?? null) : null
 }
 
 /**
@@ -17,10 +32,12 @@ interface ComposerProps {
  * - Textarea auto-resizes up to 200 px.
  * - Shows the active branch name when not on 'main'.
  * - Shows typing indicator for other users when typingUsers is non-empty.
+ * - Typing `@` opens the agent mention autocomplete.
  */
-export function Composer({ onSend, onTyping }: ComposerProps) {
+export function Composer({ onSend, onTyping, agents = [] }: ComposerProps) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const lastTypingEmit = useRef(0)
 
@@ -50,6 +67,17 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Dismiss mention menu on Escape
+    if (e.key === 'Escape' && mentionQuery !== null) {
+      e.preventDefault()
+      setMentionQuery(null)
+      return
+    }
+    // While mention menu is open, let it handle Enter/ArrowDown/ArrowUp
+    if (mentionQuery !== null && (e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault()
+      return
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void submit()
@@ -57,11 +85,15 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setText(e.target.value)
+    const value = e.target.value
+    setText(value)
     // Auto-resize
     const el = e.target
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+    // Update mention query based on cursor position
+    const cursorPos = el.selectionStart ?? value.length
+    setMentionQuery(extractMentionQuery(value, cursorPos))
     // Throttled typing notification (at most once per second)
     if (onTyping) {
       const now = Date.now()
@@ -70,6 +102,26 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
         onTyping()
       }
     }
+  }
+
+  function handleAgentSelect(agent: AgentOption) {
+    const textarea = textareaRef.current
+    const cursorPos = textarea?.selectionStart ?? text.length
+    const textBefore = text.slice(0, cursorPos)
+    const textAfter = text.slice(cursorPos)
+    // Replace @{query} at the end of textBefore with @{slug} + space
+    const newTextBefore = textBefore.replace(/@\w*$/, `@${agent.slug} `)
+    const newText = newTextBefore + textAfter
+    setText(newText)
+    setMentionQuery(null)
+    // Restore focus and move cursor after the inserted mention
+    setTimeout(() => {
+      if (textarea) {
+        textarea.focus()
+        const newCursor = newTextBefore.length
+        textarea.setSelectionRange(newCursor, newCursor)
+      }
+    }, 0)
   }
 
   // Derive display names from the userId→displayName map for rendering
@@ -104,6 +156,18 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
           {typingText}
         </div>
       )}
+
+      {/* Relative wrapper so MentionMenu can use absolute bottom-full */}
+      <div className="relative">
+        {/* @mention autocomplete above the textarea */}
+        {mentionQuery !== null && (
+          <MentionMenu
+            query={mentionQuery}
+            agents={agents}
+            onSelect={handleAgentSelect}
+            onDismiss={() => setMentionQuery(null)}
+          />
+        )}
 
       <form
         onSubmit={(e) => { e.preventDefault(); void submit() }}
@@ -143,6 +207,7 @@ export function Composer({ onSend, onTyping }: ComposerProps) {
           <span aria-hidden="true" className="text-base leading-none">↑</span>
         </Button>
       </form>
+      </div>
     </div>
   )
 }

@@ -5,6 +5,10 @@ import ReactMarkdown from 'react-markdown'
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 import type { ConversationNode } from '@/lib/stores/chat-store'
+import { useStreamStore } from '../../stores/stream-store'
+import { AgentChip } from './AgentChip'
+import { ThoughtsCollapse } from './ThoughtsCollapse'
+import { StatusTag } from './StatusTag'
 
 // ── Sanitize schema ────────────────────────────────────────────────────────────
 //
@@ -50,6 +54,14 @@ export function MessageBubble({ node, onBranch }: MessageBubbleProps) {
 
   const isSystem = node.type === 'system_event'
   const isUser = node.authorKind === 'user'
+  const isAgent = node.authorKind === 'agent'
+
+  // Always call hook unconditionally (Rules of Hooks); selector handles null persona
+  const stream = useStreamStore(
+    (s) => (isAgent && node.authorPersonaId) ? s.streams.get(node.authorPersonaId) : undefined,
+  )
+
+  const { stopStream } = useStreamStore()
 
   // System events: centred subdued pill
   if (isSystem) {
@@ -63,69 +75,104 @@ export function MessageBubble({ node, onBranch }: MessageBubbleProps) {
   }
 
   return (
-    <div
-      className={cn(
-        'group relative flex items-start gap-2 px-4 py-2',
-        isUser ? 'flex-row-reverse' : 'flex-row',
+    <>
+      {/* AgentChip above the bubble row — only while streaming */}
+      {isAgent && stream?.isStreaming && (
+        <div className="px-4 pb-0 pt-2">
+          <AgentChip
+            personaId={node.authorPersonaId!}
+            name={stream.name}
+            slug={stream.slug}
+            color={stream.color}
+            isStreaming={stream.isStreaming}
+            onStop={() => stopStream(node.authorPersonaId!, '')}
+          />
+        </div>
       )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Message bubble */}
+
       <div
         className={cn(
-          'max-w-[72%] rounded-2xl px-4 py-2.5 text-sm',
-          isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'border border-border bg-card text-card-foreground',
+          'group relative flex items-start gap-2 px-4 py-2',
+          isUser ? 'flex-row-reverse' : 'flex-row',
         )}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
-        {/* Markdown body — rehype-sanitize enforces allowlist */}
+        {/* Message bubble */}
         <div
           className={cn(
-            'prose prose-sm max-w-none break-words',
-            isUser ? 'prose-invert' : 'dark:prose-invert',
+            'max-w-[72%] rounded-2xl px-4 py-2.5 text-sm',
+            isUser
+              ? 'bg-primary text-primary-foreground'
+              : 'border border-border bg-card text-card-foreground',
           )}
         >
-          <ReactMarkdown
-            rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-            components={{
-              // Override <a> to force safe rel/target on all links
-              a: ({ href, children, ...rest }) => (
-                <a
-                  {...rest}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {children}
-                </a>
-              ),
-            }}
+          {/* ThoughtsCollapse above text — only when thoughts are non-empty */}
+          {isAgent && stream && stream.thoughts.length > 0 && (
+            <ThoughtsCollapse
+              thoughts={stream.thoughts}
+              tokenCount={stream.thoughtTokens}
+              isStreaming={stream.isStreaming}
+            />
+          )}
+
+          {/* Markdown body — rehype-sanitize enforces allowlist */}
+          <div
+            className={cn(
+              'prose prose-sm max-w-none break-words',
+              isUser ? 'prose-invert' : 'dark:prose-invert',
+            )}
           >
-            {text}
-          </ReactMarkdown>
+            <ReactMarkdown
+              rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+              components={{
+                // Override <a> to force safe rel/target on all links
+                a: ({ href, children, ...rest }) => (
+                  <a
+                    {...rest}
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {text}
+            </ReactMarkdown>
+          </div>
+
+          {/* Streaming content — plain text to prevent XSS */}
+          {isAgent && stream?.content && (
+            <div className="mt-1 whitespace-pre-wrap text-sm opacity-80">
+              {stream.content}
+            </div>
+          )}
+
+          {/* StatusTag below text */}
+          {isAgent && <StatusTag status={stream?.status ?? null} />}
+
+          {/* Timestamp */}
+          <div className="mt-1 text-right text-[10px] opacity-50">
+            {formatTime(node.createdAt)}
+          </div>
         </div>
 
-        {/* Timestamp */}
-        <div className="mt-1 text-right text-[10px] opacity-50">
-          {formatTime(node.createdAt)}
-        </div>
+        {/* Branch-from-here button — visible on hover */}
+        <button
+          aria-label="Branch conversation from this message"
+          title="Branch from here"
+          onClick={() => onBranch(node.id)}
+          className={cn(
+            'self-center rounded border border-border bg-card px-1.5 py-0.5 text-xs',
+            'text-muted-foreground transition-opacity hover:text-foreground',
+            hovered ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          ⑂
+        </button>
       </div>
-
-      {/* Branch-from-here button — visible on hover */}
-      <button
-        aria-label="Branch conversation from this message"
-        title="Branch from here"
-        onClick={() => onBranch(node.id)}
-        className={cn(
-          'self-center rounded border border-border bg-card px-1.5 py-0.5 text-xs',
-          'text-muted-foreground transition-opacity hover:text-foreground',
-          hovered ? 'opacity-100' : 'opacity-0',
-        )}
-      >
-        ⑂
-      </button>
-    </div>
+    </>
   )
 }
