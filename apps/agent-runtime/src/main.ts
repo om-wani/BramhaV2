@@ -16,13 +16,14 @@
 
 import Redis from 'ioredis'
 import { Worker, Queue } from 'bullmq'
-import { EventSubscriber } from '@bramha/event-bus'
+import { EventSubscriber, EventPublisher } from '@bramha/event-bus'
 import type { ConvNodeAppendedPayload } from '@bramha/event-bus'
 import { withTenant } from '@bramha/db'
 import type { WorkingMemory } from './pa/working-memory.js'
 import type { ScoringNode } from './pa/relevance.js'
 import { processTurnJob, type TurnEngineDeps } from './orchestrator/turn-engine.js'
 import { createAgentTurnsWorker } from './agent/agent-worker.js'
+import { handleInterrupt, type InterruptDeps, type InterruptEvent } from './orchestrator/interrupts.js'
 
 // ── Environment ───────────────────────────────────────────────────────────────
 
@@ -240,6 +241,166 @@ async function checkDailyUsd(projectId: string): Promise<number> {
   }, { userId: SYSTEM_USER_ID!, projectId })
 }
 
+// ── Interrupt engine DB implementations ───────────────────────────────────────
+
+/**
+ * Return true if userId is a member (any role) of projectId.
+ * Used to authorize stop/redirect interrupts from users.
+ */
+async function checkProjectMember(userId: string, projectId: string): Promise<boolean> {
+  return withTenant(async (tx) => {
+    const [row] = await tx<Array<{ count: string }>>`
+      SELECT COUNT(*)::text AS count
+      FROM project_members
+      WHERE user_id   = ${userId}::uuid
+        AND project_id = ${projectId}::uuid
+    `
+    return parseInt(row?.count ?? '0') > 0
+  }, { userId: SYSTEM_USER_ID!, projectId })
+}
+
+/**
+ * Return true if personaId (agent) is in the room roster for this conversation.
+ * Used to authorize csuite-agent summons.
+ */
+async function checkRoomMembership(
+  personaId: string,
+  conversationId: string,
+  projectId: string,
+): Promise<boolean> {
+  return withTenant(async (tx) => {
+    const rows = await tx<Array<{ count: string }>>`
+      SELECT COUNT(*)::text AS count
+      FROM room_participants rp
+      JOIN conversations c ON c.room_id = rp.room_id
+      WHERE c.id            = ${conversationId}::uuid
+        AND c.project_id    = ${projectId}::uuid
+        AND rp.persona_id   = ${personaId}::uuid
+        AND rp.participant_kind = 'agent'
+    `
+    return parseInt(rows[0]?.count ?? '0') > 0
+  }, { userId: SYSTEM_USER_ID!, projectId })
+}
+
+/**
+ * Mark a branch as abandoned (nearest DB equivalent to 'archived').
+ * Called during redirect to retire the current branch.
+ */
+async function archiveBranch(branchId: string, projectId: string): Promise<void> {
+  await withTenant(async (tx) => {
+    await tx`
+      UPDATE branches
+         SET status = 'abandoned'
+       WHERE id         = ${branchId}::uuid
+         AND project_id = ${projectId}::uuid
+    `
+  }, { userId: SYSTEM_USER_ID!, projectId })
+}
+
+/**
+ * Insert a new active branch forked from forkedFromNodeId.
+ * Called during redirect to start a fresh conversation thread.
+ */
+async function createBranch(params: {
+  conversationId: string
+  projectId: string
+  forkedFromNodeId: string
+  createdByKind: string
+  createdById: string
+}): Promise<{ id: string; name: string; headNodeId: string; createdAt: string }> {
+  return withTenant(async (tx) => {
+    const name = `redirect-${Date.now()}`
+    const [row] = await tx<Array<{
+      id: string
+      name: string
+      head_node_id: string
+      created_at: string
+    }>>`
+      INSERT INTO branches
+        (conversation_id, project_id, name, head_node_id, forked_from_node,
+         created_by_kind, created_by_id, status)
+      VALUES (
+        ${params.conversationId}::uuid,
+        ${params.projectId}::uuid,
+        ${name},
+        ${params.forkedFromNodeId}::uuid,
+        ${params.forkedFromNodeId}::uuid,
+        ${params.createdByKind},
+        ${params.createdById}::uuid,
+        'active'
+      )
+      RETURNING id, name, head_node_id, created_at::text AS created_at
+    `
+    return {
+      id: row!.id,
+      name: row!.name,
+      headNodeId: row!.head_node_id,
+      createdAt: row!.created_at,
+    }
+  }, { userId: SYSTEM_USER_ID!, projectId: params.projectId })
+}
+
+/**
+ * Return the conversation's current head node and its room ID.
+ * Resolves via the conversation's default_branch_id → head_node_id.
+ */
+async function getConversationHeadNode(
+  conversationId: string,
+  projectId: string,
+): Promise<{ nodeId: string; roomId: string; branchId: string | null } | null> {
+  return withTenant(async (tx) => {
+    const [row] = await tx<Array<{
+      room_id: string
+      head_node_id: string | null
+      branch_id: string | null
+    }>>`
+      SELECT c.room_id,
+             b.head_node_id,
+             b.id AS branch_id
+      FROM   conversations c
+      LEFT JOIN branches b ON b.id = c.default_branch_id
+      WHERE  c.id         = ${conversationId}::uuid
+        AND  c.project_id = ${projectId}::uuid
+      LIMIT 1
+    `
+    if (!row) return null
+
+    // Fallback: if no default branch, find the latest node in the conversation
+    const nodeId = row.head_node_id ?? (await (async () => {
+      const [latestNode] = await tx<Array<{ id: string }>>`
+        SELECT id FROM conversation_nodes
+        WHERE conversation_id = ${conversationId}::uuid
+          AND project_id      = ${projectId}::uuid
+        ORDER BY created_at DESC
+        LIMIT 1
+      `
+      return latestNode?.id ?? null
+    })())
+
+    if (!nodeId) return null
+
+    return {
+      nodeId,
+      roomId: row.room_id,
+      branchId: row.branch_id,
+    }
+  }, { userId: SYSTEM_USER_ID!, projectId })
+}
+
+/**
+ * Write a structured audit log entry (Phase 3: structured console.info stub).
+ * Replace with DB INSERT into audit_log table when the schema is added.
+ */
+async function auditLog(entry: {
+  action: string
+  projectId: string
+  actorKind: string
+  actorId: string
+  meta: unknown
+}): Promise<void> {
+  console.info('[audit]', JSON.stringify({ ...entry, ts: new Date().toISOString() }))
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -342,10 +503,59 @@ async function main(): Promise<void> {
 
   console.info('[agent-runtime] subscribed to conv.node.appended:* — worker running')
 
+  // ── Interrupt subscriber ─────────────────────────────────────────────────
+  // Listen for interrupt.raise:{projectId} events from the WebSocket gateway.
+  // On each event, validate and dispatch via handleInterrupt.
+
+  // Build a dedicated subscriber Redis connection for interrupt events.
+  const interruptSubscriberRedis = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
+  const interruptSubscriber = new EventSubscriber(interruptSubscriberRedis)
+  const interruptPublisher = new EventPublisher(sharedRedis)
+
+  const interruptDeps: InterruptDeps = {
+    redis: sharedRedis,
+    agentTurnsQueue: {
+      add: async (name: string, data: unknown, opts?: unknown) => {
+        return agentTurnsQueue.add(name, data, opts as Parameters<Queue['add']>[2])
+      },
+      drain: async (delayed?: boolean) => {
+        await agentTurnsQueue.drain(delayed)
+      },
+    },
+    publishEvent: async (channel: string, payload: unknown) => {
+      // Use raw redis PUBLISH for channels not covered by event bus schemas
+      await interruptPublisher.publish(channel, payload).catch(async () => {
+        // If schema validation fails (unknown channel), publish raw
+        await sharedRedis.publish(channel, JSON.stringify(payload))
+      })
+    },
+    checkProjectMember,
+    checkRoomMembership,
+    archiveBranch,
+    createBranch,
+    getConversationHeadNode,
+    auditLog,
+  }
+
+  await interruptSubscriber.subscribePattern(
+    'interrupt.raise:*',
+    async (_channel: string, payload: unknown) => {
+      try {
+        const event = payload as InterruptEvent
+        await handleInterrupt(event, interruptDeps)
+      } catch (err) {
+        console.error('[agent-runtime] interrupt handler error', { err })
+      }
+    },
+  )
+
+  console.info('[agent-runtime] subscribed to interrupt.raise:* — interrupt engine running')
+
   // ── Graceful shutdown ────────────────────────────────────────────────────
   async function shutdown(signal: string): Promise<void> {
     console.info(`[agent-runtime] received ${signal}, shutting down gracefully`)
     subscriber.destroy()
+    interruptSubscriber.destroy()
     await worker.close()
     await agentTurnsWorker.close()
     await convEventsQueue.close()
@@ -355,6 +565,7 @@ async function main(): Promise<void> {
     await delegationsQueue.close()
     await sharedRedis.quit()
     await subscriberRedis.quit()
+    await interruptSubscriberRedis.quit()
     console.info('[agent-runtime] shutdown complete')
     process.exit(0)
   }

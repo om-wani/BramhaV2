@@ -42,6 +42,8 @@ export function buildProductionDeps(
   const publisher = new EventPublisher(redis)
 
   return {
+    redis,
+
     async loadContext({ personaId, projectId, conversationId, triggerNodeId }) {
       return withTenant(async (tx) => {
         // Load persona + model policy in one query

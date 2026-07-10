@@ -21,6 +21,7 @@
  *   Max tool-call loop depth hard-capped at MAX_TOOL_LOOPS.
  */
 
+import type { Redis } from 'ioredis'
 import { buildContextBundle, untrustedContext } from '../pa/context-bundle.js'
 import type { RagChunk, ThreadNode, ContextBundle } from '../pa/context-bundle.js'
 import {
@@ -36,6 +37,7 @@ import type { ModelPolicy } from '@bramha/agents'
 import type { AgentPersona } from '@bramha/shared'
 import type { AgentTurnJobData } from '../orchestrator/turn-engine.js'
 import { Channels } from '@bramha/event-bus'
+import { checkInterrupt, InterruptedError } from '../orchestrator/interrupts.js'
 
 // ── Tool imports ──────────────────────────────────────────────────────────────
 import { searchKnowledgeTool, executeSearchKnowledge } from './tools/search-knowledge.js'
@@ -128,6 +130,12 @@ interface TokenAccum {
  * calls without spinning up Redis / Postgres / LLM providers.
  */
 export interface AgentGraphDeps {
+  /**
+   * Shared Redis connection — used for inter-node interrupt checks.
+   * Tests supply a mock that always returns 0 (not interrupted).
+   */
+  redis: Redis
+
   /**
    * Load persona, model policy, project brief, working memory, and thread nodes
    * in a single DB round-trip (or multiple, implementation's choice).
@@ -314,6 +322,16 @@ export class AgentGraph {
       resultParts.push(
         `Tool: ${tc.name} (id: ${tc.callId})\nResult: ${JSON.stringify(result)}`,
       )
+
+      // Check interrupt after each tool call (04-doc §5.2 checkpoint-yield protocol)
+      const interrupt = await checkInterrupt(
+        state.conversationId,
+        state.personaId,
+        this.deps.redis,
+      )
+      if (interrupt.interrupted) {
+        throw new InterruptedError(state.conversationId, state.personaId)
+      }
     }
 
     // Wrap all tool results in untrusted_context (security: never pass raw)
@@ -482,6 +500,16 @@ export class AgentGraph {
     // ── build_context node ───────────────────────────────────────────────────
     const ctx = await this.buildContext(state, jobData)
 
+    // Check interrupt after build_context (04-doc §5.2 checkpoint-yield protocol)
+    const postBuildInterrupt = await checkInterrupt(
+      state.conversationId,
+      state.personaId,
+      this.deps.redis,
+    )
+    if (postBuildInterrupt.interrupted) {
+      throw new InterruptedError(state.conversationId, state.personaId)
+    }
+
     // Initialise message list with assembled context bundle as system prompt
     let messages: CoreMessage[] = [
       { role: 'system', content: ctx.bundle.fullPrompt },
@@ -501,6 +529,16 @@ export class AgentGraph {
       totalUsage.inputTokens += usage.inputTokens
       totalUsage.outputTokens += usage.outputTokens
       totalUsage.estimatedUsd += usage.estimatedUsd
+
+      // Check interrupt after call_model (04-doc §5.2 checkpoint-yield protocol)
+      const postModelInterrupt = await checkInterrupt(
+        state.conversationId,
+        state.personaId,
+        this.deps.redis,
+      )
+      if (postModelInterrupt.interrupted) {
+        throw new InterruptedError(state.conversationId, state.personaId)
+      }
 
       if (toolCalls.length === 0) {
         // No tool calls — final answer reached

@@ -109,6 +109,11 @@ async function* makeStream(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
 
 function makeDeps(overrides: Partial<AgentGraphDeps> = {}): AgentGraphDeps {
   return {
+    // Mock redis: always returns 0 (no interrupt flag set) so existing tests are unaffected
+    redis: {
+      exists: vi.fn().mockResolvedValue(0),
+    } as unknown as AgentGraphDeps['redis'],
+
     loadContext: vi.fn().mockResolvedValue({
       persona: mockPersona,
       modelPolicy: mockModelPolicy,
