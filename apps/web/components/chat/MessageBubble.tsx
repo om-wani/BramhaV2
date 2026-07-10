@@ -34,6 +34,7 @@ export const sanitizeSchema: typeof defaultSchema = {
 interface MessageBubbleProps {
   node: ConversationNode
   onBranch: (nodeId: string) => void
+  onStopAgent?: (personaId: string) => void
 }
 
 function formatTime(iso: string): string {
@@ -44,7 +45,7 @@ function formatTime(iso: string): string {
   }
 }
 
-export function MessageBubble({ node, onBranch }: MessageBubbleProps) {
+export function MessageBubble({ node, onBranch, onStopAgent }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
 
   const text =
@@ -60,8 +61,6 @@ export function MessageBubble({ node, onBranch }: MessageBubbleProps) {
   const stream = useStreamStore(
     (s) => (isAgent && node.authorPersonaId) ? s.streams.get(node.authorPersonaId) : undefined,
   )
-
-  const { stopStream } = useStreamStore()
 
   // System events: centred subdued pill
   if (isSystem) {
@@ -85,7 +84,7 @@ export function MessageBubble({ node, onBranch }: MessageBubbleProps) {
             slug={stream.slug}
             color={stream.color}
             isStreaming={stream.isStreaming}
-            onStop={() => stopStream(node.authorPersonaId!, '')}
+            onStop={() => onStopAgent?.(node.authorPersonaId!)}
           />
         </div>
       )}

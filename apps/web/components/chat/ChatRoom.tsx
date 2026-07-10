@@ -10,6 +10,7 @@ import type { ConversationNode, Branch } from '@/lib/stores/chat-store'
 import { MessageList } from './MessageList'
 import { Composer } from './Composer'
 import { RoomHeader } from './RoomHeader'
+import { useAgentStream } from '@/hooks/useAgentStream'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────────
 
@@ -396,6 +397,9 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
     })
   }, [room?.id, currentUserId, currentUser?.displayName])
 
+  // ── Agent stream controls ────────────────────────────────────────────────────
+  const { stopAgent } = useAgentStream(conversationId ?? '')
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const isLoading = convLoading || nodesLoading
@@ -408,6 +412,7 @@ export function ChatRoom({ projectId, roomType = 'conference' }: ChatRoomProps) 
         isTransitioning={isTransitioning}
         onBranch={handleBranchFrom}
         onSwitchBranch={handleSwitchBranch}
+        onStopAgent={stopAgent}
       />
       <Composer onSend={handleSend} onTyping={handleTyping} />
     </div>

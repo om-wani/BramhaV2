@@ -26,6 +26,7 @@ interface MessageListProps {
   isTransitioning: boolean
   onBranch: (nodeId: string) => void
   onSwitchBranch: (branchId: string) => void
+  onStopAgent?: (personaId: string) => void
 }
 
 export function MessageList({
@@ -33,6 +34,7 @@ export function MessageList({
   isTransitioning,
   onBranch,
   onSwitchBranch,
+  onStopAgent,
 }: MessageListProps) {
   const { nodes, nodeOrder, branches, activeBranchId } = useChatStore()
   const parentRef = useRef<HTMLDivElement>(null)
@@ -143,7 +145,7 @@ export function MessageList({
               }}
             >
               {item.type === 'node' ? (
-                <MessageBubble node={item.node} onBranch={onBranch} />
+                <MessageBubble node={item.node} onBranch={onBranch} onStopAgent={onStopAgent} />
               ) : (
                 // Pass only the sibling branches for this fork point
                 <BranchChips
