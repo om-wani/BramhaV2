@@ -46,7 +46,7 @@ function requireEnv(key: string): string {
 }
 
 const REDIS_URL = requireEnv('REDIS_URL')
-const CREDENTIAL_ENCRYPTION_KEY = process.env['CREDENTIAL_ENCRYPTION_KEY'] ?? ''
+const CREDENTIAL_ENCRYPTION_KEY = requireEnv('CREDENTIAL_ENCRYPTION_KEY')
 const S3_ENDPOINT = requireEnv('S3_ENDPOINT')
 const S3_BUCKET_STAGING = requireEnv('S3_BUCKET_STAGING')
 const S3_BUCKET_CLEAN = requireEnv('S3_BUCKET_CLEAN')

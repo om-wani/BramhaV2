@@ -158,6 +158,7 @@ describe('SourcesService', () => {
       credential: RAW_CREDENTIAL,
     })
 
+    expect(capturedConfig).toBeDefined()
     const configStr = JSON.stringify(capturedConfig)
     expect(configStr).not.toContain(RAW_CREDENTIAL)
     expect(configStr).not.toContain('password')

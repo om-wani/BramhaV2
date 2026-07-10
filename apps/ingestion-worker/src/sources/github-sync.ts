@@ -118,21 +118,28 @@ export async function syncGitRepo(
 
   try {
     // Clone with depth=1 for efficiency
-    await execFileAsync('git', [
-      'clone',
-      '--depth', '1',
-      '--branch', branch,
-      '--single-branch',
-      cloneUrl,
-      tmpDir,
-    ], {
-      timeout: 120_000, // 2 minutes
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0', // never prompt for credentials
-        GIT_ASKPASS: 'echo',
-      },
-    })
+    try {
+      await execFileAsync('git', [
+        'clone',
+        '--depth', '1',
+        '--branch', branch,
+        '--single-branch',
+        cloneUrl,
+        tmpDir,
+      ], {
+        timeout: 120_000, // 2 minutes
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0', // never prompt for credentials
+          GIT_ASKPASS: 'echo',
+        },
+      })
+    } catch (gitErr) {
+      // Strip credential-injected URLs from git error messages before propagating
+      const raw = gitErr instanceof Error ? gitErr.message : String(gitErr)
+      const sanitized = raw.replace(/https?:\/\/[^@\s]+@/g, 'https://[REDACTED]@')
+      throw new Error(`git_clone_failed: ${sanitized}`, { cause: gitErr })
+    }
 
     // Check size cap
     const totalSize = await getDirSize(tmpDir)
