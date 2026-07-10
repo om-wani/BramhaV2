@@ -90,6 +90,23 @@ describe('PolicyEngine.checkAndMint', () => {
     expect(result).toEqual({ allowed: false, reason: 'scope_mismatch' })
   })
 
+  // 3.5. schema validation
+  it('returns scope_mismatch when args fail JSON Schema validation', async () => {
+    const strictTool: ConnectorTool = {
+      ...READ_TOOL,
+      inputSchema: {
+        type: 'object',
+        properties: { q: { type: 'string' } },
+        required: ['q'],
+        additionalProperties: false,
+      },
+    }
+    const { engine } = makeEngine({ tool: strictTool, grant: { allowedScopes: [strictTool.scope] } })
+    // Pass a number where string is required
+    const result = await engine.checkAndMint(baseInput({ args: { q: 42 } }))
+    expect(result).toEqual({ allowed: false, reason: 'scope_mismatch' })
+  })
+
   // 4. approval_required (write tool)
   it('returns approval_required for write-classified tool', async () => {
     const { engine } = makeEngine({

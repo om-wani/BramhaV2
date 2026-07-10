@@ -6,8 +6,9 @@
  *   1. Validate tool exists (getConnectorTool)
  *   2. Validate grant exists (getGrant)
  *   3. Scope check (grant.allowedScopes includes tool.scope)
+ * 3.5. Args JSON Schema validation against tool.inputSchema → scope_mismatch on fail
  *   4. Classification gate (write/execute → approval_required)
- *   5. Args size limit (> 65536 bytes → args_too_large)
+ *   5. Args size limit (> 65536 UTF-8 bytes → args_too_large)
  *   6. Secret scan (regex on JSON → secret_detected)
  *   7. Rate limit (Redis token bucket: 30 calls / 300s per persona+connector)
  *   8. Mint capability JWT (HS256, 60s TTL)
@@ -17,8 +18,11 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
+import Ajv from 'ajv'
 import { signJwt } from './jwt-utils.js'
 import type { PolicyResult, ConnectorTool, RedisLike } from '../types.js'
+
+const ajv = new Ajv({ strict: false })
 
 // ── Deps ──────────────────────────────────────────────────────────────────────
 
@@ -68,14 +72,22 @@ export class PolicyEngine {
       return { allowed: false, reason: 'scope_mismatch' }
     }
 
+    // Step 3.5 — JSON Schema validation against tool.inputSchema (§6.2 invariant #3)
+    if (tool.inputSchema && Object.keys(tool.inputSchema).length > 0) {
+      const validate = ajv.compile(tool.inputSchema)
+      if (!validate(args)) {
+        return { allowed: false, reason: 'scope_mismatch' }
+      }
+    }
+
     // Step 4 — classification gate (write/execute require human approval)
     if (tool.classification === 'write' || tool.classification === 'execute') {
       return { allowed: false, reason: 'approval_required', requiresApproval: true }
     }
 
-    // Step 5 — args size check
+    // Step 5 — args size check (byte count, not char count)
     const argsJson = JSON.stringify(args)
-    if (argsJson.length > 65_536) {
+    if (Buffer.byteLength(argsJson, 'utf8') > 65_536) {
       return { allowed: false, reason: 'args_too_large' }
     }
 
