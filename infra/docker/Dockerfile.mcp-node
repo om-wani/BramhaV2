@@ -1,0 +1,68 @@
+# Dockerfile.mcp-node — base image for all four first-party MCP servers
+# Multi-stage: build stage compiles TypeScript, runtime stage runs compiled JS.
+#
+# CMD is overridden per service in compose (e.g. servers/filesystem/server.js).
+
+# ── Build stage ───────────────────────────────────────────────────────────────
+
+FROM node:22-alpine AS build
+
+WORKDIR /build
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace files needed for mcp-connectors
+# We copy package manifests first to leverage Docker layer caching
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY packages/mcp-connectors/package.json ./packages/mcp-connectors/
+COPY packages/shared/package.json ./packages/shared/
+
+# Install only mcp-connectors dependencies (including dev deps for TypeScript)
+RUN pnpm install --filter @bramha/mcp-connectors --filter @bramha/shared --frozen-lockfile
+
+# Copy source
+COPY packages/shared/src ./packages/shared/src
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/mcp-connectors/src ./packages/mcp-connectors/src
+COPY packages/mcp-connectors/tsconfig.json ./packages/mcp-connectors/
+COPY tsconfig.base.json ./
+
+# Build shared first, then mcp-connectors
+RUN pnpm --filter @bramha/shared build && pnpm --filter @bramha/mcp-connectors build
+
+# ── Runtime stage ─────────────────────────────────────────────────────────────
+
+FROM node:22-alpine AS runtime
+
+# dumb-init as PID 1 — proper signal handling in containers
+RUN apk add --no-cache dumb-init
+
+# Non-root user
+RUN addgroup -S mcp && adduser -S mcp -G mcp
+
+WORKDIR /app
+
+# Copy package manifests for production-only install
+COPY --from=build /build/packages/mcp-connectors/package.json ./
+COPY --from=build /build/packages/shared/package.json ./node_modules/@bramha/shared/package.json
+
+# Install only production deps
+RUN npm install --omit=dev --ignore-scripts 2>/dev/null || true
+
+# Copy compiled output
+COPY --from=build /build/packages/mcp-connectors/dist ./dist
+COPY --from=build /build/packages/shared/dist ./node_modules/@bramha/shared/dist
+
+# Create symlink for local workspace package
+RUN mkdir -p node_modules/@bramha && \
+    ln -sf /app/node_modules/@bramha/shared /app/node_modules/@bramha/shared 2>/dev/null || true
+
+# Servers are in dist/servers/<name>/server.js
+# The command is overridden per service in compose
+EXPOSE 4100
+
+USER mcp
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "dist/servers/filesystem/server.js"]

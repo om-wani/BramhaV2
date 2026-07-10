@@ -128,6 +128,81 @@ services:
     networks:
       - app
 
+  mcp-fs:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mcp-node
+    command: ["dumb-init", "--", "node", "dist/servers/filesystem/server.js"]
+    environment:
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
+      MCP_FS_ROOT: /data
+      PORT: "4100"
+    volumes:
+      - mcp_fs_data:/data
+    networks:
+      - mcp-isolated
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4100/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp-db:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mcp-node
+    command: ["dumb-init", "--", "node", "dist/servers/database/server.js"]
+    environment:
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
+      MCP_DB_URL: ${MCP_DB_URL:-postgresql://bramha_readonly:dev_only_readonly@postgres:5432/bramha_dev}
+      PORT: "4101"
+    networks:
+      - mcp-isolated
+      - data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4101/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp-git:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mcp-node
+    command: ["dumb-init", "--", "node", "dist/servers/git/server.js"]
+    environment:
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
+      MCP_GIT_ROOT: /tmp/mcp-git
+      PORT: "4102"
+    networks:
+      - mcp-isolated
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4102/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mcp-web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.mcp-node
+    command: ["dumb-init", "--", "node", "dist/servers/web/server.js"]
+    environment:
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
+      MCP_WEB_ALLOWLIST: ${MCP_WEB_ALLOWLIST:-api.github.com,docs.anthropic.com}
+      PORT: "4103"
+    networks:
+      - mcp-isolated
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4103/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 networks:
   app:
     driver: bridge
@@ -141,3 +216,4 @@ volumes:
   postgres_data:
   minio_data:
   clamav_data:
+  mcp_fs_data:
