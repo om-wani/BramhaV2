@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
@@ -18,7 +18,7 @@ const HiredPersonaSchema = z.object({
   slug: z.string(),
   role: z.string().nullable(),
   accentColor: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
+  avatarKey: z.string().nullable(),
   hiredAt: z.string(),
 })
 
@@ -90,14 +90,17 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
   }))
 
   // All navigable items for keyboard shortcuts (static + meetings + 1:1 calls)
-  const allShortcutItems: Array<{ shortcut: string; href: string }> = [
-    ...navItems,
-    { shortcut: 'm', href: `/p/${projectId}/meeting` },
-    // 'gi' → first 1:1 persona
-    ...(personas.length > 0 && personas[0]
-      ? [{ shortcut: 'i', href: `/p/${projectId}/call/${personas[0].personaId}` }]
-      : []),
-  ]
+  const allShortcutItems = useMemo(
+    () => [
+      ...navItems,
+      { shortcut: 'm', href: `/p/${projectId}/meeting` },
+      // 'gi' → first 1:1 persona
+      ...(personas.length > 0 && personas[0]
+        ? [{ shortcut: 'i', href: `/p/${projectId}/call/${personas[0].personaId}` }]
+        : []),
+    ],
+    [navItems, projectId, personas],
+  )
 
   // Keyboard shortcuts: press 'g' then letter within 1s
   useEffect(() => {

@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
+import { HiredPersonaSchema } from '@bramha/shared'
 import { api } from '@/lib/api-client'
 import { ChatRoom } from '@/components/chat/ChatRoom'
 import { PersonaBioCard } from '@/components/rooms/PersonaBioCard'
@@ -17,16 +18,6 @@ const RoomSchema = z.object({
   archivedAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
-})
-
-const HiredPersonaSchema = z.object({
-  personaId: z.string(),
-  name: z.string(),
-  slug: z.string(),
-  role: z.string().nullable(),
-  accentColor: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
-  hiredAt: z.string(),
 })
 
 /**

@@ -59,9 +59,9 @@ export class ProjectAgentsController {
     return this.rooms.firePersona(user.userId, projectId, personaId)
   }
 
-  /** GET /projects/:projectId/agents/:personaId/call-room — Get or create 1:1 call room */
+  /** GET /projects/:projectId/agents/:personaId/call-room — Get or create 1:1 call room (write op) */
   @Get(':personaId/call-room')
-  @UseGuards(JwtAuthGuard, ProjectViewerGuard)
+  @UseGuards(JwtAuthGuard, ProjectEditorGuard)
   getCallRoom(
     @CurrentUser() user: AuthenticatedUser,
     @Param('projectId') projectId: string,

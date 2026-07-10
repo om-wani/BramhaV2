@@ -8,7 +8,8 @@ export interface PersonaBioCardPersona {
   name: string
   role: string | null
   accentColor: string | null
-  avatarUrl: string | null
+  /** Raw S3 key. Only rendered as an image when it starts with 'http'. */
+  avatarKey: string | null
 }
 
 interface PersonaBioCardProps {
@@ -31,8 +32,8 @@ export function PersonaBioCard({ persona, size = 'md' }: PersonaBioCardProps) {
   return (
     <div className={cn('flex items-center gap-3', isSm ? 'py-1' : 'py-2')}>
       <Avatar className={cn(isSm ? 'h-8 w-8' : 'h-10 w-10')}>
-        {persona.avatarUrl ? (
-          <AvatarImage src={persona.avatarUrl} alt={persona.name} />
+        {persona.avatarKey?.startsWith('http') ? (
+          <AvatarImage src={persona.avatarKey} alt={persona.name} />
         ) : null}
         <AvatarFallback
           style={

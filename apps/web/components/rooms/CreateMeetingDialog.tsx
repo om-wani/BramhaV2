@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { z } from 'zod'
+import { HiredPersonaSchema, type HiredPersona } from '@bramha/shared'
 import { api } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,16 +13,6 @@ import { PersonaBioCard } from './PersonaBioCard'
 import { cn } from '@/lib/utils'
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
-
-const HiredPersonaSchema = z.object({
-  personaId: z.string(),
-  name: z.string(),
-  slug: z.string(),
-  role: z.string().nullable(),
-  accentColor: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
-  hiredAt: z.string(),
-})
 
 const RoomSchema = z.object({
   id: z.string(),
@@ -35,7 +26,6 @@ const RoomSchema = z.object({
   updatedAt: z.string(),
 })
 
-type HiredPersona = z.infer<typeof HiredPersonaSchema>
 type Room = z.infer<typeof RoomSchema>
 
 // ── Props ──────────────────────────────────────────────────────────────────────

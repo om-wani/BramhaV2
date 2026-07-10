@@ -102,14 +102,16 @@ describe('RoomsService', () => {
       // 1. SELECT agent_personas (persona exists + name)
       // 2. INSERT INTO project_agents
       // 3. SELECT hired row
-      // 4. SELECT existing call room (none found)   ← getOrCreateCallRoom
-      // 5. INSERT new call room
-      // 6. INSERT user participant
-      // 7. INSERT agent participant
+      // 4. SELECT pg_advisory_xact_lock   ← getOrCreateCallRoom serialises concurrent creates
+      // 5. SELECT existing call room (none found)
+      // 6. INSERT new call room
+      // 7. INSERT user participant
+      // 8. INSERT agent participant
       const { db, relay } = buildMocks([
         [personaRow],  // SELECT agent_personas
         [],            // INSERT project_agents ON CONFLICT DO NOTHING
         [hiredRow],    // SELECT hired row
+        [],            // SELECT pg_advisory_xact_lock (advisory lock)
         [],            // SELECT existing call room (not found)
         [{ ...callRoom, type: 'call', name: '1:1 with Ledger' }], // INSERT call room
         [],            // INSERT user participant
@@ -130,11 +132,12 @@ describe('RoomsService', () => {
       const hiredRow = makeHiredPersonaRow()
       const existingCallRoom = makeRoomRow({ type: 'call' })
 
-      // tx calls: persona found, insert (no-op), hired row found, existing call room found
+      // tx calls: persona found, insert (no-op), hired row found, advisory lock, existing call room found
       const { db, relay } = buildMocks([
         [personaRow],
         [],
         [hiredRow],
+        [],              // SELECT pg_advisory_xact_lock (advisory lock)
         [existingCallRoom],  // existing call room → skip creation
       ])
 
@@ -286,9 +289,12 @@ describe('RoomsService', () => {
       const existingRoom = makeRoomRow({ type: 'call' })
 
       // External call (skipHiredCheck=false):
-      // tx[0] = hired check + name, tx[1] = existing room query
+      // tx[0] = hired check + name
+      // tx[1] = advisory lock
+      // tx[2] = existing room query
       const { db, relay } = buildMocks([
         [{ name: 'Ledger' }],  // project_agents JOIN agent_personas (hired + name)
+        [],                     // SELECT pg_advisory_xact_lock (advisory lock)
         [existingRoom],         // existing call room found
       ])
 
@@ -304,13 +310,15 @@ describe('RoomsService', () => {
 
       // External call:
       // tx[0] = hired check (found, name='Ledger')
-      // tx[1] = existing call room (not found)
-      // tx[2] = INSERT room
-      // tx[3] = INSERT user participant
-      // tx[4] = INSERT agent participant
+      // tx[1] = advisory lock
+      // tx[2] = existing call room (not found)
+      // tx[3] = INSERT room
+      // tx[4] = INSERT user participant
+      // tx[5] = INSERT agent participant
       const { db, relay } = buildMocks([
         [{ name: 'Ledger' }],
-        [],
+        [],            // SELECT pg_advisory_xact_lock (advisory lock)
+        [],            // existing call room (not found)
         [newRoom],
         [],
         [],
@@ -338,8 +346,12 @@ describe('RoomsService', () => {
       const existingRoom = makeRoomRow({ type: 'call' })
 
       // With skipHiredCheck=true and personaName provided:
-      // tx[0] = existing call room (nameHint skips agent_personas query)
-      const { db, relay } = buildMocks([[existingRoom]])
+      // tx[0] = advisory lock (hired check skipped, name hint provided)
+      // tx[1] = existing call room found
+      const { db, relay } = buildMocks([
+        [],            // SELECT pg_advisory_xact_lock (advisory lock)
+        [existingRoom],
+      ])
 
       const service = new RoomsService(db as RlsDbService, relay as EventRelayService)
       const result = await service.getOrCreateCallRoom(

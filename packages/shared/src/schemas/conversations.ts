@@ -112,7 +112,8 @@ export const HiredPersonaSchema = z.object({
   slug: z.string(),
   role: z.string().nullable(),
   accentColor: z.string().nullable(),
-  avatarUrl: z.string().nullable(),
+  /** Raw S3 key — only render as image when value starts with 'http'. */
+  avatarKey: z.string().nullable(),
   hiredAt: z.string(),
 })
 

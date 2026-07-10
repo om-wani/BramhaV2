@@ -39,7 +39,8 @@ export interface HiredPersonaDto {
   slug: string
   role: string | null
   accentColor: string | null
-  avatarUrl: string | null
+  /** Raw S3 key (not a URL). Consumers must check for `http` prefix before treating as image URL. */
+  avatarKey: string | null
   hiredAt: string
 }
 
@@ -134,7 +135,7 @@ function mapHiredPersona(r: HiredPersonaRow): HiredPersonaDto {
     slug: r.slug,
     role: r.title,
     accentColor: r.color,
-    avatarUrl: r.avatar_key,
+    avatarKey: r.avatar_key,
     hiredAt: r.hired_at,
   }
 }
@@ -251,7 +252,10 @@ export class RoomsService {
     roomId: string,
     input: UpdateRoomInput,
   ): Promise<RoomDto> {
-    return this.db.run({ userId, projectId }, async (tx) => {
+    // Run the transaction, capturing whether a kick is needed.
+    // kickRoom must fire AFTER the tx commits — calling it inside db.run()
+    // would revoke WS sessions before the archive is visible to readers.
+    const { room, didArchive } = await this.db.run({ userId, projectId }, async (tx) => {
       const current = await tx<RoomRow[]>`
         SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
         FROM rooms
@@ -277,19 +281,21 @@ export class RoomsService {
       `
       if (!rows[0]) throw new NotFoundException({ code: 'not_found' })
 
-      // Kick all WS clients if the room was just archived
-      if (input.archived === true && rows[0].archived_at) {
-        this.relay.kickRoom(roomId)
-      }
-
       this.logger.log({
         event: 'room.updated',
         actorId: userId,
         targetId: roomId,
         action: 'update',
       })
-      return mapRoom(rows[0])
+      return { room: mapRoom(rows[0]), didArchive: input.archived === true && !!rows[0].archived_at }
     })
+
+    // Kick WS clients AFTER tx commits so the archived state is fully visible
+    if (didArchive) {
+      this.relay.kickRoom(roomId)
+    }
+
+    return room
   }
 
   // ── Participants ───────────────────────────────────────────────────────────
@@ -463,15 +469,11 @@ export class RoomsService {
       if (!persona[0]) throw new NotFoundException({ code: 'persona_not_found' })
 
       // Insert into project_agents (ignore if already hired)
-      try {
-        await tx`
-          INSERT INTO project_agents (project_id, persona_id)
-          VALUES (${projectId}, ${personaId})
-          ON CONFLICT DO NOTHING
-        `
-      } catch {
-        // PK conflict handled by ON CONFLICT DO NOTHING
-      }
+      await tx`
+        INSERT INTO project_agents (project_id, persona_id)
+        VALUES (${projectId}, ${personaId})
+        ON CONFLICT DO NOTHING
+      `
 
       // Fetch the final row (hired_at)
       const hired = await tx<HiredPersonaRow[]>`
@@ -554,6 +556,15 @@ export class RoomsService {
         `
         personaName = ap[0]?.name ?? personaId
       }
+
+      // ── Advisory lock: serialise concurrent call-room creation ───────────
+      // pg_advisory_xact_lock is released automatically when the tx commits
+      // or rolls back, preventing duplicate rooms under concurrent requests.
+      await tx`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${projectId} || ':' || ${userId} || ':' || ${personaId})::bigint
+        )
+      `
 
       // ── Find existing call room ───────────────────────────────────────────
       const existing = await tx<RoomRow[]>`
