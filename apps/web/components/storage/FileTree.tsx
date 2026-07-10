@@ -1,22 +1,29 @@
-import { Folder, AlertTriangle, Archive } from 'lucide-react'
+import { Folder, AlertTriangle, Archive, PlugZap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type FolderType = 'uploads' | 'quarantine'
+type FolderType = 'uploads' | 'quarantine' | 'sources'
 
 interface FileTreeProps {
   selectedFolder: FolderType
   onSelectFolder: (folder: FolderType) => void
   uploadsCount: number
   quarantineCount: number
+  sourcesCount?: number
 }
 
-export function FileTree({ selectedFolder, onSelectFolder, uploadsCount, quarantineCount }: FileTreeProps) {
+export function FileTree({ selectedFolder, onSelectFolder, uploadsCount, quarantineCount, sourcesCount }: FileTreeProps) {
   const items: { id: FolderType | 'artifacts'; label: string; icon: React.ReactNode; count?: number; disabled?: boolean }[] = [
     {
       id: 'uploads' as FolderType,
       label: 'Uploads',
       icon: <Folder className="h-4 w-4" aria-hidden="true" />,
       count: uploadsCount,
+    },
+    {
+      id: 'sources' as FolderType,
+      label: 'Connected Sources',
+      icon: <PlugZap className="h-4 w-4" aria-hidden="true" />,
+      ...(sourcesCount !== undefined ? { count: sourcesCount } : {}),
     },
     {
       id: 'artifacts',

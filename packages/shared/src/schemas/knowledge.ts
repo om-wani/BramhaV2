@@ -133,3 +133,65 @@ export const KnowledgeSearchResultSchema = z
   .strict()
 
 export type KnowledgeSearchResult = z.infer<typeof KnowledgeSearchResultSchema>
+
+// ── Source Connector Schemas ───────────────────────────────────────────────────
+
+export const CreateSourceInputSchema = z.object({
+  type: z.enum(['github_repo', 'gitlab_repo', 'sql_database', 'url']),
+  config: z.object({
+    // github_repo / gitlab_repo: repoUrl, branch
+    repoUrl: z.string().url().optional(),
+    branch: z.string().optional(),
+    // sql_database: host, port, database, username
+    host: z.string().optional(),
+    port: z.number().int().optional(),
+    database: z.string().optional(),
+    username: z.string().optional(),
+    // url: rootUrl, maxDepth, maxPages
+    rootUrl: z.string().url().optional(),
+    maxDepth: z.number().int().min(1).max(3).optional(),
+    maxPages: z.number().int().min(1).max(200).optional(),
+  }),
+  credential: z.string().optional(),
+  syncSchedule: z.string().optional(),
+})
+
+export type CreateSourceInput = z.infer<typeof CreateSourceInputSchema>
+
+export const SourceResponseSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  type: z.string(),
+  config: z.record(z.string(), z.unknown()),
+  hasCredential: z.boolean(),
+  syncSchedule: z.string().nullable(),
+  lastSyncAt: z.string().nullable(),
+  lastSyncStatus: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+export type SourceResponse = z.infer<typeof SourceResponseSchema>
+
+export const SourceHistoryEntrySchema = z.object({
+  id: z.string().uuid(),
+  sourceId: z.string().uuid().nullable(),
+  status: z.string(),
+  stats: z.record(z.string(), z.unknown()).nullable(),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+export type SourceHistoryEntry = z.infer<typeof SourceHistoryEntrySchema>
+
+export const SyncSourceJobDataSchema = z.object({
+  projectId: z.string().uuid(),
+  sourceId: z.string().uuid(),
+  sourceType: z.enum(['github_repo', 'gitlab_repo', 'sql_database', 'url']),
+  config: z.record(z.string(), z.unknown()),
+  credentialRef: z.string().nullable(),
+  triggeredBy: z.string().uuid(),
+})
+
+export type SyncSourceJobData = z.infer<typeof SyncSourceJobDataSchema>

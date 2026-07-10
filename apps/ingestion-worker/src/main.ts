@@ -33,6 +33,7 @@ import {
   type ExtractFileJobData,
 } from './extraction-pipeline.processor.js'
 import { NoteDeltaProcessor } from './note-delta.processor.js'
+import { SourceSyncProcessor } from './sources/source-sync.processor.js'
 import { sql } from './db.js'
 
 // ── Env validation ────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ function requireEnv(key: string): string {
 }
 
 const REDIS_URL = requireEnv('REDIS_URL')
+const CREDENTIAL_ENCRYPTION_KEY = process.env['CREDENTIAL_ENCRYPTION_KEY'] ?? ''
 const S3_ENDPOINT = requireEnv('S3_ENDPOINT')
 const S3_BUCKET_STAGING = requireEnv('S3_BUCKET_STAGING')
 const S3_BUCKET_CLEAN = requireEnv('S3_BUCKET_CLEAN')
@@ -69,6 +71,7 @@ const s3 = new S3Client({
 const redisWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisExtractionWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisNoteDeltaWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
+const redisSourceSyncWorker = new Redis(REDIS_URL, { maxRetriesPerRequest: null })
 const redisPublisher = new Redis(REDIS_URL)
 const publisher = new EventPublisher(redisPublisher)
 
@@ -224,6 +227,22 @@ const noteDeltaProcessor = new NoteDeltaProcessor({
   },
 })
 
+// ── Source sync processor ─────────────────────────────────────────────────────
+
+const sourceSyncProcessor = new SourceSyncProcessor({
+  sql,
+  publisher,
+  embeddingProvider: embeddingProvider ?? {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async embed(_: string[]) {
+      throw new Error('no_embedding_provider')
+    },
+    dimension: 1536,
+    model: 'no-op',
+  },
+  credentialEncryptionKey: CREDENTIAL_ENCRYPTION_KEY,
+})
+
 // ── Extraction pipeline processor ────────────────────────────────────────────
 
 const extractionProcessor = new ExtractionPipelineProcessor({
@@ -303,6 +322,21 @@ const extractionWorker = new Worker(
   },
 )
 
+const sourceSyncWorker = new Worker(
+  'source-sync',
+  async (job: Job<unknown>) => {
+    if (job.name !== 'source.sync') {
+      console.log(JSON.stringify({ event: 'source_sync_worker.unknown_job', jobName: job.name }))
+      return
+    }
+    await sourceSyncProcessor.process(job)
+  },
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    connection: redisSourceSyncWorker as any,
+    concurrency: parseInt(process.env['SOURCE_SYNC_CONCURRENCY'] ?? '2', 10),
+  },)
+
 worker.on('completed', (job: Job) => {
   console.log(JSON.stringify({ event: 'worker.job_completed', jobId: job.id }))
 })
@@ -347,15 +381,23 @@ extractionWorker.on('failed', (job: Job | undefined, err: Error) => {
   )
 })
 
+sourceSyncWorker.on('completed', (job: Job) => {
+  console.log(JSON.stringify({ event: 'source_sync_worker.job_completed', jobId: job.id }))
+})
+sourceSyncWorker.on('failed', (job: Job | undefined, err: Error) => {
+  console.error(JSON.stringify({ event: 'source_sync_worker.job_failed', jobId: job?.id, err: err.message }))
+})
+
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 
 async function shutdown(signal: string) {
   console.log(JSON.stringify({ event: 'worker.shutdown', signal }))
-  await Promise.all([worker.close(), extractionWorker.close(), noteDeltaWorker.close()])
+  await Promise.all([worker.close(), extractionWorker.close(), noteDeltaWorker.close(), sourceSyncWorker.close()])
   await Promise.all([
     redisWorker.quit(),
     redisExtractionWorker.quit(),
     redisNoteDeltaWorker.quit(),
+    redisSourceSyncWorker.quit(),
     redisPublisher.quit(),
     redisQueueConn.quit(),
   ])
@@ -368,4 +410,4 @@ process.on('unhandledRejection', (reason) => {
   console.error(JSON.stringify({ event: 'worker.unhandled_rejection', err: String(reason) }))
 })
 
-console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction', 'note-delta'] }))
+console.log(JSON.stringify({ event: 'worker.started', queues: ['ingestion', 'extraction', 'note-delta', 'source-sync'] }))

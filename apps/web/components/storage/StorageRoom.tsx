@@ -1,22 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { FileSchema } from '@bramha/shared'
-import type { FileDto } from '@bramha/shared'
+import { FileSchema, SourceResponseSchema } from '@bramha/shared'
+import type { FileDto, SourceResponse } from '@bramha/shared'
 import { api } from '@/lib/api-client'
 import { FileTree } from './FileTree'
 import { FileGrid } from './FileGrid'
 import { PreviewPane } from './PreviewPane'
 import { ConnectSourceDialog } from './ConnectSourceDialog'
+import { SourceList } from './SourceList'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Upload, PlugZap, Search } from 'lucide-react'
 
-type Folder = 'uploads' | 'quarantine'
+type Folder = 'uploads' | 'quarantine' | 'sources'
 
 export function StorageRoom({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient()
   const [selectedFolder, setSelectedFolder] = useState<Folder>('uploads')
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -33,11 +35,24 @@ export function StorageRoom({ projectId }: { projectId: string }) {
     },
   })
 
+  const { data: sources = [] } = useQuery({
+    queryKey: ['sources', projectId],
+    queryFn: () => api.get(`/projects/${projectId}/sources`, z.array(SourceResponseSchema)),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (Array.isArray(data) && data.some((s: SourceResponse) => s.lastSyncStatus === 'running')) return 5000
+      return false
+    },
+  })
+
   const selectedFile = files.find((f) => f.id === selectedFileId) ?? null
 
-  // Clear selection when switching folders if file not in that folder
   const handleFolderChange = (folder: Folder) => {
     setSelectedFolder(folder)
+    if (folder === 'sources') {
+      setSelectedFileId(null)
+      return
+    }
     if (selectedFile) {
       const isQuarantined = selectedFile.scanStatus === 'quarantined'
       if (folder === 'quarantine' && !isQuarantined) setSelectedFileId(null)
@@ -48,6 +63,11 @@ export function StorageRoom({ projectId }: { projectId: string }) {
   const uploadsCount = files.filter(f => f.scanStatus !== 'quarantined').length
   const quarantineCount = files.filter(f => f.scanStatus === 'quarantined').length
 
+  const folderLabel =
+    selectedFolder === 'uploads' ? 'Uploads' :
+    selectedFolder === 'quarantine' ? 'Quarantine' :
+    'Connected Sources'
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Toolbar */}
@@ -55,19 +75,21 @@ export function StorageRoom({ projectId }: { projectId: string }) {
         <h1 className="text-sm font-semibold text-foreground">Storage Room</h1>
         <nav aria-label="Storage breadcrumb" className="flex items-center gap-1 text-xs text-muted-foreground">
           <span aria-hidden="true">/</span>
-          <span>{selectedFolder === 'uploads' ? 'Uploads' : 'Quarantine'}</span>
+          <span>{folderLabel}</span>
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search files…"
-              className="h-8 pl-7 text-xs w-48"
-              aria-label="Search files"
-            />
-          </div>
+          {selectedFolder !== 'sources' && (
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search files…"
+                className="h-8 pl-7 text-xs w-48"
+                aria-label="Search files"
+              />
+            </div>
+          )}
           <Button size="sm" onClick={() => { setConnectInitialTab('upload'); setConnectOpen(true) }} variant="default" className="h-8 gap-1.5 text-xs">
             <Upload className="h-3.5 w-3.5" aria-hidden="true" />
             Upload
@@ -88,23 +110,31 @@ export function StorageRoom({ projectId }: { projectId: string }) {
             onSelectFolder={handleFolderChange}
             uploadsCount={uploadsCount}
             quarantineCount={quarantineCount}
+            sourcesCount={sources.length}
           />
         </aside>
 
-        {/* Center: FileGrid */}
+        {/* Center: FileGrid or SourceList */}
         <main className="flex-1 overflow-y-auto">
-          <FileGrid
-            files={files}
-            folder={selectedFolder}
-            searchQuery={searchQuery}
-            selectedFileId={selectedFileId}
-            isLoading={isLoading}
-            onSelectFile={setSelectedFileId}
-          />
+          {selectedFolder === 'sources' ? (
+            <div className="p-4">
+              <h2 className="sr-only">Connected Sources</h2>
+              <SourceList projectId={projectId} />
+            </div>
+          ) : (
+            <FileGrid
+              files={files}
+              folder={selectedFolder}
+              searchQuery={searchQuery}
+              selectedFileId={selectedFileId}
+              isLoading={isLoading}
+              onSelectFile={setSelectedFileId}
+            />
+          )}
         </main>
 
-        {/* Right: PreviewPane (only when file selected) */}
-        {selectedFileId && selectedFile && (
+        {/* Right: PreviewPane (only when file selected and not in sources view) */}
+        {selectedFileId && selectedFile && selectedFolder !== 'sources' && (
           <aside className="w-80 shrink-0 border-l overflow-y-auto">
             <PreviewPane
               file={selectedFile}
@@ -120,6 +150,9 @@ export function StorageRoom({ projectId }: { projectId: string }) {
         onOpenChange={setConnectOpen}
         projectId={projectId}
         initialTab={connectInitialTab}
+        onSourceConnected={() => {
+          void queryClient.invalidateQueries({ queryKey: ['sources', projectId] })
+        }}
       />
     </div>
   )
