@@ -137,6 +137,19 @@ export interface AgentGraphDeps {
   redis: Redis
 
   /**
+   * Optional MCP tool-call adapter. When provided, enables the `mcp_call` tool
+   * for agent turns. Callers wire this to PolicyEngine + McpClient.
+   * Not injected in tests unless explicitly required.
+   */
+  mcpCall?: (input: {
+    connector: string
+    tool: string
+    args: Record<string, unknown>
+    personaId: string
+    projectId: string
+  }) => Promise<{ content: string }>
+
+  /**
    * Load persona, model policy, project brief, working memory, and thread nodes
    * in a single DB round-trip (or multiple, implementation's choice).
    * Abstracts the withTenant calls; tests supply a stub.
@@ -196,6 +209,28 @@ export interface AgentGraphDeps {
   enqueueDelegation: (data: unknown) => Promise<{ delegationId: string }>
 }
 
+// ── mcp_call tool definition ──────────────────────────────────────────────────
+
+const mcpCallTool: ToolDefinition = {
+  name: 'mcp_call',
+  description: 'Call an external tool via MCP connector',
+  parameters: {
+    type: 'object',
+    properties: {
+      connector: { type: 'string', description: 'Connector ID or slug' },
+      tool: { type: 'string', description: 'Tool name as declared in the connector manifest' },
+      args: {
+        type: 'object',
+        additionalProperties: true,
+        default: {},
+        description: 'Arguments to pass to the tool',
+      },
+    },
+    required: ['connector', 'tool'],
+    additionalProperties: false,
+  },
+}
+
 // ── Tool registry ──────────────────────────────────────────────────────────────
 
 const ALL_CORE_TOOLS: ToolDefinition[] = [
@@ -203,6 +238,7 @@ const ALL_CORE_TOOLS: ToolDefinition[] = [
   createNoteTool,
   summonAgentTool,
   delegateTaskTool,
+  mcpCallTool,
 ]
 
 // ── AgentGraph ─────────────────────────────────────────────────────────────────
@@ -379,6 +415,22 @@ export class AgentGraph {
           enqueueDelegation: this.deps.enqueueDelegation,
           ...baseDeps,
         })
+
+      case 'mcp_call': {
+        if (!this.deps.mcpCall) return { error: 'MCP not configured' }
+        const mcpInput = input as {
+          connector: string
+          tool: string
+          args?: Record<string, unknown>
+        }
+        return this.deps.mcpCall({
+          connector: mcpInput.connector,
+          tool: mcpInput.tool,
+          args: mcpInput.args ?? {},
+          personaId: state.personaId,
+          projectId: state.projectId,
+        })
+      }
 
       default:
         throw new Error(`Unknown tool: ${name}`)

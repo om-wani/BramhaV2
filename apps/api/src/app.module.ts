@@ -16,6 +16,7 @@ import { FilesModule } from './modules/files/files.module'
 import { KnowledgeModule } from './modules/knowledge/knowledge.module'
 import { NotesModule } from './modules/notes/notes.module'
 import { DelegationsModule } from './modules/delegations/delegations.module'
+import { ApprovalsModule } from './modules/approvals/approvals.module'
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { DelegationsModule } from './modules/delegations/delegations.module'
     KnowledgeModule,
     NotesModule,
     DelegationsModule,
+    ApprovalsModule,
   ],
 })
 export class AppModule {}
