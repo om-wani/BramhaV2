@@ -12,8 +12,7 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import postgres from 'postgres'
 import { verifyJwtSignature } from '../../client/jwt-utils.js'
-import { CapabilityTokenError } from '../../client/errors.js'
-import type { ConnectorManifest } from '../../types.js'
+import type { CapabilityTokenPayload, ConnectorManifest } from '../../types.js'
 import { executeQuery } from './tools.js'
 import type { DbQueryFn } from './tools.js'
 
@@ -95,12 +94,11 @@ export function createServer(config: DbServerConfig): FastifyInstance {
     }
     const token = auth.slice(7)
 
+    let payload: CapabilityTokenPayload
     try {
-      verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
-    } catch (err) {
-      if (err instanceof CapabilityTokenError) {
-        return reply.status(401).send({ error: 'unauthorized' })
-      }
+      const raw = verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
+      payload = raw as unknown as CapabilityTokenPayload
+    } catch {
       return reply.status(401).send({ error: 'unauthorized' })
     }
 
@@ -111,7 +109,14 @@ export function createServer(config: DbServerConfig): FastifyInstance {
 
     if (!tool) return reply.status(400).send({ error: 'missing_tool' })
 
-    // 3. Dispatch
+    // 3. Scope check
+    const DB_TOOL_SCOPES: Record<string, string> = { query: 'db:read' }
+    // eslint-disable-next-line security/detect-object-injection
+    const dbRequiredScope = DB_TOOL_SCOPES[tool]
+    if (!dbRequiredScope) return reply.status(400).send({ error: 'unknown_tool' })
+    if (payload.scope !== dbRequiredScope) return reply.status(403).send({ error: 'scope_mismatch' })
+
+    // 4. Dispatch
     switch (tool) {
       case 'query': {
         const userSql = args['sql']

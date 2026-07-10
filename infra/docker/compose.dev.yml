@@ -132,7 +132,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.mcp-node
-    command: ["dumb-init", "--", "node", "dist/servers/filesystem/server.js"]
+    command: ["node", "dist/servers/filesystem/server.js"]
     environment:
       MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
       MCP_FS_ROOT: /data
@@ -152,7 +152,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.mcp-node
-    command: ["dumb-init", "--", "node", "dist/servers/database/server.js"]
+    command: ["node", "dist/servers/database/server.js"]
     environment:
       MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
       MCP_DB_URL: ${MCP_DB_URL:-postgresql://bramha_readonly:dev_only_readonly@postgres:5432/bramha_dev}
@@ -171,7 +171,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.mcp-node
-    command: ["dumb-init", "--", "node", "dist/servers/git/server.js"]
+    command: ["node", "dist/servers/git/server.js"]
     environment:
       MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
       MCP_GIT_ROOT: /tmp/mcp-git
@@ -189,7 +189,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.mcp-node
-    command: ["dumb-init", "--", "node", "dist/servers/web/server.js"]
+    command: ["node", "dist/servers/web/server.js"]
     environment:
       MCP_JWT_SECRET: ${MCP_JWT_SECRET:-dev_only_mcp_jwt_secret}
       MCP_WEB_ALLOWLIST: ${MCP_WEB_ALLOWLIST:-api.github.com,docs.anthropic.com}

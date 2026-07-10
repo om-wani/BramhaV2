@@ -10,7 +10,6 @@
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { verifyJwtSignature } from '../../client/jwt-utils.js'
-import { CapabilityTokenError } from '../../client/errors.js'
 import type { CapabilityTokenPayload, ConnectorManifest } from '../../types.js'
 import { gitClone, gitReadFile } from './tools.js'
 
@@ -86,10 +85,7 @@ export function createServer(config: GitServerConfig): FastifyInstance {
     try {
       const raw = verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
       payload = raw as unknown as CapabilityTokenPayload
-    } catch (err) {
-      if (err instanceof CapabilityTokenError) {
-        return reply.status(401).send({ error: 'unauthorized' })
-      }
+    } catch {
       return reply.status(401).send({ error: 'unauthorized' })
     }
 
@@ -100,7 +96,14 @@ export function createServer(config: GitServerConfig): FastifyInstance {
 
     if (!tool) return reply.status(400).send({ error: 'missing_tool' })
 
-    // 3. Dispatch
+    // 3. Scope check — all git tools require git:read
+    const GIT_TOOL_SCOPES: Record<string, string> = { clone: 'git:read', read_file: 'git:read' }
+    // eslint-disable-next-line security/detect-object-injection
+    const gitRequiredScope = GIT_TOOL_SCOPES[tool]
+    if (!gitRequiredScope) return reply.status(400).send({ error: 'unknown_tool' })
+    if (payload.scope !== gitRequiredScope) return reply.status(403).send({ error: 'scope_mismatch' })
+
+    // 4. Dispatch
     switch (tool) {
       case 'clone': {
         const repoUrl = args['repoUrl']
@@ -144,6 +147,7 @@ export function createServer(config: GitServerConfig): FastifyInstance {
       }
 
       default:
+        // Unreachable: scope check above catches unknown tools
         return reply.status(400).send({ error: 'unknown_tool' })
     }
   })

@@ -48,15 +48,11 @@ COPY --from=build /build/packages/mcp-connectors/package.json ./
 COPY --from=build /build/packages/shared/package.json ./node_modules/@bramha/shared/package.json
 
 # Install only production deps
-RUN npm install --omit=dev --ignore-scripts 2>/dev/null || true
+RUN npm install --omit=dev --ignore-scripts
 
 # Copy compiled output
 COPY --from=build /build/packages/mcp-connectors/dist ./dist
 COPY --from=build /build/packages/shared/dist ./node_modules/@bramha/shared/dist
-
-# Create symlink for local workspace package
-RUN mkdir -p node_modules/@bramha && \
-    ln -sf /app/node_modules/@bramha/shared /app/node_modules/@bramha/shared 2>/dev/null || true
 
 # Servers are in dist/servers/<name>/server.js
 # The command is overridden per service in compose

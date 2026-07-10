@@ -10,8 +10,7 @@
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { verifyJwtSignature } from '../../client/jwt-utils.js'
-import { CapabilityTokenError } from '../../client/errors.js'
-import type { ConnectorManifest } from '../../types.js'
+import type { CapabilityTokenPayload, ConnectorManifest } from '../../types.js'
 import { webFetch, webSearch } from './tools.js'
 import type { SearchConfig } from './tools.js'
 
@@ -85,12 +84,11 @@ export function createServer(config: WebServerConfig): FastifyInstance {
     }
     const token = auth.slice(7)
 
+    let payload: CapabilityTokenPayload
     try {
-      verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
-    } catch (err) {
-      if (err instanceof CapabilityTokenError) {
-        return reply.status(401).send({ error: 'unauthorized' })
-      }
+      const raw = verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
+      payload = raw as unknown as CapabilityTokenPayload
+    } catch {
       return reply.status(401).send({ error: 'unauthorized' })
     }
 
@@ -101,7 +99,14 @@ export function createServer(config: WebServerConfig): FastifyInstance {
 
     if (!tool) return reply.status(400).send({ error: 'missing_tool' })
 
-    // 3. Dispatch
+    // 3. Scope check — all web tools require web:read
+    const WEB_TOOL_SCOPES: Record<string, string> = { fetch: 'web:read', search: 'web:read' }
+    // eslint-disable-next-line security/detect-object-injection
+    const webRequiredScope = WEB_TOOL_SCOPES[tool]
+    if (!webRequiredScope) return reply.status(400).send({ error: 'unknown_tool' })
+    if (payload.scope !== webRequiredScope) return reply.status(403).send({ error: 'scope_mismatch' })
+
+    // 4. Dispatch
     switch (tool) {
       case 'fetch': {
         const url = args['url']

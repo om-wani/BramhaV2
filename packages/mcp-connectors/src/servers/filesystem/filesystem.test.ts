@@ -170,6 +170,36 @@ describe('createServer bearer verification', () => {
     expect(body.ok).toBe(true)
   })
 
+  it('returns 403 scope_mismatch when fs:read token calls write_file', async () => {
+    const { createServer } = await import('./index.js')
+    const { signJwt } = await import('../../client/jwt-utils.js')
+    const secret = 'test-secret-scope'
+    // Token has scope fs:read but calls write_file which requires fs:write
+    const token = signJwt(
+      {
+        sub: 'persona-1',
+        projectId: 'proj-abc123',
+        connectorId: 'mcp-fs',
+        scope: 'fs:read',
+        argsHash: 'aabbcc',
+        jti: 'jti-scope',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 60,
+      },
+      secret,
+    )
+    const app = createServer({ jwtSecret: secret, fsRoot: '/data', port: 4100 })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/call',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ tool: 'write_file', args: { path: 'x.txt', content: 'y' } }),
+    })
+    expect(response.statusCode).toBe(403)
+    const body = JSON.parse(response.body) as { error: string }
+    expect(body.error).toBe('scope_mismatch')
+  })
+
   it('returns 400 for unknown_tool with valid token', async () => {
     const { createServer } = await import('./index.js')
     const { signJwt } = await import('../../client/jwt-utils.js')

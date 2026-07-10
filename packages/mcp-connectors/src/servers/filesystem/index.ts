@@ -8,7 +8,6 @@
 import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 import { verifyJwtSignature } from '../../client/jwt-utils.js'
-import { CapabilityTokenError } from '../../client/errors.js'
 import type { CapabilityTokenPayload, ConnectorManifest } from '../../types.js'
 import { fsReadFile, fsListDir, fsWriteFile } from './tools.js'
 
@@ -95,10 +94,7 @@ export function createServer(config: FsServerConfig): FastifyInstance {
     try {
       const raw = verifyJwtSignature<Record<string, unknown>>(token, config.jwtSecret)
       payload = raw as unknown as CapabilityTokenPayload
-    } catch (err) {
-      if (err instanceof CapabilityTokenError) {
-        return reply.status(401).send({ error: 'unauthorized' })
-      }
+    } catch {
       return reply.status(401).send({ error: 'unauthorized' })
     }
 
@@ -111,10 +107,25 @@ export function createServer(config: FsServerConfig): FastifyInstance {
       return reply.status(400).send({ error: 'missing_tool' })
     }
 
-    // 3. Project root = fsRoot/<projectId>
+    // 3. Scope check — token scope must match tool's required scope
+    const TOOL_SCOPES: Record<string, string> = {
+      read_file: 'fs:read',
+      list_dir: 'fs:read',
+      write_file: 'fs:write',
+    }
+    // eslint-disable-next-line security/detect-object-injection
+    const requiredScope = TOOL_SCOPES[tool]
+    if (!requiredScope) {
+      return reply.status(400).send({ error: 'unknown_tool' })
+    }
+    if (payload.scope !== requiredScope) {
+      return reply.status(403).send({ error: 'scope_mismatch' })
+    }
+
+    // 4. Project root = fsRoot/<projectId>
     const projectRoot = `${config.fsRoot}/${payload.projectId}`
 
-    // 4. Dispatch tool
+    // 5. Dispatch tool
     try {
       switch (tool) {
         case 'read_file': {
