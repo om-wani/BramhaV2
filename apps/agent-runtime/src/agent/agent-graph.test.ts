@@ -119,6 +119,8 @@ function makeDeps(overrides: Partial<AgentGraphDeps> = {}): AgentGraphDeps {
       modelPolicy: mockModelPolicy,
       projectBrief: 'BramhaV2 AI SaaS platform.',
       roomId: ROOM_ID,
+      roomType: 'conference',
+      roomIsConfidential: false,
       workingMemory: mockWorkingMemory,
       threadNodes: [
         {
@@ -133,6 +135,7 @@ function makeDeps(overrides: Partial<AgentGraphDeps> = {}): AgentGraphDeps {
     }),
 
     searchKnowledge: vi.fn().mockResolvedValue([]),
+    loadProjectFacts: vi.fn().mockResolvedValue([]),
     createNote: vi.fn().mockResolvedValue({ noteId: 'note-abc' }),
     insertNode: vi.fn().mockResolvedValue(mockPersistedNode),
     upsertWorkingMemory: vi.fn().mockResolvedValue(undefined),
@@ -427,6 +430,8 @@ describe('AgentGraph', () => {
           modelPolicy: { ...mockModelPolicy, maxInputTokens: 4096 },
           projectBrief: 'Short brief.',
           roomId: ROOM_ID,
+          roomType: 'conference',
+          roomIsConfidential: false,
           workingMemory: {
             ...mockWorkingMemory,
             summaryMd: 'Previous summary: decided to move to Kubernetes.',
@@ -562,6 +567,8 @@ describe('AgentGraph', () => {
           modelPolicy: mockModelPolicy,
           projectBrief: '',
           roomId: ROOM_ID,
+          roomType: 'conference',
+          roomIsConfidential: false,
           workingMemory: mockWorkingMemory,
           threadNodes: [],
           triggerText: 'hello',

@@ -4,8 +4,10 @@ import {
   buildContextBundle,
   untrustedContext,
   CONTEXT_TOKEN_CAP,
+  ROUTING_MATRIX,
+  filterProjectFacts,
 } from './context-bundle.js'
-import type { BundleInput, RagChunk, ThreadNode } from './context-bundle.js'
+import type { BundleInput, RagChunk, ThreadNode, GlobalFact } from './context-bundle.js'
 import type { WorkingMemory } from './working-memory.js'
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -54,6 +56,10 @@ function makeInput(overrides: Partial<BundleInput> = {}): BundleInput {
     triggerReason: 'mention',
     otherSpeakers: ['Bob'],
     maxInputTokens: 8000,
+    currentRoomId: 'room-default',
+    roomType: 'conference',
+    roomIsConfidential: false,
+    projectFacts: [],
     ...overrides,
   }
 }
@@ -227,5 +233,164 @@ describe('buildContextBundle', () => {
     const bundle = buildContextBundle(input)
     expect(bundle.sections.triggerInstruction).toContain('none')
     expect(bundle.sections.triggerInstruction).toContain('follow-up')
+  })
+})
+
+// ── Cross-room routing ──────────────────────────────────────────────────────────
+
+function makeGlobalFact(overrides: Partial<GlobalFact> = {}): GlobalFact {
+  return {
+    text: 'Default global fact',
+    sourceNode: 'node-global',
+    confidence: 0.9,
+    ts: new Date().toISOString(),
+    sourceConversationId: 'conv-other',
+    sourceRoomId: 'room-other',
+    sourceRoomType: 'conference',
+    sourceRoomConfidential: false,
+    ...overrides,
+  }
+}
+
+describe('ROUTING_MATRIX', () => {
+  it('is exported and has all four routing rule keys', () => {
+    expect(ROUTING_MATRIX.ragChunks).toBe('all-rooms-always')
+    expect(ROUTING_MATRIX.rollingSummary).toBe('same-room-only')
+    expect(ROUTING_MATRIX.workingMemoryFacts).toBe('agent-global-project-except-confidential-1:1')
+    expect(ROUTING_MATRIX.openLoops).toBe('current-conversation-only')
+  })
+})
+
+describe('filterProjectFacts', () => {
+  it('passes through non-confidential facts regardless of room', () => {
+    const fact = makeGlobalFact({ sourceRoomConfidential: false, sourceRoomId: 'room-A' })
+    const result = filterProjectFacts([fact], 'room-B')
+    expect(result).toHaveLength(1)
+  })
+
+  it('blocks confidential facts when currentRoomId differs from sourceRoomId', () => {
+    const fact = makeGlobalFact({ sourceRoomConfidential: true, sourceRoomId: 'room-A' })
+    const result = filterProjectFacts([fact], 'room-B')
+    expect(result).toHaveLength(0)
+  })
+
+  it('allows confidential facts when currentRoomId matches sourceRoomId', () => {
+    const fact = makeGlobalFact({ sourceRoomConfidential: true, sourceRoomId: 'room-A' })
+    const result = filterProjectFacts([fact], 'room-A')
+    expect(result).toHaveLength(1)
+  })
+})
+
+describe('cross-room routing', () => {
+  it('includes global facts from other rooms when not confidential', () => {
+    const globalFact = makeGlobalFact({
+      text: 'Budget is $5M',
+      sourceRoomId: 'room-conference',
+      sourceRoomType: 'conference',
+      sourceRoomConfidential: false,
+    })
+    const input = makeInput({
+      currentRoomId: 'room-call',
+      roomType: 'call',
+      roomIsConfidential: false,
+      projectFacts: [globalFact],
+    })
+    const bundle = buildContextBundle(input)
+    expect(bundle.fullPrompt).toContain('Budget is $5M')
+  })
+
+  it('excludes confidential-1:1 facts when in a different room (20-generation snapshot)', () => {
+    const confidentialFact = makeGlobalFact({
+      text: 'SECRET: CEO plans acquisition',
+      sourceRoomId: 'room-call-123',
+      sourceRoomType: 'call',
+      sourceRoomConfidential: true,
+    })
+    // Run 20 times to assert the invariant holds across generations
+    for (let i = 0; i < 20; i++) {
+      const input = makeInput({
+        currentRoomId: 'room-conference',  // different from sourceRoomId
+        roomType: 'conference',
+        roomIsConfidential: false,
+        projectFacts: [confidentialFact],
+      })
+      const bundle = buildContextBundle(input)
+      expect(bundle.fullPrompt).not.toContain('SECRET: CEO plans acquisition')
+    }
+  })
+
+  it('includes confidential-1:1 fact when IN the same room', () => {
+    const confidentialFact = makeGlobalFact({
+      text: 'SECRET: CEO plans acquisition',
+      sourceRoomId: 'room-call-123',
+      sourceRoomType: 'call',
+      sourceRoomConfidential: true,
+    })
+    const input = makeInput({
+      currentRoomId: 'room-call-123',  // matches sourceRoomId
+      roomType: 'call',
+      roomIsConfidential: true,
+      projectFacts: [confidentialFact],
+    })
+    const bundle = buildContextBundle(input)
+    expect(bundle.fullPrompt).toContain('SECRET: CEO plans acquisition')
+  })
+
+  it('meeting-room summary stays in same room — does not appear in projectFacts', () => {
+    const memWithSummary = makeMemory({ summaryMd: 'Meeting A summary: pricing discussion' })
+    const input = makeInput({
+      workingMemory: memWithSummary,
+      currentRoomId: 'room-meeting-A',
+      roomType: 'meeting',
+      roomIsConfidential: false,
+      projectFacts: [],  // summaries are per-conversation, never in projectFacts
+    })
+    const bundle = buildContextBundle(input)
+    // Summary from workingMemory is included (same room)
+    expect(bundle.sections.workingMemorySummary).toContain('Meeting A summary')
+  })
+
+  it('fact learned in conference is available to same agent in its 1:1', () => {
+    // Conference fact (non-confidential) should appear in a 1:1 room bundle
+    const conferenceFact = makeGlobalFact({
+      text: 'We agreed on $5M Q4 budget in conference',
+      sourceRoomId: 'room-conference',
+      sourceRoomType: 'conference',
+      sourceRoomConfidential: false,
+    })
+    const input = makeInput({
+      currentRoomId: 'room-call-cto',
+      roomType: 'call',
+      roomIsConfidential: false,
+      projectFacts: [conferenceFact],
+    })
+    const bundle = buildContextBundle(input)
+    expect(bundle.fullPrompt).toContain('We agreed on $5M Q4 budget in conference')
+  })
+
+  it('deduplicates global facts already present in local working memory', () => {
+    const duplicateText = 'We will migrate to Kubernetes'
+    const localFact = {
+      text: duplicateText,
+      sourceNode: 'node-local',
+      confidence: 0.8,
+      ts: new Date().toISOString(),
+    }
+    const globalFact = makeGlobalFact({
+      text: duplicateText,
+      sourceRoomId: 'room-conference',
+      sourceRoomType: 'conference',
+      sourceRoomConfidential: false,
+    })
+    const memory = makeMemory({ facts: [localFact] })
+    const input = makeInput({
+      workingMemory: memory,
+      projectFacts: [globalFact],
+    })
+    // Should not crash and should not double-count the fact in the prompt
+    const bundle = buildContextBundle(input)
+    // The fact text should appear at most once (from local facts, not duplicated from global)
+    const count = (bundle.fullPrompt.match(new RegExp(duplicateText, 'g')) ?? []).length
+    expect(count).toBeLessThanOrEqual(1)
   })
 })

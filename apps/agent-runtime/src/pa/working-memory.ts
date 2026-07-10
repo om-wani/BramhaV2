@@ -36,6 +36,13 @@ export interface Fact {
   confidence: number
   /** ISO timestamp */
   ts: string
+  // ── Routing fields (optional — absent means no restriction) ───────────────
+  /** ID of the room in which this fact was learned */
+  sourceRoomId?: string
+  /** Type of the source room (conference | meeting | call | office | system) */
+  sourceRoomType?: string
+  /** Whether the source room was flagged as confidential at time of extraction */
+  sourceRoomConfidential?: boolean
 }
 
 export interface OpenLoop {

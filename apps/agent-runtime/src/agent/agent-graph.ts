@@ -23,7 +23,7 @@
 
 import type { Redis } from 'ioredis'
 import { buildContextBundle, untrustedContext } from '../pa/context-bundle.js'
-import type { RagChunk, ThreadNode, ContextBundle } from '../pa/context-bundle.js'
+import type { RagChunk, ThreadNode, ContextBundle, GlobalFact } from '../pa/context-bundle.js'
 import {
   extractFacts,
   detectOpenLoops,
@@ -164,11 +164,26 @@ export interface AgentGraphDeps {
     modelPolicy: ModelPolicy
     projectBrief: string
     roomId: string
+    /** Type of the current room (conference | meeting | call | office | system) */
+    roomType: string
+    /** Whether the current room is flagged as confidential */
+    roomIsConfidential: boolean
     workingMemory: WorkingMemory
     threadNodes: ThreadNode[]
     /** Text extracted from the trigger conversation node */
     triggerText: string
   }>
+
+  /**
+   * Fetch all working-memory facts for this persona across all other conversations
+   * in the project (excluding the current conversation).
+   * Returns GlobalFact[] with routing metadata for cross-room context filtering.
+   */
+  loadProjectFacts: (
+    personaId: string,
+    projectId: string,
+    excludeConversationId: string,
+  ) => Promise<GlobalFact[]>
 
   /** RAG retrieval — called from build_context node */
   searchKnowledge: (query: string, topK: number, projectId: string) => Promise<RagChunk[]>
@@ -266,6 +281,14 @@ export class AgentGraph {
       state.projectId,
     )
 
+    // Cross-room context: fetch project-level facts for this persona (all rooms
+    // except the current conversation, which is already in local working memory)
+    const projectFacts = await this.deps.loadProjectFacts(
+      state.personaId,
+      state.projectId,
+      state.conversationId,
+    )
+
     // Filter tools to persona's allowlist
     const tools = ALL_CORE_TOOLS.filter((t) =>
       loaded.persona.toolAllowlist.includes(t.name),
@@ -282,6 +305,10 @@ export class AgentGraph {
       triggerReason: jobData.triggerReason,
       otherSpeakers: jobData.otherSpeakers,
       maxInputTokens: loaded.modelPolicy.maxInputTokens,
+      currentRoomId: loaded.roomId,
+      roomType: loaded.roomType,
+      roomIsConfidential: loaded.roomIsConfidential,
+      projectFacts,
     })
 
     return {

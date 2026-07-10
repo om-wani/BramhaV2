@@ -36,6 +36,7 @@ function makeRoomRow(overrides: Record<string, unknown> = {}) {
     seed_prompt: null,
     created_by: USER_ID,
     archived_at: null,
+    is_confidential: false,
     created_at: '2024-01-01T00:00:00+00:00',
     updated_at: '2024-01-01T00:00:00+00:00',
     ...overrides,

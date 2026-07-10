@@ -20,6 +20,8 @@ export interface RoomDto {
   seedPrompt: string | null
   createdBy: string | null
   archivedAt: string | null
+  /** When true, facts learned in this room are excluded from other rooms' context bundles. */
+  isConfidential: boolean
   createdAt: string
   updatedAt: string
 }
@@ -67,6 +69,7 @@ interface RoomRow {
   seed_prompt: string | null
   created_by: string | null
   archived_at: string | null
+  is_confidential: boolean
   created_at: string
   updated_at: string
 }
@@ -112,6 +115,7 @@ function mapRoom(r: RoomRow): RoomDto {
     seedPrompt: r.seed_prompt,
     createdBy: r.created_by,
     archivedAt: r.archived_at,
+    isConfidential: r.is_confidential,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -178,13 +182,13 @@ export class RoomsService {
         INSERT INTO rooms (project_id, type, name, created_by)
         VALUES (${projectId}, 'conference', 'Conference', ${userId})
         ON CONFLICT ON CONSTRAINT rooms_conference_unique DO NOTHING
-        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
       `
       if (rows[0]) return mapRoom(rows[0])
 
       // Row already existed — fetch it
       const existing = await tx<RoomRow[]>`
-        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
         FROM rooms
         WHERE project_id = ${projectId} AND type = 'conference'
         LIMIT 1
@@ -202,7 +206,7 @@ export class RoomsService {
       const rows = await tx<RoomRow[]>`
         INSERT INTO rooms (project_id, type, name, created_by, seed_prompt)
         VALUES (${projectId}, ${input.type}, ${input.name}, ${userId}, ${seedPrompt})
-        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
       `
       if (!rows[0]) throw new Error('room insert returned no row')
       this.logger.log({
@@ -219,13 +223,13 @@ export class RoomsService {
     return this.db.run({ userId, projectId }, async (tx) => {
       const rows = type
         ? await tx<RoomRow[]>`
-            SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+            SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
             FROM rooms
             WHERE project_id = ${projectId} AND type = ${type}
             ORDER BY created_at ASC
           `
         : await tx<RoomRow[]>`
-            SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+            SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
             FROM rooms
             WHERE project_id = ${projectId}
             ORDER BY created_at ASC
@@ -237,7 +241,7 @@ export class RoomsService {
   async getById(userId: string, projectId: string, roomId: string): Promise<RoomDto> {
     return this.db.run({ userId, projectId }, async (tx) => {
       const rows = await tx<RoomRow[]>`
-        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
         FROM rooms
         WHERE id = ${roomId} AND project_id = ${projectId}
       `
@@ -257,7 +261,7 @@ export class RoomsService {
     // would revoke WS sessions before the archive is visible to readers.
     const { room, didArchive } = await this.db.run({ userId, projectId }, async (tx) => {
       const current = await tx<RoomRow[]>`
-        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        SELECT id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
         FROM rooms
         WHERE id = ${roomId} AND project_id = ${projectId}
       `
@@ -270,14 +274,17 @@ export class RoomsService {
           : input.archived === false
             ? null
             : current[0].archived_at
+      const newIsConfidential =
+        input.isConfidential !== undefined ? input.isConfidential : current[0].is_confidential
 
       const rows = await tx<RoomRow[]>`
         UPDATE rooms
-        SET    name        = ${newName},
-               archived_at = ${newArchivedAt},
-               updated_at  = now()
+        SET    name           = ${newName},
+               archived_at    = ${newArchivedAt},
+               is_confidential = ${newIsConfidential},
+               updated_at     = now()
         WHERE  id = ${roomId} AND project_id = ${projectId}
-        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
       `
       if (!rows[0]) throw new NotFoundException({ code: 'not_found' })
 
@@ -589,7 +596,7 @@ export class RoomsService {
       const rooms = await tx<RoomRow[]>`
         INSERT INTO rooms (project_id, type, name, created_by)
         VALUES (${projectId}, 'call', ${name}, ${userId})
-        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, created_at, updated_at
+        RETURNING id, project_id, type, name, seed_prompt, created_by, archived_at, is_confidential, created_at, updated_at
       `
       if (!rooms[0]) throw new Error('call room insert returned no row')
 

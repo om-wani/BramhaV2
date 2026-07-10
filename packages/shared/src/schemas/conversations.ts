@@ -123,6 +123,9 @@ export const UpdateRoomInputSchema = z
   .object({
     name: z.string().min(1).max(100).optional(),
     archived: z.boolean().optional(),
+    /** Mark a room as a confidential 1:1 — facts learned here are excluded from
+     *  other rooms' context bundles until the user "debriefs" (unsets this flag). */
+    isConfidential: z.boolean().optional(),
   })
   .strict()
 

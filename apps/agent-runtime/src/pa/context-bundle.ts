@@ -21,7 +21,7 @@
  */
 
 import { estimateTokenCount } from '@bramha/agents'
-import type { WorkingMemory } from './working-memory.js'
+import type { WorkingMemory, Fact } from './working-memory.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -33,7 +33,46 @@ const OPEN_LOOPS_TOKEN_CAP = 200
 const RAG_BUDGET_FRACTION = 0.35
 const SAFETY_MARGIN = 0.95
 
+// ── Cross-room routing matrix ──────────────────────────────────────────────────
+
+/**
+ * Cross-room context routing matrix.
+ *
+ * ┌─────────────────────────┬───────────────────────────────────────────────────┐
+ * │ Context type            │ Routing rule                                      │
+ * ├─────────────────────────┼───────────────────────────────────────────────────┤
+ * │ Knowledge chunks (RAG)  │ All rooms, always — knowledge is org-wide         │
+ * │ Rolling summary         │ Same room (conversation) only                     │
+ * │ Working-memory facts    │ Agent-global per project, EXCEPT:                 │
+ * │                         │   confidential-1:1 facts stay in that room until  │
+ * │                         │   user "debriefs" (sets fact.sourceRoomConfidential│
+ * │                         │   = false or marks the room non-confidential)     │
+ * │ Open loops              │ Current conversation only                         │
+ * └─────────────────────────┴───────────────────────────────────────────────────┘
+ */
+export const ROUTING_MATRIX = {
+  ragChunks: 'all-rooms-always',
+  rollingSummary: 'same-room-only',
+  workingMemoryFacts: 'agent-global-project-except-confidential-1:1',
+  openLoops: 'current-conversation-only',
+} as const
+
 // ── Types ──────────────────────────────────────────────────────────────────────
+
+/**
+ * A fact sourced from another conversation in the same project.
+ * Extends Fact with routing metadata required for cross-room filtering.
+ */
+export interface GlobalFact extends Fact {
+  /** Conversation ID from which this fact originated */
+  sourceConversationId: string
+  /** Room ID from which this fact originated (required for routing filter) */
+  sourceRoomId: string
+  /** Room type from which this fact originated */
+  sourceRoomType: string
+  /** Whether the source room was flagged confidential at time of extraction */
+  sourceRoomConfidential: boolean
+}
 
 export interface ThreadNode {
   nodeId: string
@@ -71,6 +110,15 @@ export interface BundleInput {
   maxInputTokens: number
   /** Per-project override — defaults to 16 384 */
   projectTokenCap?: number
+  // ── Cross-room routing fields ──────────────────────────────────────────────
+  /** ID of the room in which this turn is taking place */
+  currentRoomId: string
+  /** Type of the current room */
+  roomType: string
+  /** Whether the current room is flagged as confidential */
+  roomIsConfidential: boolean
+  /** All working-memory facts for this persona across other conversations in the project */
+  projectFacts: GlobalFact[]
 }
 
 export interface ContextBundle {
@@ -127,9 +175,55 @@ function buildProjectBrief(brief: string): string {
   )
 }
 
-function buildMemorySummary(memory: WorkingMemory): string {
-  if (!memory.summaryMd) return ''
-  return capSection(memory.summaryMd, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
+// ── Cross-room routing ─────────────────────────────────────────────────────────
+
+/**
+ * Filter project-level facts according to the routing matrix.
+ *
+ * Rule: confidential-1:1 facts are only visible inside the same room they
+ * originated in. All other facts are agent-global across the project.
+ */
+export function filterProjectFacts(
+  facts: GlobalFact[],
+  currentRoomId: string,
+): GlobalFact[] {
+  return facts.filter((f) => {
+    // Confidential-1:1 facts: only visible in the originating room
+    if (f.sourceRoomConfidential && f.sourceRoomId !== currentRoomId) {
+      return false
+    }
+    return true
+  })
+}
+
+function buildMemorySummary(
+  memory: WorkingMemory,
+  projectFacts: GlobalFact[],
+  currentRoomId: string,
+): string {
+  const localSummary = memory.summaryMd ?? ''
+  const filtered = filterProjectFacts(projectFacts, currentRoomId)
+
+  // Deduplicate: skip global facts already captured in local facts list
+  const localFactTexts = new Set(memory.facts.map((f) => f.text.toLowerCase()))
+  const extraFacts = filtered.filter((f) => !localFactTexts.has(f.text.toLowerCase()))
+
+  if (extraFacts.length === 0) {
+    return localSummary
+      ? capSection(localSummary, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
+      : ''
+  }
+
+  const factsBullets = extraFacts
+    .slice(0, 10) // cap at 10 extra global facts
+    .map((f) => `- [${f.sourceRoomType}] ${f.text}`)
+    .join('\n')
+
+  const combined = [localSummary, `## Facts from Other Rooms\n${factsBullets}`]
+    .filter(Boolean)
+    .join('\n\n')
+
+  return capSection(combined, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
 }
 
 function buildOpenLoops(memory: WorkingMemory): string {
@@ -229,7 +323,11 @@ export function buildContextBundle(input: BundleInput): ContextBundle {
   const s1 = input.systemPrompt
   const s2 = buildToolSchemas(input.toolSchemas)
   const s3 = buildProjectBrief(input.projectBrief)
-  const s4 = buildMemorySummary(input.workingMemory)
+  const s4 = buildMemorySummary(
+    input.workingMemory,
+    input.projectFacts,
+    input.currentRoomId,
+  )
   const s5 = buildOpenLoops(input.workingMemory)
 
   const s1to5Tokens = [s1, s2, s3, s4, s5].reduce(
