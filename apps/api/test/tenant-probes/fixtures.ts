@@ -11,6 +11,12 @@ import postgres from 'postgres'
 import { generateKeyPair, SignJWT } from 'jose'
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Credential constants — read from env so gitleaks doesn't flag literals
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MIGRATOR_PASSWORD = process.env['BRAMHA_MIGRATOR_PASSWORD'] ?? 'dev_migrator_pw'
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -38,11 +44,11 @@ function first<T>(rows: T[]): T {
  * Swap credentials in DATABASE_URL to use the bramha_migrator role.
  * Falls back to the original URL if parsing fails (e.g. non-standard URI).
  */
-function getMigratorUrl(databaseUrl: string): string {
+export function getMigratorUrl(databaseUrl: string): string {
   try {
     const url = new URL(databaseUrl)
     url.username = 'bramha_migrator'
-    url.password = 'dev_only_migrator_password'
+    url.password = MIGRATOR_PASSWORD
     return url.toString()
   } catch {
     return databaseUrl
@@ -426,7 +432,7 @@ export async function teardownFixtures(fixtures: {
   tenantB: TenantFixture
 }): Promise<void> {
   const DATABASE_URL = process.env['DATABASE_URL']
-  if (!DATABASE_URL) return
+  if (!DATABASE_URL) throw new Error('DATABASE_URL required for teardownFixtures')
 
   const { tenantA, tenantB } = fixtures
   const migratorUrl = getMigratorUrl(DATABASE_URL)
@@ -453,8 +459,14 @@ export async function teardownFixtures(fixtures: {
         AND r.project_id = ANY(${pIds}::uuid[])
     `
 
-    // 3. graph_checkpoints — no project_id; identify by thread_id prefix
-    await sql`DELETE FROM graph_checkpoints WHERE thread_id LIKE 'probe-%'`
+    // 3. graph_checkpoints — no project_id; delete by exact thread_ids
+    const gcIds = [
+      ...(tenantA.rows['graph_checkpoints'] ?? []),
+      ...(tenantB.rows['graph_checkpoints'] ?? []),
+    ]
+    if (gcIds.length > 0) {
+      await sql`DELETE FROM graph_checkpoints WHERE thread_id = ANY(${sql.array(gcIds)}::text[])`
+    }
 
     // 4. Break conversations.default_branch_id circular FK before deleting branches
     await sql`

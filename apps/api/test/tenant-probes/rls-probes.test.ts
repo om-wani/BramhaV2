@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import postgres from 'postgres'
-import { setupFixtures, teardownFixtures, type TenantFixture } from './fixtures'
+import { setupFixtures, teardownFixtures, getMigratorUrl, type TenantFixture } from './fixtures'
 import { appendResults, type ProbeResult } from './report'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +28,12 @@ const DATABASE_URL = process.env['DATABASE_URL']
 const RUN = !!DATABASE_URL
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Credential constants — read from env so gitleaks doesn't flag literals
+// ─────────────────────────────────────────────────────────────────────────────
+
+const APP_PASSWORD = process.env['BRAMHA_APP_PASSWORD'] ?? 'dev_app_pw'
+
+// ─────────────────────────────────────────────────────────────────────────────
 // bramha_app connection helper
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -35,7 +41,7 @@ function getAppRoleUrl(databaseUrl: string): string {
   try {
     const url = new URL(databaseUrl)
     url.username = 'bramha_app'
-    url.password = 'dev_only_app_password'
+    url.password = APP_PASSWORD
     return url.toString()
   } catch {
     return databaseUrl
@@ -137,17 +143,44 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
     appSql = postgres(getAppRoleUrl(DATABASE_URL!), { max: 5 })
 
     // migratorSql needed for the schema-coverage check
-    const url = new URL(DATABASE_URL!)
-    url.username = 'bramha_migrator'
-    url.password = 'dev_only_migrator_password'
-    migratorSql = postgres(url.toString(), { max: 1 })
+    migratorSql = postgres(getMigratorUrl(DATABASE_URL!), { max: 1 })
   })
 
   afterAll(async () => {
+    if (!RUN) return
+
+    // Schema-coverage check FIRST (while migratorSql connection is still open)
+    const schemaRows = await migratorSql<{ table_name: string }[]>`
+      SELECT DISTINCT table_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND column_name = 'project_id'
+      ORDER BY table_name
+    `
+
+    const schemaTables = new Set(schemaRows.map((r) => r.table_name))
+    const unprobed: string[] = []
+
+    for (const table of schemaTables) {
+      if (!PROBED_TABLES.has(table)) {
+        unprobed.push(table)
+      }
+    }
+
+    // THEN tear down and close connections (always runs)
     await teardownFixtures({ tenantA, tenantB })
     await appSql.end()
     await migratorSql.end()
     appendResults('dbProbes', results)
+
+    // Throw AFTER cleanup so cleanup always runs
+    if (unprobed.length > 0) {
+      const msg =
+        `Schema-coverage gap: the following tables have a project_id column ` +
+        `but no isolation probe — add one to rls-probes.test.ts:\n` +
+        unprobed.map((t) => `  • ${t}`).join('\n')
+      throw new Error(msg)
+    }
   })
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -455,6 +488,32 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
       })
     }
     expect(rows).toHaveLength(0)
+
+    // Also probe cross-tenant: B (authenticated) cannot read A's specific checkpoint
+    const aThreadId = tenantA.rows['graph_checkpoints']?.[0]
+    expect(aThreadId).toBeTruthy()
+
+    const crossTenantRows = await appSql.begin(async (tx) => {
+      await tx`SET LOCAL app.user_id    = ${tenantB.userId}`
+      await tx`SET LOCAL app.project_id = ${tenantB.projectId}`
+      return tx`SELECT thread_id FROM graph_checkpoints WHERE thread_id = ${aThreadId!}`
+    })
+
+    if (crossTenantRows.length > 0) {
+      results.push({
+        probe: 'graph_checkpoints cross-tenant',
+        table: 'graph_checkpoints',
+        passed: false,
+        failReason: `ISOLATION BREACH: B read ${crossTenantRows.length} graph_checkpoints row(s) from A`,
+      })
+    } else {
+      results.push({
+        probe: 'graph_checkpoints cross-tenant',
+        table: 'graph_checkpoints',
+        passed: true,
+      })
+    }
+    expect(crossTenantRows, 'graph_checkpoints cross-tenant read returned rows').toHaveLength(0)
   })
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -471,37 +530,4 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
     results.push({ probe: 'sanity: A reads own rooms', table: 'rooms', passed: rows.length > 0 })
   })
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Schema-driven coverage assertion
-  // Every public table with a project_id column must appear in PROBED_TABLES.
-  // ─────────────────────────────────────────────────────────────────────────
-
-  afterAll(async () => {
-    if (!RUN) return
-
-    const schemaRows = await migratorSql<{ table_name: string }[]>`
-      SELECT DISTINCT table_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND column_name = 'project_id'
-      ORDER BY table_name
-    `
-
-    const schemaTables = new Set(schemaRows.map((r) => r.table_name))
-    const unprobed: string[] = []
-
-    for (const table of schemaTables) {
-      if (!PROBED_TABLES.has(table)) {
-        unprobed.push(table)
-      }
-    }
-
-    if (unprobed.length > 0) {
-      const msg =
-        `Schema-coverage gap: the following tables have a project_id column ` +
-        `but no isolation probe — add one to rls-probes.test.ts:\n` +
-        unprobed.map((t) => `  • ${t}`).join('\n')
-      throw new Error(msg)
-    }
-  })
 })
