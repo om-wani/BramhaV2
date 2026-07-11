@@ -6,8 +6,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   findStaleOpenLoops,
   proactiveRateLimitKey,
-  isProactiveTurnAllowed,
-  markProactiveTurnFired,
+  claimProactiveTurn,
 } from './proactive-check.js'
 import type { OpenLoop } from './working-memory.js'
 
@@ -99,39 +98,31 @@ describe('proactiveRateLimitKey', () => {
   })
 })
 
-// ── isProactiveTurnAllowed ────────────────────────────────────────────────────
+// ── claimProactiveTurn ────────────────────────────────────────────────────────
 
-describe('isProactiveTurnAllowed', () => {
-  it('returns true when Redis returns null (key absent)', async () => {
-    const redis = { get: vi.fn().mockResolvedValue(null) }
-    const allowed = await isProactiveTurnAllowed(PERSONA_ID, ROOM_ID, redis)
-    expect(allowed).toBe(true)
-  })
-
-  it('returns false when Redis returns a value (key present)', async () => {
-    const redis = { get: vi.fn().mockResolvedValue('1') }
-    const allowed = await isProactiveTurnAllowed(PERSONA_ID, ROOM_ID, redis)
-    expect(allowed).toBe(false)
-  })
-
-  it('queries the correct rate-limit key', async () => {
-    const redis = { get: vi.fn().mockResolvedValue(null) }
-    await isProactiveTurnAllowed(PERSONA_ID, ROOM_ID, redis)
-    expect(redis.get).toHaveBeenCalledWith(`proactive:rate:${PERSONA_ID}:${ROOM_ID}`)
-  })
-})
-
-// ── markProactiveTurnFired ────────────────────────────────────────────────────
-
-describe('markProactiveTurnFired', () => {
-  it('calls redis.set with 1h TTL (EX 3600)', async () => {
+describe('claimProactiveTurn', () => {
+  it('returns true and sets key when slot is free', async () => {
     const redis = { set: vi.fn().mockResolvedValue('OK') }
-    await markProactiveTurnFired(PERSONA_ID, ROOM_ID, redis)
+    const result = await claimProactiveTurn(redis, 'persona-1', 'room-1')
+    expect(result).toBe(true)
+    expect(redis.set).toHaveBeenCalledWith(
+      expect.stringContaining('persona-1'),
+      1, 'NX', 'EX', 3600,
+    )
+  })
+
+  it('returns false when slot already claimed', async () => {
+    const redis = { set: vi.fn().mockResolvedValue(null) }
+    const result = await claimProactiveTurn(redis, 'persona-1', 'room-1')
+    expect(result).toBe(false)
+  })
+
+  it('uses the correct namespaced rate-limit key', async () => {
+    const redis = { set: vi.fn().mockResolvedValue('OK') }
+    await claimProactiveTurn(redis, PERSONA_ID, ROOM_ID)
     expect(redis.set).toHaveBeenCalledWith(
       `proactive:rate:${PERSONA_ID}:${ROOM_ID}`,
-      1,
-      'EX',
-      3600,
+      1, 'NX', 'EX', 3600,
     )
   })
 })

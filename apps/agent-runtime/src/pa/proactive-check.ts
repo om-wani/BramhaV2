@@ -61,26 +61,18 @@ export function proactiveRateLimitKey(personaId: string, roomId: string): string
 }
 
 /**
- * Check if a proactive turn is allowed (Redis rate-limit key absent = allowed).
+ * Atomically claim the proactive-turn slot for this agent+room.
+ * Returns true if the slot was free and is now claimed (fires the turn).
+ * Returns false if already claimed (another instance beat us, or already fired).
+ * Uses SET NX EX to avoid TOCTOU race between concurrent scheduler instances.
  */
-export async function isProactiveTurnAllowed(
+export async function claimProactiveTurn(
+  redis: { set: (k: string, v: string | number, ...args: unknown[]) => Promise<string | null> },
   personaId: string,
   roomId: string,
-  redis: { get: (k: string) => Promise<string | null> },
 ): Promise<boolean> {
   const key = proactiveRateLimitKey(personaId, roomId)
-  const val = await redis.get(key)
-  return val === null
-}
-
-/**
- * Mark that a proactive turn just fired — sets a 1-hour TTL in Redis.
- */
-export async function markProactiveTurnFired(
-  personaId: string,
-  roomId: string,
-  redis: { set: (k: string, v: string | number, ...args: unknown[]) => Promise<unknown> },
-): Promise<void> {
-  const key = proactiveRateLimitKey(personaId, roomId)
-  await redis.set(key, 1, 'EX', 3600)
+  // SET key 1 NX EX 3600 — returns 'OK' if claimed, null if already set
+  const result = await redis.set(key, 1, 'NX', 'EX', 3600)
+  return result !== null
 }

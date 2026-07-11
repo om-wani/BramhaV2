@@ -9,10 +9,10 @@
  *   2. Load all active (non-archived) conversations for the project.
  *   3. For each call/meeting room conversation, check whether the room is idle
  *      (no activity in the last 5 min) AND has stale open loops (> 10 min).
- *   4. If a stale loop exists and the agent has not fired a proactive turn
- *      within the last hour (Redis rate-limit), enqueue an `agent-turn` job
+ *   4. If a stale loop exists and the agent atomically claims the rate-limit
+ *      slot (SET NX EX, 1/h per agent per room), enqueue an `agent-turn` job
  *      with triggerReason: 'follow-up'.
- *   5. Mark the rate-limit key in Redis (1h TTL).
+ *      Claim is atomic — no TOCTOU race between concurrent scheduler instances.
  *
  * Security:
  *   - Rate limit: 1 proactive turn per agent per room per hour.
@@ -23,8 +23,7 @@
 import type { Redis } from 'ioredis'
 import {
   findStaleOpenLoops,
-  isProactiveTurnAllowed,
-  markProactiveTurnFired,
+  claimProactiveTurn,
 } from './proactive-check.js'
 import type { WorkingMemory } from './working-memory.js'
 import type { AgentTurnJobData } from '../orchestrator/turn-engine.js'
@@ -102,42 +101,48 @@ export class ProactiveScheduler {
       if (!isIdle) continue
 
       for (const { personaId, memory } of convo.personaMemories) {
-        // ── 5. Find stale open loops ─────────────────────────────────────────
-        const stale = findStaleOpenLoops(
-          personaId,
-          convo.conversationId,
-          convo.roomId,
-          memory.openLoops,
-          nowMs,
-        )
-        if (stale.length === 0) continue
+        try {
+          // ── 5. Find stale open loops ───────────────────────────────────────
+          const stale = findStaleOpenLoops(
+            personaId,
+            convo.conversationId,
+            convo.roomId,
+            memory.openLoops,
+            nowMs,
+          )
+          if (stale.length === 0) continue
 
-        // ── 6. Rate-limit check ──────────────────────────────────────────────
-        const allowed = await isProactiveTurnAllowed(personaId, convo.roomId, this.deps.redis)
-        if (!allowed) continue
+          // ── 6. Atomic rate-limit claim (SET NX EX) ─────────────────────────
+          const claimed = await claimProactiveTurn(this.deps.redis, personaId, convo.roomId)
+          if (!claimed) continue
 
-        // ── 6. Resolve branch + trigger node ────────────────────────────────
-        const branchId = await this.deps.getDefaultBranchId(convo.conversationId)
-        if (!branchId) continue
+          // ── 7. Resolve branch + trigger node ──────────────────────────────
+          const branchId = await this.deps.getDefaultBranchId(convo.conversationId)
+          if (!branchId) continue
 
-        const triggerNodeId = await this.deps.getLastNodeId(convo.conversationId, branchId)
-        if (!triggerNodeId) continue
+          const triggerNodeId = await this.deps.getLastNodeId(convo.conversationId, branchId)
+          if (!triggerNodeId) continue
 
-        // ── 7. Enqueue proactive agent turn ──────────────────────────────────
-        await this.deps.enqueueTurn({
-          projectId,
-          conversationId: convo.conversationId,
-          branchId,
-          triggerNodeId,
-          personaId,
-          turnDepth: 0,
-          triggerReason: 'follow-up',
-          otherSpeakers: [],
-        })
-
-        // ── 8. Mark rate-limit ───────────────────────────────────────────────
-        await markProactiveTurnFired(personaId, convo.roomId, this.deps.redis)
-        enqueued++
+          // ── 8. Enqueue proactive agent turn ───────────────────────────────
+          await this.deps.enqueueTurn({
+            projectId,
+            conversationId: convo.conversationId,
+            branchId,
+            triggerNodeId,
+            personaId,
+            turnDepth: 0,
+            triggerReason: 'follow-up',
+            otherSpeakers: [],
+          })
+          enqueued++
+        } catch (err) {
+          console.warn('[proactive-scheduler] failed to enqueue turn', {
+            personaId,
+            roomId: convo.roomId,
+            err: String(err),
+          })
+          // continue to next persona — don't let one failure abort the batch
+        }
       }
     }
 

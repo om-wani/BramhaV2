@@ -51,11 +51,13 @@ function makeConvo(overrides: Partial<ActiveConversation> = {}): ActiveConversat
   }
 }
 
-/** Build a mock Redis with get returning null (no rate-limit) by default. */
-function mockRedis(getResult: string | null = null) {
+/**
+ * Build a mock Redis for the atomic SET NX EX claim.
+ * setResult='OK' → slot claimed (allowed); null → already claimed (denied).
+ */
+function mockRedis(setResult: string | null = 'OK') {
   return {
-    get: vi.fn().mockResolvedValue(getResult),
-    set: vi.fn().mockResolvedValue('OK'),
+    set: vi.fn().mockResolvedValue(setResult),
   } as unknown as ProactiveSchedulerDeps['redis']
 }
 
@@ -184,7 +186,7 @@ describe('ProactiveScheduler.checkProject', () => {
 
   it('does not fire when rate-limited (Redis key set)', async () => {
     const deps = makeDeps({
-      redis: mockRedis('1'), // rate-limit key present
+      redis: mockRedis(null), // SET NX returns null → slot already claimed
     })
     const scheduler = new ProactiveScheduler(deps)
     const count = await scheduler.checkProject(PROJECT_ID, NOW_MS)
@@ -192,13 +194,14 @@ describe('ProactiveScheduler.checkProject', () => {
     expect(deps.enqueueTurn as Mock).not.toHaveBeenCalled()
   })
 
-  it('marks rate-limit after firing', async () => {
+  it('claims rate-limit slot atomically (SET NX EX) after firing', async () => {
     const deps = makeDeps()
     const scheduler = new ProactiveScheduler(deps)
     await scheduler.checkProject(PROJECT_ID, NOW_MS)
     expect((deps.redis.set as Mock)).toHaveBeenCalledWith(
       `proactive:rate:${PERSONA_ID}:${ROOM_ID}`,
       1,
+      'NX',
       'EX',
       3600,
     )

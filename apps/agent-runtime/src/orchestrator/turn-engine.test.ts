@@ -445,6 +445,7 @@ describe('T9 — conference fallback: all below θ → highest scorer speaks', (
 // T10 — Max 3 speakers cap: 5 eligible agents → only 3 enqueued
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 describe('T10 — max 3 speakers cap', () => {
   it('caps speaker set at 3 even when 5 agents are eligible', async () => {
     // 5 agents all with high eagerness → all clear meeting θ=1.4
@@ -469,5 +470,18 @@ describe('T10 — max 3 speakers cap', () => {
 
     const turns = capturedAgentTurns(deps)
     expect(turns.length).toBeLessThanOrEqual(3)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T11 — scheduleProactiveCheck rejection is swallowed; turn still completes
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('T11 — scheduleProactiveCheck failure is swallowed', () => {
+  it('swallows scheduleProactiveCheck rejection without failing the turn', async () => {
+    const deps = makeDeps()
+    deps.scheduleProactiveCheck = vi.fn().mockRejectedValue(new Error('redis down'))
+    // Should resolve successfully even though proactive check throws
+    await expect(processTurnJob(baseJobData(), deps)).resolves.not.toThrow()
   })
 })
