@@ -30,3 +30,21 @@ export async function withTenant<T>(
     return fn(tx)
   }) as Promise<T>
 }
+
+/**
+ * Wraps a database operation in a transaction with the admin bypass GUC set.
+ * Sets app.is_admin = 'true' which activates the admin bypass RLS policies
+ * added in migration 0017_admin.sql. Use ONLY in AdminService.
+ *
+ * The `fn` callback receives a `TransactionSql` handle; callers MUST NOT
+ * capture or leak `tx` outside the callback.
+ */
+export async function withAdmin<T>(
+  fn: (tx: postgres.TransactionSql) => Promise<T>,
+): Promise<T> {
+  return sql.begin(async (tx) => {
+    await tx`SET LOCAL app.is_admin = 'true'`
+    await tx`SET LOCAL app.user_id = ''`
+    return fn(tx)
+  }) as Promise<T>
+}

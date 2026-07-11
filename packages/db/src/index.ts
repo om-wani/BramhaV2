@@ -1,5 +1,5 @@
-// Public API — withTenant is the only query entry point; sql client is NOT exported
-export { withTenant } from './rls.js'
+// Public API — withTenant and withAdmin are the only query entry points; sql client is NOT exported
+export { withTenant, withAdmin } from './rls.js'
 export type { TenantContext } from './rls.js'
 
 // Schema types for consumers

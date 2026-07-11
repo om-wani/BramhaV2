@@ -18,6 +18,7 @@ import { NotesModule } from './modules/notes/notes.module'
 import { DelegationsModule } from './modules/delegations/delegations.module'
 import { ApprovalsModule } from './modules/approvals/approvals.module'
 import { SourcesModule } from './modules/sources/sources.module'
+import { AdminModule } from './modules/admin/admin.module'
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { SourcesModule } from './modules/sources/sources.module'
     DelegationsModule,
     ApprovalsModule,
     SourcesModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
