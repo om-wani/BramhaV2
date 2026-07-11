@@ -7,11 +7,12 @@
  * Section order (04_agent_orchestration.md §2.2):
  *   1. Persona system prompt
  *   2. Tool schemas
- *   3. Project brief       (≤ 500 tokens, truncated with notice)
- *   4. Working-memory summary (≤ 800 tokens)
- *   5. Open loops          (≤ 200 tokens)
- *   6. RAG block           (≤ 35% of remaining budget, wrapped in <untrusted_context>)
- *   7. Thread window       (oldest-first / newest-last, truncated to remaining)
+ *   3. Project brief           (≤ 500 tokens, truncated with notice)
+ *   4. Working-memory summary  (≤ 800 tokens, local conversation only)
+ *   4b. Project facts block    (≤ 200 tokens, cross-room global facts)
+ *   5. Open loops              (≤ 200 tokens)
+ *   6. RAG block               (≤ 35% of remaining budget, wrapped in <untrusted_context>)
+ *   7. Thread window           (oldest-first / newest-last, truncated to remaining)
  *   8. Trigger instruction
  *
  * Security:
@@ -29,6 +30,7 @@ export const CONTEXT_TOKEN_CAP = 12_000
 
 const PROJECT_BRIEF_TOKEN_CAP = 500
 const WORKING_MEMORY_TOKEN_CAP = 800
+const PROJECT_FACTS_TOKEN_CAP = 200
 const OPEN_LOOPS_TOKEN_CAP = 200
 const RAG_BUDGET_FRACTION = 0.35
 const SAFETY_MARGIN = 0.95
@@ -126,7 +128,10 @@ export interface ContextBundle {
     systemPrompt: string
     toolSchemas: string
     projectBrief: string
+    /** Local conversation summary only (workingMemory.summaryMd). Routing: same-room-only. */
     workingMemorySummary: string
+    /** Global facts from other project rooms (filtered per routing matrix). */
+    projectFactsBlock: string
     openLoops: string
     ragBlock: string
     threadWindow: string
@@ -186,8 +191,14 @@ function buildProjectBrief(brief: string): string {
 export function filterProjectFacts(
   facts: GlobalFact[],
   currentRoomId: string,
+  currentRoomIsConfidential: boolean = false,
 ): GlobalFact[] {
   return facts.filter((f) => {
+    // Confidential current room: block all facts not originating here
+    // (a private room receives no cross-room injection)
+    if (currentRoomIsConfidential && f.sourceRoomId !== currentRoomId) {
+      return false
+    }
     // Confidential-1:1 facts: only visible in the originating room
     if (f.sourceRoomConfidential && f.sourceRoomId !== currentRoomId) {
       return false
@@ -196,34 +207,34 @@ export function filterProjectFacts(
   })
 }
 
-function buildMemorySummary(
-  memory: WorkingMemory,
+/** Local conversation summary only. Routing: same-room-only. */
+function buildMemorySummary(memory: WorkingMemory): string {
+  if (!memory.summaryMd) return ''
+  return capSection(memory.summaryMd, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
+}
+
+/**
+ * Build the cross-room facts block from project-level global facts.
+ * Only includes facts that pass the routing filter (confidential-1:1 blocked).
+ * Token cap: 200 tokens (≤ PROJECT_FACTS_TOKEN_CAP).
+ * Routing: agent-global per project, except confidential-1:1.
+ */
+function buildProjectFactsBlock(
   projectFacts: GlobalFact[],
   currentRoomId: string,
+  currentRoomIsConfidential: boolean = false,
 ): string {
-  const localSummary = memory.summaryMd ?? ''
-  const filtered = filterProjectFacts(projectFacts, currentRoomId)
-
-  // Deduplicate: skip global facts already captured in local facts list
-  const localFactTexts = new Set(memory.facts.map((f) => f.text.toLowerCase()))
-  const extraFacts = filtered.filter((f) => !localFactTexts.has(f.text.toLowerCase()))
-
-  if (extraFacts.length === 0) {
-    return localSummary
-      ? capSection(localSummary, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
-      : ''
-  }
-
-  const factsBullets = extraFacts
-    .slice(0, 10) // cap at 10 extra global facts
+  const filtered = filterProjectFacts(projectFacts, currentRoomId, currentRoomIsConfidential)
+  if (filtered.length === 0) return ''
+  const bullets = filtered
+    .slice(0, 10)
     .map((f) => `- [${f.sourceRoomType}] ${f.text}`)
     .join('\n')
-
-  const combined = [localSummary, `## Facts from Other Rooms\n${factsBullets}`]
-    .filter(Boolean)
-    .join('\n\n')
-
-  return capSection(combined, WORKING_MEMORY_TOKEN_CAP, '[Summary truncated.]')
+  return capSection(
+    `## Cross-Room Facts\n${bullets}`,
+    PROJECT_FACTS_TOKEN_CAP,
+    '[Cross-room facts truncated.]',
+  )
 }
 
 function buildOpenLoops(memory: WorkingMemory): string {
@@ -323,14 +334,11 @@ export function buildContextBundle(input: BundleInput): ContextBundle {
   const s1 = input.systemPrompt
   const s2 = buildToolSchemas(input.toolSchemas)
   const s3 = buildProjectBrief(input.projectBrief)
-  const s4 = buildMemorySummary(
-    input.workingMemory,
-    input.projectFacts,
-    input.currentRoomId,
-  )
+  const s4 = buildMemorySummary(input.workingMemory)                  // local only
+  const s4b = buildProjectFactsBlock(input.projectFacts, input.currentRoomId, input.roomIsConfidential)
   const s5 = buildOpenLoops(input.workingMemory)
 
-  const s1to5Tokens = [s1, s2, s3, s4, s5].reduce(
+  const s1to5Tokens = [s1, s2, s3, s4, s4b, s5].reduce(
     (sum, s) => sum + (s ? estimateTokenCount(s) : 0),
     0,
   )
@@ -358,6 +366,7 @@ export function buildContextBundle(input: BundleInput): ContextBundle {
     toolSchemas: s2,
     projectBrief: s3,
     workingMemorySummary: s4,
+    projectFactsBlock: s4b,
     openLoops: s5,
     ragBlock: s6,
     threadWindow: s7,

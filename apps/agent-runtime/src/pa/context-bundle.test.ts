@@ -368,6 +368,27 @@ describe('cross-room routing', () => {
     expect(bundle.fullPrompt).toContain('We agreed on $5M Q4 budget in conference')
   })
 
+  it('meeting-room summary does not bleed into a different meeting room bundle', () => {
+    const roomBMemory = makeMemory({
+      summaryMd: null,
+      conversationId: 'conv-meeting-b',
+    })
+
+    const roomBInput = makeInput({
+      workingMemory: roomBMemory,
+      roomType: 'meeting',
+      currentRoomId: 'room-meeting-b',
+      roomIsConfidential: false,
+      projectFacts: [],
+    })
+
+    const bundle = buildContextBundle(roomBInput)
+
+    expect(bundle.fullPrompt).not.toContain('Meeting A summary')
+    expect(bundle.sections.workingMemorySummary).toBe('')
+    expect(bundle.sections.projectFactsBlock).toBe('')
+  })
+
   it('deduplicates global facts already present in local working memory', () => {
     const duplicateText = 'We will migrate to Kubernetes'
     const localFact = {
