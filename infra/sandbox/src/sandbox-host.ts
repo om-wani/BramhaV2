@@ -17,6 +17,7 @@
 
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { randomUUID } from 'node:crypto'
 import http from 'node:http'
 import { fileURLToPath } from 'node:url'
 
@@ -46,46 +47,44 @@ export interface RunCodeResult {
 
 export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
   const { language, code } = input
-
   const cmd = language === 'python' ? 'python3' : 'node'
   const flag = language === 'python' ? '-c' : '-e'
+  const containerName = `bramha-sandbox-${randomUUID()}`
 
   const args = [
-    'run',
-    '--rm',
-    '--network',
-    'none',
+    'run', '--rm',
+    '--name', containerName,
+    '--network', 'none',
     '--read-only',
-    '--tmpfs',
-    '/workspace:size=32m',
-    '--memory',
-    MEMORY_LIMIT,
-    '--cpus',
-    CPU_LIMIT,
-    '--security-opt',
-    `seccomp=${SECCOMP_PROFILE}`,
-    '--runtime',
-    SANDBOX_RUNTIME,
-    '--user',
-    'sandbox',
-    '--stop-timeout',
-    '5',
+    '--tmpfs', '/workspace:size=32m',
+    '--memory', MEMORY_LIMIT,
+    '--cpus', CPU_LIMIT,
+    '--security-opt', `seccomp=${SECCOMP_PROFILE}`,
+    '--runtime', SANDBOX_RUNTIME,
+    '--user', 'sandbox',
+    '--stop-timeout', '5',
     SANDBOX_IMAGE,
-    cmd,
-    flag,
-    code,
+    cmd, flag, code,
   ]
 
+  const timeoutMs = TIMEOUT_SEC * 1000 // exactly 30s
+
+  let timedOut = false
+  const timeoutHandle = setTimeout(() => {
+    timedOut = true
+    // Kill the container (best-effort; --rm cleans it up)
+    execFileAsync('docker', ['stop', '--time', '2', containerName]).catch(() => {})
+  }, timeoutMs)
+
   try {
-    const { stdout, stderr } = await Promise.race([
-      execFileAsync('docker', args, { maxBuffer: MAX_OUTPUT_BYTES * 2 }),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('sandbox_timeout')),
-          (TIMEOUT_SEC + 2) * 1000,
-        ),
-      ),
-    ])
+    const { stdout, stderr } = await execFileAsync('docker', args, {
+      maxBuffer: MAX_OUTPUT_BYTES * 2,
+    })
+    clearTimeout(timeoutHandle)
+
+    if (timedOut) {
+      return { stdout: '', stderr: 'Execution timed out', exitCode: 124, truncated: false }
+    }
 
     const truncated = stdout.length > MAX_OUTPUT_BYTES
     return {
@@ -95,21 +94,14 @@ export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
       truncated,
     }
   } catch (err: unknown) {
-    if (err instanceof Error && err.message === 'sandbox_timeout') {
-      return {
-        stdout: '',
-        stderr: 'Execution timed out',
-        exitCode: 124,
-        truncated: false,
-      }
+    clearTimeout(timeoutHandle)
+
+    if (timedOut) {
+      return { stdout: '', stderr: 'Execution timed out', exitCode: 124, truncated: false }
     }
+
     const errMsg = err instanceof Error ? err.message : String(err)
-    return {
-      stdout: '',
-      stderr: errMsg.slice(0, MAX_OUTPUT_BYTES),
-      exitCode: 1,
-      truncated: false,
-    }
+    return { stdout: '', stderr: errMsg.slice(0, MAX_OUTPUT_BYTES), exitCode: 1, truncated: false }
   }
 }
 

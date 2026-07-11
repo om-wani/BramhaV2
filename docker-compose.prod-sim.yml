@@ -82,7 +82,8 @@ services:
     ports:
       - '3001:3001'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/api/health']
       interval: 10s
@@ -122,10 +123,18 @@ services:
       S3_SECRET_KEY: bramha_dev
       NODE_ENV: production
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('fs').statSync('/app/dist/main.js')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   sandbox-host:
     image: bramha-sandbox-host:latest
