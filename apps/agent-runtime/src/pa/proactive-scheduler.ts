@@ -7,8 +7,8 @@
  * Per-project logic:
  *   1. Early-exit if proactiveFollowups is disabled in project settings.
  *   2. Load all active (non-archived) conversations for the project.
- *   3. For each call/meeting room conversation, check all persona working
- *      memories for stale open loops (> 10 min unanswered).
+ *   3. For each call/meeting room conversation, check whether the room is idle
+ *      (no activity in the last 5 min) AND has stale open loops (> 10 min).
  *   4. If a stale loop exists and the agent has not fired a proactive turn
  *      within the last hour (Redis rate-limit), enqueue an `agent-turn` job
  *      with triggerReason: 'follow-up'.
@@ -56,7 +56,18 @@ export interface ProactiveSchedulerDeps {
   getDefaultBranchId: (conversationId: string) => Promise<string | null>
   /** Get the last node ID on a branch (used as triggerNodeId) */
   getLastNodeId: (conversationId: string, branchId: string) => Promise<string | null>
+  /**
+   * Returns the Unix-ms timestamp of the most recent conversation node,
+   * or null if the conversation has no nodes yet.
+   * Used to determine whether the room is idle before firing a proactive turn.
+   */
+  getLastRoomActivityMs: (conversationId: string) => Promise<number | null>
 }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Room is considered idle when no node has been appended in the last 5 minutes. */
+const IDLE_THRESHOLD_MS = 5 * 60 * 1_000
 
 // ── Scheduler ─────────────────────────────────────────────────────────────────
 
@@ -85,8 +96,13 @@ export class ProactiveScheduler {
       // ── 3. Only fire in call/meeting rooms (spec §2.4) ─────────────────────
       if (convo.roomType !== 'call' && convo.roomType !== 'meeting') continue
 
+      // ── 4. Idle check (spec §2.4: room must be idle) ──────────────────────
+      const lastActivityMs = await this.deps.getLastRoomActivityMs(convo.conversationId)
+      const isIdle = lastActivityMs === null || (nowMs - lastActivityMs) >= IDLE_THRESHOLD_MS
+      if (!isIdle) continue
+
       for (const { personaId, memory } of convo.personaMemories) {
-        // ── 4. Find stale open loops ─────────────────────────────────────────
+        // ── 5. Find stale open loops ─────────────────────────────────────────
         const stale = findStaleOpenLoops(
           personaId,
           convo.conversationId,
@@ -96,7 +112,7 @@ export class ProactiveScheduler {
         )
         if (stale.length === 0) continue
 
-        // ── 5. Rate-limit check ──────────────────────────────────────────────
+        // ── 6. Rate-limit check ──────────────────────────────────────────────
         const allowed = await isProactiveTurnAllowed(personaId, convo.roomId, this.deps.redis)
         if (!allowed) continue
 

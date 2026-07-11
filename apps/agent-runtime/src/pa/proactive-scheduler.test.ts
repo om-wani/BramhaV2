@@ -67,6 +67,8 @@ function makeDeps(overrides: Partial<ProactiveSchedulerDeps> = {}): ProactiveSch
     enqueueTurn: vi.fn().mockResolvedValue(undefined),
     getDefaultBranchId: vi.fn().mockResolvedValue(BRANCH_ID),
     getLastNodeId: vi.fn().mockResolvedValue(NODE_ID),
+    // null = no recent activity = room is idle
+    getLastRoomActivityMs: vi.fn().mockResolvedValue(null),
     ...overrides,
   }
 }
@@ -141,6 +143,38 @@ describe('ProactiveScheduler.checkProject', () => {
         makeConvo({ roomType: 'meeting' }),
       ]),
     })
+    const scheduler = new ProactiveScheduler(deps)
+    const count = await scheduler.checkProject(PROJECT_ID, NOW_MS)
+    expect(count).toBe(1)
+  })
+
+  // ── Idle check ───────────────────────────────────────────────────────────
+
+  it('skips when room has activity within the last 5 min (not idle)', async () => {
+    // Activity 1 minute ago → room is NOT idle → scheduler must skip
+    const activityOneMinAgo = NOW_MS - 60 * 1_000
+    const deps = makeDeps({
+      getLastRoomActivityMs: vi.fn().mockResolvedValue(activityOneMinAgo),
+    })
+    const scheduler = new ProactiveScheduler(deps)
+    const count = await scheduler.checkProject(PROJECT_ID, NOW_MS)
+    expect(count).toBe(0)
+    expect(deps.enqueueTurn as Mock).not.toHaveBeenCalled()
+  })
+
+  it('fires when room has been idle for >= 5 min', async () => {
+    // Activity 6 minutes ago → room is idle → should fire
+    const activitySixMinAgo = NOW_MS - 6 * 60 * 1_000
+    const deps = makeDeps({
+      getLastRoomActivityMs: vi.fn().mockResolvedValue(activitySixMinAgo),
+    })
+    const scheduler = new ProactiveScheduler(deps)
+    const count = await scheduler.checkProject(PROJECT_ID, NOW_MS)
+    expect(count).toBe(1)
+  })
+
+  it('treats null lastActivityMs (no nodes) as idle', async () => {
+    const deps = makeDeps({ getLastRoomActivityMs: vi.fn().mockResolvedValue(null) })
     const scheduler = new ProactiveScheduler(deps)
     const count = await scheduler.checkProject(PROJECT_ID, NOW_MS)
     expect(count).toBe(1)

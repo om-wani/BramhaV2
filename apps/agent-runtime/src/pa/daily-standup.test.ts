@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect, vi, type Mock } from 'vitest'
-import { buildStandupMarkdown, StandupScheduler, type StandupSchedulerDeps } from './daily-standup.js'
+import {
+  buildStandupMarkdown,
+  buildDelegationNudgeOpenLoop,
+  StandupScheduler,
+  type StandupSchedulerDeps,
+} from './daily-standup.js'
 import type { Fact } from './working-memory.js'
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -32,6 +37,25 @@ function makeDeps(overrides: Partial<StandupSchedulerDeps> = {}): StandupSchedul
     ...overrides,
   }
 }
+
+// ── buildDelegationNudgeOpenLoop ──────────────────────────────────────────────
+
+describe('buildDelegationNudgeOpenLoop', () => {
+  it('formats the nudge text with worker slug, objective, and delegation id', () => {
+    const text = buildDelegationNudgeOpenLoop('del-1', 'cfo', 'Prepare Q3 financial review')
+    expect(text).toContain('cfo')
+    expect(text).toContain('Prepare Q3 financial review')
+    expect(text).toContain('delegation:del-1')
+  })
+
+  it('truncates objective to 80 chars', () => {
+    const longObjective = 'A'.repeat(100)
+    const text = buildDelegationNudgeOpenLoop('del-2', 'cto', longObjective)
+    // The objective slice is at most 80 chars
+    expect(text).toContain('A'.repeat(80))
+    expect(text).not.toContain('A'.repeat(81))
+  })
+})
 
 // ── buildStandupMarkdown ──────────────────────────────────────────────────────
 
@@ -103,12 +127,13 @@ describe('StandupScheduler.run', () => {
 
     const createNoteMock = deps.createNote as Mock
     expect(createNoteMock).toHaveBeenCalledTimes(1)
-    const [title, content, tags, projId] = createNoteMock.mock.calls[0]!
+    const [title, content, tags, projId, convId] = createNoteMock.mock.calls[0]!
     expect(title).toBe('Daily Standup — 2026-01-15')
     expect(content).toContain('## Daily Standup — 2026-01-15')
     expect(tags).toContain('standup')
     expect(tags).toContain('auto-generated')
     expect(projId).toBe(PROJECT_ID)
+    expect(convId).toBe(OFFICE_CONV)  // linked to CEO's Office conversation, not null
   })
 
   it('loads facts from the last 24h', async () => {

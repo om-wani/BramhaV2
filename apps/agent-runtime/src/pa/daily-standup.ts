@@ -20,6 +20,30 @@
 
 import type { Fact } from './working-memory.js'
 
+// ── Delegation-report nudge ───────────────────────────────────────────────────
+
+/**
+ * Delegation-report nudge: when a delegation completes, the PA nudges the
+ * delegating persona to review the report in their 1:1 or the conference room.
+ *
+ * Implementation: listens for delegation.completed events; inserts an open loop
+ * in the delegating persona's working memory so the proactive-scheduler picks it up.
+ *
+ * Full scheduling via BullMQ event bridge (T4.6).
+ *
+ * @param delegationId  ID of the completed delegation job.
+ * @param workerSlug    Slug of the specialist agent that completed the work.
+ * @param objective     Short description of the delegation objective.
+ * @returns Open-loop text to inject into the delegating persona's working memory.
+ */
+export function buildDelegationNudgeOpenLoop(
+  delegationId: string,
+  workerSlug: string,
+  objective: string,
+): string {
+  return `Delegation report ready from ${workerSlug}: "${objective.slice(0, 80)}" (delegation:${delegationId})`
+}
+
 // ── Pure builder ──────────────────────────────────────────────────────────────
 
 /**
@@ -75,18 +99,16 @@ export interface StandupSchedulerDeps {
 
   /**
    * Insert a note into the notes table (wraps withTenant + INSERT).
+   * conversationId links the note to a specific conversation (e.g. CEO's Office).
    */
   createNote: (
     title: string,
     content: string,
     tags: string[],
     projectId: string,
-    personaId: string | null,
+    conversationId: string | null,
   ) => Promise<{ noteId: string }>
 }
-
-/** System persona ID used when posting automated standup notes. */
-const SYSTEM_PERSONA_ID = null
 
 export class StandupScheduler {
   constructor(private readonly deps: StandupSchedulerDeps) {}
@@ -113,7 +135,7 @@ export class StandupScheduler {
       markdown,
       ['standup', 'auto-generated'],
       projectId,
-      SYSTEM_PERSONA_ID,
+      officeConvId,
     )
   }
 }
