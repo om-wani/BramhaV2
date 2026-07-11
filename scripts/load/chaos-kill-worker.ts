@@ -9,13 +9,14 @@
 import { Redis } from 'ioredis'
 import { Queue, Worker } from 'bullmq'
 
-const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379'
 const ENV = process.env['BRAMHA_ENV'] ?? 'development'
 
 if (ENV === 'production') {
   console.error('SAFETY: chaos scripts refuse BRAMHA_ENV=production')
   process.exit(1)
 }
+
+const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379'
 
 // script body: enqueue a test job, start a worker that kills itself mid-job,
 // wait for BullMQ stalled-job requeue (default: 30s), verify job eventually completes.

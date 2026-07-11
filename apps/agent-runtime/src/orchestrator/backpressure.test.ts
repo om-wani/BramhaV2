@@ -83,6 +83,16 @@ describe('BackpressureMonitor.recordSend — above threshold', () => {
 
     expect(deps.emitDropToSse).toHaveBeenCalledOnce()
   })
+
+  it('emits drop-to-sse only once even if second recordSend also exceeds threshold', () => {
+    const deps = makeDeps()
+    const monitor = new BackpressureMonitor(deps)
+
+    monitor.recordSend('conn-6b', BACKPRESSURE_LAG_MS + 1_000)  // above threshold → emit
+    monitor.recordSend('conn-6b', BACKPRESSURE_LAG_MS + 2_000)  // still above threshold → must NOT emit again
+
+    expect(deps.emitDropToSse).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('BackpressureMonitor.onDisconnect', () => {

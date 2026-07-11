@@ -17,22 +17,26 @@ export const BACKPRESSURE_LAG_MS = 5_000 // 5s lag threshold
 
 export class BackpressureMonitor {
   private readonly connectionLag = new Map<string, number>()
+  private readonly droppedConnections = new Set<string>()
 
   constructor(private readonly deps: BackpressureDeps) {}
 
   /** Called each time a message is sent to a connection. */
   recordSend(connectionId: string, lagMs: number): void {
+    if (this.droppedConnections.has(connectionId)) return  // already dropped, ignore
     this.connectionLag.set(connectionId, lagMs)
     if (lagMs > BACKPRESSURE_LAG_MS) {
       const lastSeen = null // full tracking: T5
       this.deps.emitDropToSse(connectionId, lastSeen)
       this.connectionLag.delete(connectionId)
+      this.droppedConnections.add(connectionId)
     }
   }
 
   /** Called when connection closes cleanly. */
   onDisconnect(connectionId: string): void {
     this.connectionLag.delete(connectionId)
+    this.droppedConnections.delete(connectionId)  // clear so reconnect works
   }
 
   /** Current lag for a connection, null if unknown. */

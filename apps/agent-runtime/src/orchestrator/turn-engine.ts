@@ -423,7 +423,11 @@ export async function processTurnJob(
         projectId,
       )
       if (summaryCheck.shouldSummarize && summaryCheck.jobPayload) {
-        await deps.housekeepingQueue.add('summarize', summaryCheck.jobPayload)
+        await deps.housekeepingQueue.add('summarize', summaryCheck.jobPayload, {
+          jobId: `summarize:${conversationId}:${nodeId}`,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2_000 },
+        })
       }
     }
 
