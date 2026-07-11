@@ -357,7 +357,13 @@ export async function processTurnJob(
           otherSpeakers,
         }
 
+        // Deterministic job ID for deduplication: same persona+conv+node → same job ID.
+        // BullMQ ignores the second enqueue if a job with this ID already exists
+        // (pending or active), providing idempotent replay safety on Redis failover.
+        const jobId = `agent-turn:${speakerScore.agent.personaId}:${conversationId}:${nodeId}`
+
         await deps.agentTurnsQueue.add('agent-turn', jobData, {
+          jobId,
           // Per-conversation concurrency group (≤3 concurrent agents per conv).
           // Requires BullMQ Pro in production; mocked in tests.
           group: {

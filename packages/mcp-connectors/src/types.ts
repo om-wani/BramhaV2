@@ -94,6 +94,10 @@ export interface RedisLike {
   del(key: string): Promise<number>
   incr(key: string): Promise<number>
   expire(key: string, seconds: number): Promise<number>
+  // Sorted-set helpers used by ConversationQueueFairness
+  zrank(key: string, member: string): Promise<number | null>
+  zadd(key: string, score: number, member: string): Promise<number>
+  zremrangebyscore(key: string, min: string | number, max: string | number): Promise<number>
 }
 
 // ── MCP result ────────────────────────────────────────────────────────────────

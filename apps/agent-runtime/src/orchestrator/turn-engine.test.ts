@@ -485,3 +485,52 @@ describe('T11 — scheduleProactiveCheck failure is swallowed', () => {
     await expect(processTurnJob(baseJobData(), deps)).resolves.not.toThrow()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T12 — Idempotent jobId: same (personaId, conversationId, nodeId) → same jobId
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('T12 — idempotent job IDs for agent-turn deduplication', () => {
+  it('enqueues with a deterministic jobId in agent-turn:personaId:conversationId:nodeId format', async () => {
+    const deps = makeDeps()
+    await processTurnJob(baseJobData(), deps)
+
+    const addMock = deps.agentTurnsQueue.add as Mock
+    expect(addMock).toHaveBeenCalled()
+
+    // Verify every enqueued job has a properly formatted deterministic jobId
+    for (const callArgs of addMock.mock.calls) {
+      const [name, jobData, opts] = callArgs as [string, AgentTurnJobData, { jobId?: string; group?: unknown }]
+      expect(name).toBe('agent-turn')
+      expect(opts?.jobId).toBeDefined()
+      expect(opts.jobId).toBe(
+        `agent-turn:${jobData.personaId}:${jobData.conversationId}:${jobData.triggerNodeId}`,
+      )
+    }
+  })
+
+  it('produces the same jobId when the same payload is processed twice', async () => {
+    const payload = baseJobData()
+
+    const deps1 = makeDeps()
+    await processTurnJob(payload, deps1)
+
+    const deps2 = makeDeps()
+    await processTurnJob(payload, deps2)
+
+    const addMock1 = deps1.agentTurnsQueue.add as Mock
+    const addMock2 = deps2.agentTurnsQueue.add as Mock
+
+    // Both runs should have enqueued at least one job
+    expect(addMock1.mock.calls.length).toBeGreaterThan(0)
+    expect(addMock2.mock.calls.length).toBe(addMock1.mock.calls.length)
+
+    // The jobId from run 1 and run 2 must be identical for each slot
+    for (let i = 0; i < addMock1.mock.calls.length; i++) {
+      const opts1 = addMock1.mock.calls[i]?.[2] as { jobId?: string }
+      const opts2 = addMock2.mock.calls[i]?.[2] as { jobId?: string }
+      expect(opts1?.jobId).toBeDefined()
+      expect(opts1?.jobId).toBe(opts2?.jobId)
+    }
+  })
+})
