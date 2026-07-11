@@ -121,6 +121,7 @@ function makeDeps(overrides?: Partial<TurnEngineDeps>): TurnEngineDeps {
     agentTurnsQueue: { add: vi.fn().mockResolvedValue(undefined) },
     dlqQueue: { add: vi.fn().mockResolvedValue(undefined) },
     housekeepingQueue: { add: vi.fn().mockResolvedValue(undefined) },
+    scheduleProactiveCheck: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }

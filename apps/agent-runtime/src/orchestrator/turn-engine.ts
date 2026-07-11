@@ -156,6 +156,12 @@ export interface TurnEngineDeps {
   agentTurnsQueue: TurnQueue
   dlqQueue: TurnQueue
   housekeepingQueue: TurnQueue
+  /**
+   * Optional hook to schedule a proactive check after each node is processed.
+   * Wired to the ProactiveScheduler's BullMQ queue in production.
+   * Errors are swallowed — a failed proactivity check must never kill the job.
+   */
+  scheduleProactiveCheck?: (projectId: string) => Promise<void>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -413,6 +419,14 @@ export async function processTurnJob(
       if (summaryCheck.shouldSummarize && summaryCheck.jobPayload) {
         await deps.housekeepingQueue.add('summarize', summaryCheck.jobPayload)
       }
+    }
+
+    // ── 12. Proactivity scheduling hook ───────────────────────────────────────
+    // Fire-and-forget: errors are swallowed so a failed check never kills the job.
+    if (deps.scheduleProactiveCheck) {
+      await deps.scheduleProactiveCheck(projectId).catch((err) => {
+        console.warn('[turn-engine] proactive_check.schedule_failed', { err: String(err) })
+      })
     }
   } catch (err) {
     // Poison-message handling: unexpected errors go to DLQ; Worker keeps running.

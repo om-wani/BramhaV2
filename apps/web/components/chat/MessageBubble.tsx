@@ -149,6 +149,16 @@ export function MessageBubble({ node, onBranch, onStopAgent }: MessageBubbleProp
             </div>
           )}
 
+          {/* Follow-up badge — rendered when agent turn was proactively triggered */}
+          {isAgent && node.content?.meta?.triggerReason === 'follow-up' && (
+            <span
+              className="mt-1 inline-block rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-400"
+              aria-label="Proactive follow-up"
+            >
+              follow-up
+            </span>
+          )}
+
           {/* StatusTag below text */}
           {isAgent && <StatusTag status={stream?.status ?? null} />}
 

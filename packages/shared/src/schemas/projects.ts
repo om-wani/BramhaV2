@@ -10,6 +10,11 @@ export const ProjectSettingsSchema = z
     tokenBudgetPerDayUsd: z.number().positive().default(10),
     defaultBranchPolicy: z.enum(['linear', 'fork-on-conflict']).default('linear'),
     agentsPaused: z.boolean().default(false),
+    /**
+     * When true, PA agents may proactively follow up on stale open loops
+     * (1 turn per hour per agent). Off by default.
+     */
+    proactiveFollowups: z.boolean().default(false),
   })
   .strict()
 

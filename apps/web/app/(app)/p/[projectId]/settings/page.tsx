@@ -12,11 +12,19 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 
+const ProjectSettingsSchema = z.object({
+  tokenBudgetPerDayUsd: z.number().optional(),
+  defaultBranchPolicy: z.string().optional(),
+  agentsPaused: z.boolean().optional(),
+  proactiveFollowups: z.boolean().optional(),
+})
+
 const ProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
-  slug: z.string(),
+  slug: z.string().optional(),
   description: z.string().nullable(),
+  settings: ProjectSettingsSchema.optional(),
   archivedAt: z.string().nullable().optional(),
 })
 
@@ -72,6 +80,14 @@ export default function ProjectSettingsPage() {
     },
   })
 
+  const updateSettings = useMutation({
+    mutationFn: (settings: { proactiveFollowups?: boolean }) =>
+      api.patch(`/projects/${projectId}`, ProjectSchema, { settings }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+    },
+  })
+
   const archive = useMutation({
     mutationFn: () =>
       api.patch(`/projects/${projectId}`, ProjectSchema, {
@@ -109,6 +125,34 @@ export default function ProjectSettingsPage() {
               ))}
             </ul>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Agent Behavior */}
+      <Card>
+        <CardHeader><CardTitle>Agent Behavior</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <label
+                htmlFor="proactive-followups"
+                className="text-sm font-medium leading-none cursor-pointer"
+              >
+                Proactive follow-ups
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Agents follow up on unanswered questions — 1&times;/hour/agent, call and meeting
+                rooms only. Off by default.
+              </p>
+            </div>
+            <Switch
+              id="proactive-followups"
+              checked={project.settings?.proactiveFollowups ?? false}
+              disabled={updateSettings.isPending}
+              onCheckedChange={(val) => updateSettings.mutate({ proactiveFollowups: val })}
+              aria-label="Toggle proactive follow-ups"
+            />
+          </div>
         </CardContent>
       </Card>
 

@@ -184,7 +184,10 @@ describe('AgentGraph', () => {
       expect(insertCall![0].type).toBe('agent_message')
       expect(insertCall![0].authorKind).toBe('agent')
       expect(insertCall![0].authorPersonaId).toBe(PERSONA_ID)
-      expect(insertCall![0].content).toEqual({ text: 'The final model answer.' })
+      expect(insertCall![0].content).toEqual({
+        text: 'The final model answer.',
+        meta: { triggerReason: 'mention' },
+      })
       expect(insertCall![0].parentId).toBe(TRIGGER_NODE_ID)
 
       // Working memory upserted
@@ -241,7 +244,10 @@ describe('AgentGraph', () => {
 
       // Persisted node has the second model's content
       const insertCall = vi.mocked(deps.insertNode).mock.calls[0]
-      expect(insertCall![0].content).toEqual({ text: 'Cloud spend is $12k/month.' })
+      expect(insertCall![0].content).toEqual({
+        text: 'Cloud spend is $12k/month.',
+        meta: { triggerReason: 'mention' },
+      })
 
       // Second chatModel call's messages should include untrusted_context from tool result
       const secondCallMessages = vi.mocked(deps.chatModel).mock.calls[1]![1]
@@ -296,6 +302,7 @@ describe('AgentGraph', () => {
       const insertCall = vi.mocked(deps.insertNode).mock.calls[0]
       expect(insertCall![0].content).toEqual({
         text: 'I have saved the note and analyzed costs.',
+        meta: { triggerReason: 'mention' },
       })
     })
   })

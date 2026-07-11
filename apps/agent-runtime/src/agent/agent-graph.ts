@@ -111,7 +111,11 @@ export interface InsertNodeData {
   authorKind: 'agent'
   authorUserId: null
   authorPersonaId: string
-  content: { text: string }
+  content: {
+    text: string
+    /** Optional metadata — used by the UI for badges etc. */
+    meta?: { triggerReason?: string }
+  }
   tokenUsage: { inputTokens: number; outputTokens: number; estimatedUsd: number } | null
 }
 
@@ -471,6 +475,7 @@ export class AgentGraph {
     ctx: AgentRunContext,
     finalContent: string,
     usage: TokenAccum,
+    jobData: AgentTurnJobData,
   ): Promise<PersistedNodeData> {
     const nodeData: InsertNodeData = {
       conversationId: state.conversationId,
@@ -480,7 +485,11 @@ export class AgentGraph {
       authorKind: 'agent',
       authorUserId: null,
       authorPersonaId: state.personaId,
-      content: { text: finalContent },
+      content: {
+        text: finalContent,
+        // Store triggerReason in meta so the UI can render badges (e.g., follow-up).
+        meta: { triggerReason: jobData.triggerReason },
+      },
       tokenUsage:
         usage.inputTokens > 0 || usage.outputTokens > 0
           ? usage
@@ -641,7 +650,7 @@ export class AgentGraph {
     }
 
     // ── persist_node node ────────────────────────────────────────────────────
-    const persisted = await this.persistNode(state, ctx, finalContent, totalUsage)
+    const persisted = await this.persistNode(state, ctx, finalContent, totalUsage, jobData)
 
     // ── emit_events node ─────────────────────────────────────────────────────
     state.done = true
