@@ -10,6 +10,12 @@
  * Usage: DATABASE_URL=... pnpm tsx scripts/load/branch-integrity-check.ts
  */
 
+const ENV = process.env['BRAMHA_ENV'] ?? 'development'
+if (ENV === 'production') {
+  console.error('SAFETY: chaos scripts refuse BRAMHA_ENV=production')
+  process.exit(1)
+}
+
 const DATABASE_URL = process.env['DATABASE_URL']
 if (!DATABASE_URL) {
   console.error('DATABASE_URL required')
