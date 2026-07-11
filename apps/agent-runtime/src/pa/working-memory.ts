@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { RoomType } from '@bramha/shared'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -39,8 +40,8 @@ export interface Fact {
   // ── Routing fields (optional — absent means no restriction) ───────────────
   /** ID of the room in which this fact was learned */
   sourceRoomId?: string
-  /** Type of the source room (conference | meeting | call | office | system) */
-  sourceRoomType?: string
+  /** Type of the source room */
+  sourceRoomType?: RoomType
   /** Whether the source room was flagged as confidential at time of extraction */
   sourceRoomConfidential?: boolean
 }

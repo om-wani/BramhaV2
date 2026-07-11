@@ -22,6 +22,7 @@
  */
 
 import { estimateTokenCount } from '@bramha/agents'
+import type { RoomType } from '@bramha/shared'
 import type { WorkingMemory, Fact } from './working-memory.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ export interface GlobalFact extends Fact {
   /** Room ID from which this fact originated (required for routing filter) */
   sourceRoomId: string
   /** Room type from which this fact originated */
-  sourceRoomType: string
+  sourceRoomType: RoomType
   /** Whether the source room was flagged confidential at time of extraction */
   sourceRoomConfidential: boolean
 }
@@ -116,7 +117,7 @@ export interface BundleInput {
   /** ID of the room in which this turn is taking place */
   currentRoomId: string
   /** Type of the current room */
-  roomType: string
+  roomType: RoomType
   /** Whether the current room is flagged as confidential */
   roomIsConfidential: boolean
   /** All working-memory facts for this persona across other conversations in the project */
@@ -226,12 +227,11 @@ function buildProjectFactsBlock(
 ): string {
   const filtered = filterProjectFacts(projectFacts, currentRoomId, currentRoomIsConfidential)
   if (filtered.length === 0) return ''
-  const bullets = filtered
-    .slice(0, 10)
-    .map((f) => `- [${f.sourceRoomType}] ${f.text}`)
-    .join('\n')
+  const sliced = filtered.slice(0, 10)
+  const countNotice = filtered.length > 10 ? `\n[${filtered.length - 10} additional cross-room facts omitted.]` : ''
+  const bullets = sliced.map((f) => `- [${f.sourceRoomType}] ${f.text}`).join('\n')
   return capSection(
-    `## Cross-Room Facts\n${bullets}`,
+    `## Cross-Room Facts\n${bullets}${countNotice}`,
     PROJECT_FACTS_TOKEN_CAP,
     '[Cross-room facts truncated.]',
   )

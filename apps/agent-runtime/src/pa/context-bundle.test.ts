@@ -299,23 +299,35 @@ describe('cross-room routing', () => {
     expect(bundle.fullPrompt).toContain('Budget is $5M')
   })
 
-  it('excludes confidential-1:1 facts when in a different room (20-generation snapshot)', () => {
-    const confidentialFact = makeGlobalFact({
-      text: 'SECRET: CEO plans acquisition',
-      sourceRoomId: 'room-call-123',
-      sourceRoomType: 'call',
-      sourceRoomConfidential: true,
-    })
-    // Run 20 times to assert the invariant holds across generations
+  it('excludes confidential-1:1 facts across varied room and persona combinations', () => {
+    const roomTypes: Array<'conference' | 'meeting' | 'call' | 'office'> = ['conference', 'meeting', 'call', 'office']
+    const confidentialRoomId = 'room-call-secret'
+
     for (let i = 0; i < 20; i++) {
+      const currentRoomType = roomTypes[i % roomTypes.length] ?? 'conference'
+      const currentRoomId = `room-other-${i}`  // always different from confidential source
+
+      const confidentialFact: GlobalFact = {
+        text: `SECRET: CEO plans acquisition iteration ${i}`,
+        sourceNode: `node-${i}`,
+        confidence: 1.0,
+        ts: new Date().toISOString(),
+        sourceConversationId: 'conv-call',
+        sourceRoomId: confidentialRoomId,
+        sourceRoomType: 'call',
+        sourceRoomConfidential: true,
+      }
+
       const input = makeInput({
-        currentRoomId: 'room-conference',  // different from sourceRoomId
-        roomType: 'conference',
+        roomType: currentRoomType,
+        currentRoomId,
         roomIsConfidential: false,
         projectFacts: [confidentialFact],
       })
+
       const bundle = buildContextBundle(input)
-      expect(bundle.fullPrompt).not.toContain('SECRET: CEO plans acquisition')
+      expect(bundle.fullPrompt).not.toContain(`SECRET: CEO plans acquisition iteration ${i}`)
+      expect(bundle.sections.projectFactsBlock).toBe('')
     }
   })
 
@@ -389,29 +401,7 @@ describe('cross-room routing', () => {
     expect(bundle.sections.projectFactsBlock).toBe('')
   })
 
-  it('deduplicates global facts already present in local working memory', () => {
-    const duplicateText = 'We will migrate to Kubernetes'
-    const localFact = {
-      text: duplicateText,
-      sourceNode: 'node-local',
-      confidence: 0.8,
-      ts: new Date().toISOString(),
-    }
-    const globalFact = makeGlobalFact({
-      text: duplicateText,
-      sourceRoomId: 'room-conference',
-      sourceRoomType: 'conference',
-      sourceRoomConfidential: false,
-    })
-    const memory = makeMemory({ facts: [localFact] })
-    const input = makeInput({
-      workingMemory: memory,
-      projectFacts: [globalFact],
-    })
-    // Should not crash and should not double-count the fact in the prompt
-    const bundle = buildContextBundle(input)
-    // The fact text should appear at most once (from local facts, not duplicated from global)
-    const count = (bundle.fullPrompt.match(new RegExp(duplicateText, 'g')) ?? []).length
-    expect(count).toBeLessThanOrEqual(1)
-  })
+  // Deduplication between local facts and projectFacts not needed: they are in separate sections
+  // (workingMemorySummary vs projectFactsBlock). workingMemory.facts[] is not rendered directly
+  // in the bundle — only summaryMd and openLoops are — so there is no double-rendering to guard.
 })

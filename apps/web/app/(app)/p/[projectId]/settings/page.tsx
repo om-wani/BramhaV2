@@ -43,6 +43,7 @@ export default function ProjectSettingsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [confirmName, setConfirmName] = useState('')
+  const [updateRoomError, setUpdateRoomError] = useState<string | null>(null)
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', projectId],
@@ -64,6 +65,10 @@ export default function ProjectSettingsPage() {
       api.patch(`/projects/${projectId}/rooms/${roomId}`, RoomSchema, { isConfidential }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-rooms', projectId] })
+      setUpdateRoomError(null)
+    },
+    onError: () => {
+      setUpdateRoomError('Failed to update room confidentiality. Please try again.')
     },
   })
 
@@ -183,6 +188,11 @@ export default function ProjectSettingsPage() {
                     </li>
                   ))}
               </ul>
+              {updateRoomError && (
+                <p role="alert" className="text-xs text-destructive mt-2">
+                  {updateRoomError}
+                </p>
+              )}
             </section>
           )}
         </CardContent>
