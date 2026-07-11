@@ -1,0 +1,50 @@
+variable "environment" {
+  description = "Deployment environment"
+  type        = string
+  default     = "staging"
+}
+
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+# ---- ECS image URIs ----
+
+variable "api_image" {
+  description = "ECR image URI for the API service"
+  type        = string
+}
+
+variable "web_image" {
+  description = "ECR image URI for the Web service"
+  type        = string
+}
+
+variable "agent_runtime_image" {
+  description = "ECR image URI for the agent-runtime service"
+  type        = string
+}
+
+variable "ingestion_worker_image" {
+  description = "ECR image URI for the ingestion-worker service"
+  type        = string
+}
+
+variable "sandbox_host_image" {
+  description = "ECR image URI for the sandbox-host service"
+  type        = string
+}
+
+# ---- ALB ----
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for HTTPS"
+  type        = string
+}
