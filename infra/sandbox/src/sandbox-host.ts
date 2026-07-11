@@ -60,6 +60,7 @@ export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
     '--memory', MEMORY_LIMIT,
     '--cpus', CPU_LIMIT,
     '--security-opt', `seccomp=${SECCOMP_PROFILE}`,
+    '--security-opt', 'no-new-privileges:true',
     '--runtime', SANDBOX_RUNTIME,
     '--user', 'sandbox',
     '--stop-timeout', '5',
@@ -79,6 +80,7 @@ export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
   try {
     const { stdout, stderr } = await execFileAsync('docker', args, {
       maxBuffer: MAX_OUTPUT_BYTES * 2,
+      timeout: (TIMEOUT_SEC + 15) * 1000, // backstop: 45s (15s grace after our 30s kill)
     })
     clearTimeout(timeoutHandle)
 
@@ -86,7 +88,7 @@ export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
       return { stdout: '', stderr: 'Execution timed out', exitCode: 124, truncated: false }
     }
 
-    const truncated = stdout.length > MAX_OUTPUT_BYTES
+    const truncated = stdout.length > MAX_OUTPUT_BYTES || stderr.length > MAX_OUTPUT_BYTES
     return {
       stdout: stdout.slice(0, MAX_OUTPUT_BYTES),
       stderr: stderr.slice(0, MAX_OUTPUT_BYTES),
@@ -98,6 +100,11 @@ export async function runCode(input: RunCodeInput): Promise<RunCodeResult> {
 
     if (timedOut) {
       return { stdout: '', stderr: 'Execution timed out', exitCode: 124, truncated: false }
+    }
+
+    // Handle output buffer overflow gracefully
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+      return { stdout: '', stderr: 'output limit exceeded', exitCode: 1, truncated: true }
     }
 
     const errMsg = err instanceof Error ? err.message : String(err)
@@ -128,7 +135,17 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/run') {
     let body = ''
+    let bodySize = 0
+    const MAX_BODY_BYTES = 1024 * 1024 // 1 MB
+
     req.on('data', (chunk: Buffer) => {
+      bodySize += chunk.length
+      if (bodySize > MAX_BODY_BYTES) {
+        req.destroy()
+        res.writeHead(413)
+        res.end(JSON.stringify({ error: 'request_too_large' }))
+        return
+      }
       body += chunk.toString()
     })
     req.on('end', async () => {
@@ -155,6 +172,9 @@ const server = http.createServer(async (req, res) => {
 })
 
 const PORT = parseInt(process.env['SANDBOX_PORT'] ?? '4200', 10)
+if (!Number.isFinite(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error(`SANDBOX_PORT must be a valid port number, got: ${process.env['SANDBOX_PORT']}`)
+}
 
 // Only start the HTTP server when this file is the entry point, not when imported by tests.
 const isMain = process.argv[1] === fileURLToPath(import.meta.url)

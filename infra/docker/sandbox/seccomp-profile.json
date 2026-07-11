@@ -21,7 +21,7 @@
         "clock_getres", "clock_nanosleep", "tgkill", "open", "arch_prctl",
         "set_robust_list", "get_robust_list", "epoll_create", "epoll_ctl",
         "epoll_wait", "epoll_create1", "eventfd2", "pipe2", "inotify_init1",
-        "inotify_add_watch", "getrandom", "execve", "execveat"
+        "inotify_add_watch", "getrandom"
       ],
       "action": "SCMP_ACT_ALLOW"
     }

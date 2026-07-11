@@ -58,7 +58,9 @@ FROM node:22-alpine AS runtime
 
 # dumb-init as PID 1 — proper signal handling
 # clamav for virus scanning, clamav-daemon for clamd process
-RUN apk add --no-cache dumb-init clamav clamav-daemon python3 make g++
+# NOTE: build tools (python3, make, g++) stay in the build stage only;
+# compiled .node binaries are copied from there — no toolchain in the runtime image.
+RUN apk add --no-cache dumb-init clamav clamav-daemon
 
 # Update ClamAV virus definitions
 RUN freshclam --quiet || true
@@ -68,12 +70,10 @@ RUN addgroup -S ingestion && adduser -S ingestion -G ingestion
 
 WORKDIR /app
 
-# Copy compiled output and install production deps
+# Copy compiled output and production node_modules (with native .node binaries) from build
 COPY --from=build /build/apps/ingestion-worker/dist ./dist
 COPY --from=build /build/apps/ingestion-worker/package.json ./package.json
-
-# Install production deps — includes sharp (needs native rebuild on Alpine)
-RUN npm install --omit=dev --ignore-scripts
+COPY --from=build /build/node_modules ./node_modules
 
 # Copy compiled workspace packages
 COPY --from=build /build/packages/shared/dist ./node_modules/@bramha/shared/dist

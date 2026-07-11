@@ -117,14 +117,17 @@ describe('runCode', () => {
     expect(args).toContain('0.5')
   })
 
-  it('passes --security-opt seccomp flag', async () => {
+  it('passes --security-opt seccomp flag and no-new-privileges', async () => {
     const { execFile } = await import('node:child_process')
     vi.mocked(execFile).mockResolvedValue({ stdout: '', stderr: '' } as never)
     await runCode({ language: 'python', code: 'pass' })
     const args = vi.mocked(execFile).mock.calls[0]?.[1] as string[]
-    const seccompIdx = args.indexOf('--security-opt')
-    expect(seccompIdx).toBeGreaterThan(-1)
-    expect(args[seccompIdx + 1]).toMatch(/seccomp=/)
+    const securityOpts = args.reduce<string[]>((acc, val, idx) => {
+      if (args[idx - 1] === '--security-opt') acc.push(val)
+      return acc
+    }, [])
+    expect(securityOpts.some((o) => o.startsWith('seccomp='))).toBe(true)
+    expect(securityOpts).toContain('no-new-privileges:true')
   })
 
   it('returns stderr on container exit with error', async () => {

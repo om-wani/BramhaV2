@@ -1,5 +1,9 @@
 version: '3.9'
 
+# WARNING: This file is for LOCAL prod-sim testing ONLY.
+# DO NOT deploy to real infrastructure with these default credentials.
+# Override all secrets via environment variables or a .env file.
+
 # Production simulation — runs all services from built images.
 # Build images first:
 #   docker build -t bramha-api:latest -f infra/docker/Dockerfile.api .
@@ -16,7 +20,7 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: bramha
-      POSTGRES_PASSWORD: bramha_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bramha_dev_local}
       POSTGRES_DB: bramha
     volumes:
       - pg_data:/var/lib/postgresql/data
@@ -39,7 +43,7 @@ services:
     command: server /data --console-address ':9001'
     environment:
       MINIO_ROOT_USER: bramha
-      MINIO_ROOT_PASSWORD: bramha_dev
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bramha_dev_local}
     volumes:
       - minio_data:/data
     healthcheck:
@@ -56,7 +60,7 @@ services:
     environment:
       DATABASE_URL: postgresql://bramha:bramha_dev@postgres:5432/bramha
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: dev-only-secret-32-chars-minimum!!
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-32-chars-minimum!!}
       NODE_ENV: production
     ports:
       - '3000:3000'

@@ -28,7 +28,9 @@ FROM node:22-alpine AS runtime
 RUN apk add --no-cache dumb-init docker-cli
 
 # Non-root user; must be able to access Docker socket
-RUN addgroup -S sandboxhost && adduser -S sandboxhost -G sandboxhost
+RUN addgroup -S sandboxhost && adduser -S sandboxhost -G sandboxhost \
+    && addgroup -g 999 docker 2>/dev/null || true \
+    && adduser sandboxhost docker
 
 WORKDIR /app
 
