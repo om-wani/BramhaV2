@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { api } from '@/lib/api-client'
@@ -23,6 +24,7 @@ const OkSchema = z.object({}).passthrough()
 
 export default function AdminUsersPage() {
   const qc = useQueryClient()
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const { data: users, isLoading, error } = useQuery({
     queryKey: ['admin', 'users'],
@@ -32,19 +34,22 @@ export default function AdminUsersPage() {
   const suspend = useMutation({
     mutationFn: (userId: string) =>
       api.post(`/admin/users/${userId}/suspend`, OkSchema, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: () => { setMutationError(null); qc.invalidateQueries({ queryKey: ['admin', 'users'] }) },
+    onError: (err: Error) => setMutationError(err.message || 'Action failed'),
   })
 
   const unsuspend = useMutation({
     mutationFn: (userId: string) =>
       api.post(`/admin/users/${userId}/unsuspend`, OkSchema, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: () => { setMutationError(null); qc.invalidateQueries({ queryKey: ['admin', 'users'] }) },
+    onError: (err: Error) => setMutationError(err.message || 'Action failed'),
   })
 
   const reset2fa = useMutation({
     mutationFn: (userId: string) =>
       api.post(`/admin/users/${userId}/reset-2fa`, OkSchema, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: () => { setMutationError(null); qc.invalidateQueries({ queryKey: ['admin', 'users'] }) },
+    onError: (err: Error) => setMutationError(err.message || 'Action failed'),
   })
 
   if (isLoading) {
@@ -62,6 +67,10 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Users</h1>
+
+      {mutationError && (
+        <p role="alert" className="text-red-400 text-sm">{mutationError}</p>
+      )}
 
       <Card>
         <CardHeader>

@@ -71,6 +71,7 @@ function getConnectorScopes(connector: Connector): string[] {
 export default function ConnectorsPage() {
   const qc = useQueryClient()
   const [projectId, setProjectId] = useState('')
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   // Per-cell scope selection: keyed by `${personaId}:${connectorId}`
   const [selectedScopes, setSelectedScopes] = useState<Record<string, string[]>>({})
@@ -98,13 +99,15 @@ export default function ConnectorsPage() {
       allowedScopes: string[]
       requiresApproval: boolean
     }) => api.post('/admin/mcp/grants', UpsertGrantResponseSchema, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'mcp', 'grants'] }),
+    onSuccess: () => { setMutationError(null); qc.invalidateQueries({ queryKey: ['admin', 'mcp', 'grants'] }) },
+    onError: (err: Error) => setMutationError(err.message || 'Action failed'),
   })
 
   const remove = useMutation({
     mutationFn: (grantId: string) =>
       api.delete(`/admin/mcp/grants/${grantId}`, DeleteSchema),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'mcp', 'grants'] }),
+    onSuccess: () => { setMutationError(null); qc.invalidateQueries({ queryKey: ['admin', 'mcp', 'grants'] }) },
+    onError: (err: Error) => setMutationError(err.message || 'Action failed'),
   })
 
   const isLoading = !personas || !connectors || !grants
@@ -124,9 +127,10 @@ export default function ConnectorsPage() {
 
   function toggleGrant(personaId: string, connectorId: string, hasGrant: Grant | undefined) {
     if (!projectId.trim()) {
-      alert('Enter a project ID first to create/remove grants.')
+      setMutationError('Enter a project ID first to create or remove grants.')
       return
     }
+    setMutationError(null)
     if (hasGrant) {
       remove.mutate(hasGrant.id)
     } else {
@@ -164,6 +168,10 @@ export default function ConnectorsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Connector Grant Matrix</h1>
+
+      {mutationError && (
+        <p role="alert" className="text-red-400 text-sm">{mutationError}</p>
+      )}
 
       <Card>
         <CardHeader>

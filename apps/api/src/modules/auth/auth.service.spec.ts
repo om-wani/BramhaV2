@@ -38,6 +38,7 @@ function makeSessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     expires_at: thirtyDays.toISOString(),
     revoked_at: null,
     rotated_from: null,
+    two_factor_verified: false,
     ...overrides,
   }
 }
@@ -206,6 +207,27 @@ describe('AuthService', () => {
       expect(err).toBeInstanceOf(UnauthorizedException)
       const resp = (err as UnauthorizedException).getResponse() as Record<string, unknown>
       expect(resp['code']).toBe('token_invalid')
+    })
+
+    it('propagates twoFactorVerified=false from session even if user later enables TOTP', async () => {
+      // Session was created at login time before TOTP was enrolled (two_factor_verified: false).
+      // Separately, the user enrolled TOTP — but that must NOT retroactively mark this
+      // session as having completed a 2FA challenge.
+      const session = makeSessionRow({ two_factor_verified: false })
+      vi.mocked(mocks.authDb.findSessionByTokenHash!).mockResolvedValue(session)
+      // findUserById must NOT be consulted for the 2FA state on refresh
+      vi.mocked(mocks.authDb.findUserById!).mockResolvedValue(
+        makeUserRow({ totp_secret_enc: Buffer.from('enc-secret') }), // TOTP now enabled
+      )
+
+      await svc.refresh('valid-raw-token', null, null)
+
+      expect(mocks.jwt.sign).toHaveBeenCalledWith(
+        'user-uuid-1',
+        expect.objectContaining({ twoFactorVerified: false }),
+      )
+      // Ensure we're not reading TOTP state from the DB on every refresh
+      expect(mocks.authDb.findUserById).not.toHaveBeenCalled()
     })
   })
 })

@@ -649,27 +649,38 @@ export class AdminService {
   }
 
   async deleteGrant(actorId: string, grantId: string): Promise<void> {
+    // Capture grant data for the audit log before we delete it.
+    // auditLog() calls adminRun() internally, so it must run AFTER the outer
+    // transaction commits — calling it inside adminRun() would nest transactions.
+    interface DeletedGrantInfo { personaId: string; connectorId: string; projectId: string }
+    let deletedGrant: DeletedGrantInfo | null = null
+
     try {
       await this.adminRun(async (tx) => {
-        const rows = await tx<{ id: string; project_id: string }[]>`
-          DELETE FROM mcp_grants
+        const rows = await tx<{ persona_id: string; connector_id: string; project_id: string }[]>`
+          SELECT persona_id, connector_id, project_id
+          FROM   mcp_grants
           WHERE  id = ${grantId}
-          RETURNING id, project_id
         `
-        if (!rows[0]) throw new NotFoundException({ code: 'not_found' })
-        await this.auditLog(
-          actorId,
-          'admin.mcp_grant.delete',
-          'mcp_grant',
-          grantId,
-          rows[0].project_id,
-          {},
-        )
+        if (rows.length === 0) throw new NotFoundException({ code: 'not_found' })
+        const r = rows[0]!
+        deletedGrant = { personaId: r.persona_id, connectorId: r.connector_id, projectId: r.project_id }
+        await tx`DELETE FROM mcp_grants WHERE id = ${grantId}`
       })
     } catch (err) {
       if (err instanceof NotFoundException) throw err
       this.logger.error({ event: 'admin.delete_grant.failed', grantId }, String(err))
       throw new InternalServerErrorException({ code: 'internal_error' })
+    }
+
+    // Audit AFTER the outer transaction commits.
+    // Cast needed because TS can't track mutations through async closures.
+    if (deletedGrant !== null) {
+      const g = deletedGrant as DeletedGrantInfo
+      await this.auditLog(actorId, 'admin.mcp_grant.delete', 'mcp_grant', grantId, g.projectId, {
+        personaId: g.personaId,
+        connectorId: g.connectorId,
+      })
     }
   }
 

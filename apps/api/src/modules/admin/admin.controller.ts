@@ -216,7 +216,8 @@ export class AdminController {
     @Query('to') to?: string,
     @Query('limit') limit?: string,
   ): Promise<AuditLogEntry[]> {
-    const parsedLimit = limit ? Math.min(parseInt(limit, 10), 200) : 50
+    const raw = parseInt(limit ?? '', 10)
+    const parsedLimit = Number.isFinite(raw) ? Math.min(raw, 200) : 50
     return this.admin.searchAuditLog({
       ...(actorId   !== undefined && { actorId }),
       ...(action    !== undefined && { action }),

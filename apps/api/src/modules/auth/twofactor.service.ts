@@ -225,6 +225,7 @@ export class TwoFactorService {
       userAgent,
       ip,
       expiresAt: this.session.getRefreshTokenExpiry(),
+      twoFactorVerified: true,
     })
 
     this.logger.log({ userId, ip, event: '2fa_challenge_success' }, '2FA challenge passed')

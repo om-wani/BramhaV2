@@ -29,6 +29,7 @@ export interface SessionRow {
   expires_at: string
   revoked_at: string | null
   rotated_from: string | null
+  two_factor_verified: boolean
 }
 
 @Injectable()
@@ -132,19 +133,21 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
     ip: string | null
     expiresAt: Date
     rotatedFrom?: string | null
+    twoFactorVerified?: boolean
   }): Promise<SessionRow> {
     const rows = await this.sql<SessionRow[]>`
       INSERT INTO auth_sessions
-        (user_id, refresh_token_hash, user_agent, ip, expires_at, rotated_from)
+        (user_id, refresh_token_hash, user_agent, ip, expires_at, rotated_from, two_factor_verified)
       VALUES (
         ${data.userId},
         ${data.refreshTokenHash},
         ${data.userAgent},
         ${data.ip},
         ${data.expiresAt.toISOString()},
-        ${data.rotatedFrom ?? null}
+        ${data.rotatedFrom ?? null},
+        ${data.twoFactorVerified ?? false}
       )
-      RETURNING id, user_id, refresh_token_hash, expires_at, revoked_at, rotated_from
+      RETURNING id, user_id, refresh_token_hash, expires_at, revoked_at, rotated_from, two_factor_verified
     `
     if (!rows[0]) throw new Error('Session insert returned no row')
     return rows[0]
@@ -152,7 +155,7 @@ export class AuthDbService implements OnModuleInit, OnModuleDestroy {
 
   async findSessionByTokenHash(hash: string): Promise<SessionRow | null> {
     const rows = await this.sql<SessionRow[]>`
-      SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, rotated_from
+      SELECT id, user_id, refresh_token_hash, expires_at, revoked_at, rotated_from, two_factor_verified
       FROM   auth_sessions
       WHERE  refresh_token_hash = ${hash}
     `
