@@ -14,7 +14,7 @@ export class JwtAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
-      .getRequest<FastifyRequest & { user?: { userId: string } }>()
+      .getRequest<FastifyRequest & { user?: { userId: string; twoFactorVerified: boolean } }>()
 
     const authHeader = request.headers['authorization']
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -44,7 +44,7 @@ export class JwtAuthGuard implements CanActivate {
 
     const payload = await this.jwt.verify(token) // throws UnauthorizedException on failure
 
-    request.user = { userId: payload.userId }
+    request.user = { userId: payload.userId, twoFactorVerified: payload.twoFactorVerified }
     return true
   }
 }

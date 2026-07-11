@@ -28,9 +28,16 @@ export class JwtService implements OnModuleInit {
     this.publicKey = await importSPKI(publicPem, 'EdDSA')
   }
 
-  async sign(userId: string): Promise<{ accessToken: string; expiresIn: number }> {
+  async sign(
+    userId: string,
+    options: { twoFactorVerified?: boolean } = {},
+  ): Promise<{ accessToken: string; expiresIn: number }> {
     const now = Math.floor(Date.now() / 1000)
-    const accessToken = await new SignJWT({ sub: userId })
+    const claims: Record<string, unknown> = { sub: userId }
+    if (options.twoFactorVerified) {
+      claims['tfv'] = true
+    }
+    const accessToken = await new SignJWT(claims)
       .setProtectedHeader({ alg: 'EdDSA', kid: this.keyId })
       .setIssuer(ISS)
       .setAudience(AUD)
@@ -61,7 +68,7 @@ export class JwtService implements OnModuleInit {
     }
   }
 
-  async verify(token: string): Promise<{ userId: string }> {
+  async verify(token: string): Promise<{ userId: string; twoFactorVerified: boolean }> {
     // Reject alg:none and HS256 downgrade by inspecting the header before full verification
     this.rejectWeakAlg(token)
 
@@ -74,7 +81,10 @@ export class JwtService implements OnModuleInit {
       if (!payload.sub) {
         throw new UnauthorizedException({ code: 'invalid_token', message: 'Missing subject claim' })
       }
-      return { userId: payload.sub }
+      return {
+        userId: payload.sub,
+        twoFactorVerified: (payload as Record<string, unknown>)['tfv'] === true,
+      }
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e
       throw new UnauthorizedException({ code: 'invalid_token', message: 'Invalid token' })

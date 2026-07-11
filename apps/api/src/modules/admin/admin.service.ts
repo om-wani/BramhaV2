@@ -432,6 +432,25 @@ export class AdminService {
 
   // ── Personas ──────────────────────────────────────────────────────────────
 
+  async getPersona(personaId: string): Promise<AdminPersona> {
+    try {
+      const rows = await this.adminRun(async (tx) => {
+        return tx<PersonaRow[]>`
+          SELECT id, scope, tier, slug, name, title, color,
+                 system_prompt_tpl, speak_profile, enabled
+          FROM   agent_personas
+          WHERE  id = ${personaId}
+        `
+      })
+      if (rows.length === 0) throw new NotFoundException({ code: 'persona_not_found' })
+      return mapPersona(rows[0]!)
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err
+      this.logger.error({ event: 'admin.get_persona.failed', personaId }, String(err))
+      throw new InternalServerErrorException({ code: 'internal_error' })
+    }
+  }
+
   async listPersonas(): Promise<AdminPersona[]> {
     try {
       const rows = await this.adminRun(async (tx) => {

@@ -126,6 +126,43 @@ describe('AdminService', () => {
     vi.clearAllMocks()
   })
 
+  // ── getPersona ────────────────────────────────────────────────────────────────
+
+  describe('getPersona', () => {
+    const personaRow = {
+      id: PERSONA_ID,
+      scope: 'global',
+      tier: 'csuite',
+      slug: 'ceo',
+      name: 'CEO',
+      title: 'Chief Executive Officer',
+      color: '#1A1A2E',
+      system_prompt_tpl: 'You are the CEO.',
+      speak_profile: {},
+      enabled: true,
+    }
+
+    it('returns the mapped persona when found', async () => {
+      const svc = buildService()
+      mockAdminRun([[personaRow]])
+
+      const result = await svc.getPersona(PERSONA_ID)
+
+      expect(result.id).toBe(PERSONA_ID)
+      expect(result.slug).toBe('ceo')
+      expect(result.name).toBe('CEO')
+      expect(result.enabled).toBe(true)
+      expect(withAdminMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws NotFoundException when persona does not exist', async () => {
+      const svc = buildService()
+      mockAdminRun([[]])
+
+      await expect(svc.getPersona(PERSONA_ID)).rejects.toThrow(NotFoundException)
+    })
+  })
+
   // ── suspendUser ──────────────────────────────────────────────────────────────
 
   describe('suspendUser', () => {

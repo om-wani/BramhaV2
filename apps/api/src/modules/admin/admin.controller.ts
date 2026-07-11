@@ -109,6 +109,12 @@ export class AdminController {
     return this.admin.listPersonas()
   }
 
+  /** GET /admin/personas/:personaId — Get single persona */
+  @Get('personas/:personaId')
+  getPersona(@Param('personaId') personaId: string): Promise<AdminPersona> {
+    return this.admin.getPersona(personaId)
+  }
+
   /** PATCH /admin/personas/:personaId — Update persona system prompt / speak profile */
   @Patch('personas/:personaId')
   updatePersona(

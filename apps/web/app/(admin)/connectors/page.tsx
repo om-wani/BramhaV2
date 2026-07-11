@@ -28,6 +28,7 @@ const ConnectorSchema = z.object({
   manifest: z.record(z.string(), z.unknown()).catch({}),
 })
 const ConnectorsSchema = z.array(ConnectorSchema)
+type Connector = z.infer<typeof ConnectorSchema>
 
 const GrantSchema = z.object({
   id: z.string(),
@@ -46,10 +47,23 @@ const DeleteSchema = z.object({ success: z.boolean() })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function grantsKey(personaId: string, connectorId: string, grants: Grant[]) {
+function findGrant(personaId: string, connectorId: string, grants: Grant[]) {
   return grants.find(
     (g) => g.personaId === personaId && g.connectorId === connectorId,
   )
+}
+
+/** Extract unique tool scopes declared in a connector's manifest. */
+function getConnectorScopes(connector: Connector): string[] {
+  const tools = connector.manifest['tools']
+  if (!Array.isArray(tools)) return []
+  return [
+    ...new Set(
+      tools
+        .map((t) => (t as Record<string, unknown>)['scope'])
+        .filter((s): s is string => typeof s === 'string'),
+    ),
+  ]
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -57,6 +71,9 @@ function grantsKey(personaId: string, connectorId: string, grants: Grant[]) {
 export default function ConnectorsPage() {
   const qc = useQueryClient()
   const [projectId, setProjectId] = useState('')
+
+  // Per-cell scope selection: keyed by `${personaId}:${connectorId}`
+  const [selectedScopes, setSelectedScopes] = useState<Record<string, string[]>>({})
 
   const { data: personas } = useQuery({
     queryKey: ['admin', 'personas'],
@@ -92,6 +109,19 @@ export default function ConnectorsPage() {
 
   const isLoading = !personas || !connectors || !grants
 
+  function getScopesForCell(personaId: string, connectorId: string, grant: Grant | undefined): string[] {
+    const key = `${personaId}:${connectorId}`
+    return selectedScopes[key] ?? (grant?.allowedScopes ?? [])
+  }
+
+  function toggleScope(personaId: string, connectorId: string, scope: string, currentScopes: string[]) {
+    const key = `${personaId}:${connectorId}`
+    const next = currentScopes.includes(scope)
+      ? currentScopes.filter((s) => s !== scope)
+      : [...currentScopes, scope]
+    setSelectedScopes((prev) => ({ ...prev, [key]: next }))
+  }
+
   function toggleGrant(personaId: string, connectorId: string, hasGrant: Grant | undefined) {
     if (!projectId.trim()) {
       alert('Enter a project ID first to create/remove grants.')
@@ -100,11 +130,12 @@ export default function ConnectorsPage() {
     if (hasGrant) {
       remove.mutate(hasGrant.id)
     } else {
+      const scopesToGrant = getScopesForCell(personaId, connectorId, undefined)
       upsert.mutate({
         projectId: projectId.trim(),
         personaId,
         connectorId,
-        allowedScopes: ['read'],
+        allowedScopes: scopesToGrant,
         requiresApproval: false,
       })
     }
@@ -115,8 +146,18 @@ export default function ConnectorsPage() {
       projectId: grant.projectId,
       personaId: grant.personaId,
       connectorId: grant.connectorId,
-      allowedScopes: grant.allowedScopes,
+      allowedScopes: getScopesForCell(grant.personaId, grant.connectorId, grant),
       requiresApproval: !grant.requiresApproval,
+    })
+  }
+
+  function saveScopes(grant: Grant, checkedScopes: string[]) {
+    upsert.mutate({
+      projectId: grant.projectId,
+      personaId: grant.personaId,
+      connectorId: grant.connectorId,
+      allowedScopes: checkedScopes,
+      requiresApproval: grant.requiresApproval,
     })
   }
 
@@ -182,7 +223,14 @@ export default function ConnectorsPage() {
                             <div className="text-xs text-muted-foreground">{persona.slug}</div>
                           </td>
                           {connectors.map((connector) => {
-                            const grant = grantsKey(persona.id, connector.id, grants ?? [])
+                            const grant = findGrant(persona.id, connector.id, grants ?? [])
+                            const availableScopes = getConnectorScopes(connector)
+                            const checkedScopes = getScopesForCell(persona.id, connector.id, grant)
+                            const scopesChanged =
+                              grant !== undefined &&
+                              JSON.stringify([...checkedScopes].sort()) !==
+                                JSON.stringify([...grant.allowedScopes].sort())
+
                             return (
                               <td key={connector.id} className="px-3 py-2 text-center">
                                 <div className="flex flex-col items-center gap-2">
@@ -194,6 +242,45 @@ export default function ConnectorsPage() {
                                     }
                                     aria-label={`Toggle ${persona.name} access to ${connector.name}`}
                                   />
+
+                                  {/* Scope checkboxes (shown when connector declares scopes) */}
+                                  {availableScopes.length > 0 && (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <div className="flex flex-wrap justify-center gap-x-2 gap-y-0.5">
+                                        {availableScopes.map((scope) => (
+                                          <label
+                                            key={scope}
+                                            className="flex items-center gap-0.5 text-xs cursor-pointer"
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              checked={checkedScopes.includes(scope)}
+                                              onChange={() =>
+                                                toggleScope(
+                                                  persona.id,
+                                                  connector.id,
+                                                  scope,
+                                                  checkedScopes,
+                                                )
+                                              }
+                                              className="rounded"
+                                            />
+                                            <span>{scope}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                      {scopesChanged && (
+                                        <button
+                                          className="text-xs text-primary underline disabled:opacity-50"
+                                          onClick={() => saveScopes(grant!, checkedScopes)}
+                                          disabled={upsert.isPending}
+                                        >
+                                          Save scopes
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+
                                   {/* Requires approval toggle */}
                                   {grant && (
                                     <div className="text-xs text-muted-foreground flex items-center gap-1">

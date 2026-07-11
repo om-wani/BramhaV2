@@ -3,6 +3,7 @@ import type { FastifyRequest } from 'fastify'
 
 export interface AuthenticatedUser {
   userId: string
+  twoFactorVerified: boolean
 }
 
 export const CurrentUser = createParamDecorator(

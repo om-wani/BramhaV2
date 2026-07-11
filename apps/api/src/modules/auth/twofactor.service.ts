@@ -216,7 +216,7 @@ export class TwoFactorService {
     // Success — clear rate limit and issue full session
     this.clearChallengeAttempts(userId)
 
-    const { accessToken, expiresIn } = await this.jwt.sign(userId)
+    const { accessToken, expiresIn } = await this.jwt.sign(userId, { twoFactorVerified: true })
     const { raw: rawRefreshToken, hash: refreshHash } = this.session.generateToken()
 
     await this.authDb.createSession({

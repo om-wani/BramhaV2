@@ -282,7 +282,12 @@ export class AuthService implements OnModuleInit {
     // Rotation: revoke old session, issue new tokens
     await this.authDb.revokeSession(existingSession.id)
 
-    const { accessToken, expiresIn } = await this.jwt.sign(existingSession.user_id)
+    // Preserve 2FA state: if the user has TOTP enabled, the session was established via
+    // the 2FA challenge (the only path that creates a session when TOTP is set up).
+    const refreshUser = await this.authDb.findUserById(existingSession.user_id)
+    const twoFactorVerified = refreshUser?.totp_secret_enc !== null && refreshUser?.totp_secret_enc !== undefined
+
+    const { accessToken, expiresIn } = await this.jwt.sign(existingSession.user_id, { twoFactorVerified })
     const { raw: newRawToken, hash: newHash } = this.session.generateToken()
 
     await this.authDb.createSession({
