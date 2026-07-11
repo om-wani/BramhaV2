@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Required for Docker image: bundles server + minimal node_modules
+  output: 'standalone',
   experimental: {
     serverActions: {
       allowedOrigins: ['localhost:3001'],

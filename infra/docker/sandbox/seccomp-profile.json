@@ -1,0 +1,29 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_AARCH64"],
+  "syscalls": [
+    {
+      "names": [
+        "read", "write", "close", "fstat", "lseek", "mmap", "mprotect",
+        "munmap", "brk", "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "ioctl", "access", "pipe", "select", "sched_yield", "mremap",
+        "msync", "mincore", "madvise", "dup", "dup2", "nanosleep", "getpid",
+        "sendfile", "fcntl", "flock", "fsync", "fdatasync", "truncate",
+        "ftruncate", "getdents", "getcwd", "chdir", "rename", "mkdir",
+        "rmdir", "creat", "link", "unlink", "symlink", "readlink", "chmod",
+        "fchmod", "chown", "fchown", "umask", "gettimeofday", "getrlimit",
+        "getrusage", "sysinfo", "times", "getuid", "getgid", "geteuid",
+        "getegid", "getgroups", "setresuid", "setresgid", "getresuid",
+        "getresgid", "getpgrp", "getppid", "getpgid", "getsid", "uname",
+        "statfs", "fstatfs", "stat", "lstat", "poll", "openat", "newfstatat",
+        "readv", "writev", "pread64", "pwrite64", "wait4", "exit", "exit_group",
+        "futex", "set_tid_address", "restart_syscall", "clock_gettime",
+        "clock_getres", "clock_nanosleep", "tgkill", "open", "arch_prctl",
+        "set_robust_list", "get_robust_list", "epoll_create", "epoll_ctl",
+        "epoll_wait", "epoll_create1", "eventfd2", "pipe2", "inotify_init1",
+        "inotify_add_watch", "getrandom", "execve", "execveat"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}

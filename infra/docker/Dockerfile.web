@@ -1,0 +1,58 @@
+# Dockerfile.web — Next.js 15 frontend
+# Multi-stage: build stage runs `next build` with standalone output,
+# runtime stage copies only the standalone bundle (no source, no dev deps).
+#
+# Requires next.config.mjs to have: output: 'standalone'
+
+# ── Build stage ───────────────────────────────────────────────────────────────
+
+FROM node:22-alpine AS build
+
+WORKDIR /build
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy workspace manifests for dependency resolution
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/web/package.json ./apps/web/
+
+# Install all deps for web app
+RUN pnpm install --filter @bramha/web --frozen-lockfile
+
+# Copy source
+COPY apps/web ./apps/web
+
+# Build — produces .next/standalone
+RUN pnpm --filter @bramha/web build
+
+# ── Runtime stage ─────────────────────────────────────────────────────────────
+
+FROM node:22-alpine AS runtime
+
+# dumb-init as PID 1 — proper signal handling
+RUN apk add --no-cache dumb-init
+
+# Non-root user
+RUN addgroup -S web && adduser -S web -G web
+
+WORKDIR /app
+
+# Next.js standalone output already bundles server + node_modules subset
+COPY --from=build /build/apps/web/.next/standalone ./
+# Static assets must be copied alongside standalone server
+COPY --from=build /build/apps/web/.next/static ./.next/static
+COPY --from=build /build/apps/web/public ./public
+
+EXPOSE 3001
+
+ENV PORT=3001
+ENV HOSTNAME="0.0.0.0"
+
+USER web
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD wget -qO- http://localhost:3001/api/health || exit 1
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]
