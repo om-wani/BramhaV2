@@ -179,3 +179,9 @@ variable "enable_autoscaling" {
   type        = bool
   default     = true
 }
+
+variable "ingestion_queue_arn" {
+  description = "SQS ingestion queue ARN for queue-depth autoscaling (optional — CPU-only scaling used if empty)"
+  type        = string
+  default     = ""
+}

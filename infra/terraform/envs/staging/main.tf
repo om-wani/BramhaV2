@@ -117,6 +117,8 @@ module "ecs_services" {
   agent_runtime_desired_count   = 1
   ingestion_worker_desired_count = 1
   sandbox_host_desired_count    = 1
+
+  enable_autoscaling = false  # cost control in staging
 }
 
 ###############################################################################

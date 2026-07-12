@@ -1198,3 +1198,72 @@ resource "aws_appautoscaling_policy" "ecs_cpu_ingestion_worker" {
     scale_out_cooldown = 60
   }
 }
+
+# Queue-depth scaling for ingestion-worker (spec: "queue-depth for workers")
+resource "aws_appautoscaling_policy" "ecs_queue_ingestion_worker" {
+  count = var.enable_autoscaling && var.ingestion_queue_arn != "" ? 1 : 0
+
+  name               = "${local.name_prefix}-ingestion-worker-queue-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_ingestion_worker[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_ingestion_worker[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_ingestion_worker[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    customized_metric_specification {
+      metric_name = "ApproximateNumberOfMessagesVisible"
+      namespace   = "AWS/SQS"
+      statistic   = "Average"
+      dimensions {
+        name  = "QueueUrl"
+        value = var.ingestion_queue_arn
+      }
+    }
+    target_value       = 10.0  # scale out when > 10 messages per running task
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 30
+    disable_scale_in   = false
+  }
+}
+
+# ALB request-count-per-target scaling for api (spec: "CPU/RPS for api/web")
+resource "aws_appautoscaling_policy" "ecs_rps_api" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-api-rps-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_api[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_api[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_api[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.api.arn_suffix}"
+    }
+    target_value       = 1000.0  # requests per minute per task
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# ALB request-count-per-target scaling for web (spec: "CPU/RPS for api/web")
+resource "aws_appautoscaling_policy" "ecs_rps_web" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-web-rps-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_web[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_web[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_web[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.web.arn_suffix}"
+    }
+    target_value       = 2000.0  # requests per minute per task
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
