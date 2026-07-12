@@ -12,11 +12,19 @@ WORKDIR /build
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace files needed for mcp-connectors
-# We copy package manifests first to leverage Docker layer caching
+# pnpm v9 requires ALL workspace package.json files present to resolve the lockfile,
+# even when using --filter. Copy all manifests first for layer caching.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/mcp-connectors/package.json ./packages/mcp-connectors/
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/agents/package.json ./packages/agents/
+COPY packages/db/package.json ./packages/db/
+COPY packages/event-bus/package.json ./packages/event-bus/
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY apps/agent-runtime/package.json ./apps/agent-runtime/
+COPY apps/ingestion-worker/package.json ./apps/ingestion-worker/
+COPY infra/sandbox/package.json ./infra/sandbox/
 
 # Install only mcp-connectors dependencies (including dev deps for TypeScript)
 RUN pnpm install --filter @bramha/mcp-connectors --filter @bramha/shared --frozen-lockfile
