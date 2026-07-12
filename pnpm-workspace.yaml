@@ -2,6 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
   - "infra/sandbox"
+# Single ioredis in tree — bullmq pins an older one, causing Redis-type
+# incompatibility (Redis !assignable to ConnectionOptions) under strict TS.
+overrides:
+  ioredis: ^5.11.1
 allowBuilds:
   '@scarf/scarf': false
   esbuild: true

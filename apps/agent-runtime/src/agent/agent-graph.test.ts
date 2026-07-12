@@ -250,7 +250,7 @@ describe('AgentGraph', () => {
       })
 
       // Second chatModel call's messages should include untrusted_context from tool result
-      const secondCallMessages = vi.mocked(deps.chatModel).mock.calls[1]![1]
+      const secondCallMessages = vi.mocked(deps.chatModel!).mock.calls[1]![1]
       const lastMsg = secondCallMessages[secondCallMessages.length - 1]
       expect(lastMsg!.role).toBe('user')
       expect(lastMsg!.content).toContain('<untrusted_context>')
@@ -336,7 +336,7 @@ describe('AgentGraph', () => {
       await graph.run(baseJobData)
 
       const summonCall = publishSpy.mock.calls.find(
-        ([channel]: [string]) => channel.startsWith('agent.summoned:'),
+        (call: unknown[]) => String(call[0]).startsWith('agent.summoned:'),
       )
       expect(summonCall).toBeDefined()
       expect(summonCall![0]).toBe(`agent.summoned:${PROJECT_ID}`)
@@ -413,7 +413,7 @@ describe('AgentGraph', () => {
               async return(): Promise<IteratorResult<StreamEvent>> {
                 return { done: true, value: undefined as unknown as StreamEvent }
               },
-            }) as AsyncGenerator<StreamEvent>,
+            }) as unknown as AsyncGenerator<StreamEvent>,
         ),
       })
 
@@ -512,7 +512,7 @@ describe('AgentGraph', () => {
       await graph.run(baseJobData)
 
       const nodeAppendedCall = publishSpy.mock.calls.find(
-        ([channel]: [string]) => channel === `conv.node.appended:${PROJECT_ID}`,
+        (call: unknown[]) => call[0] === `conv.node.appended:${PROJECT_ID}`,
       )
       expect(nodeAppendedCall).toBeDefined()
 
@@ -541,7 +541,7 @@ describe('AgentGraph', () => {
       await graph.run(baseJobData)
 
       const turnCompleteCall = publishSpy.mock.calls.find(
-        ([channel]: [string]) => channel.startsWith('agent.turn.complete:'),
+        (call: unknown[]) => String(call[0]).startsWith('agent.turn.complete:'),
       )
       expect(turnCompleteCall).toBeDefined()
       expect(turnCompleteCall![0]).toBe(`agent.turn.complete:${PROJECT_ID}`)

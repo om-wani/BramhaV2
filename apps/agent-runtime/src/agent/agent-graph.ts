@@ -34,7 +34,7 @@ import type { WorkingMemory } from '../pa/working-memory.js'
 import { ModelRouter } from '@bramha/agents'
 import type { CoreMessage, ToolDefinition, StreamEvent } from '@bramha/agents'
 import type { ModelPolicy } from '@bramha/agents'
-import type { AgentPersona } from '@bramha/shared'
+import type { AgentPersona, RoomType } from '@bramha/shared'
 import type { AgentTurnJobData } from '../orchestrator/turn-engine.js'
 import { Channels } from '@bramha/event-bus'
 import { checkInterrupt, InterruptedError } from '../orchestrator/interrupts.js'
@@ -169,7 +169,7 @@ export interface AgentGraphDeps {
     projectBrief: string
     roomId: string
     /** Type of the current room (conference | meeting | call | office | system) */
-    roomType: string
+    roomType: RoomType
     /** Whether the current room is flagged as confidential */
     roomIsConfidential: boolean
     workingMemory: WorkingMemory

@@ -10,7 +10,7 @@ import type { ToolDefinition } from '@bramha/agents'
 export const DelegateTaskInputSchema = z.object({
   workerType: z.string(),
   taskDescription: z.string(),
-  inputs: z.record(z.unknown()).default({}),
+  inputs: z.record(z.string(), z.unknown()).default({}),
 })
 
 export type DelegateTaskInput = z.infer<typeof DelegateTaskInputSchema>

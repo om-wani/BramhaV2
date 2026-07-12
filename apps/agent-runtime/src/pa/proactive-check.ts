@@ -67,12 +67,14 @@ export function proactiveRateLimitKey(personaId: string, roomId: string): string
  * Uses SET NX EX to avoid TOCTOU race between concurrent scheduler instances.
  */
 export async function claimProactiveTurn(
-  redis: { set: (k: string, v: string | number, ...args: unknown[]) => Promise<string | null> },
+  redis: {
+    set: (k: string, v: number, ex: 'EX', ttl: number, nx: 'NX') => Promise<string | null>
+  },
   personaId: string,
   roomId: string,
 ): Promise<boolean> {
   const key = proactiveRateLimitKey(personaId, roomId)
-  // SET key 1 NX EX 3600 — returns 'OK' if claimed, null if already set
-  const result = await redis.set(key, 1, 'NX', 'EX', 3600)
+  // SET key 1 EX 3600 NX — returns 'OK' if claimed, null if already set
+  const result = await redis.set(key, 1, 'EX', 3600, 'NX')
   return result !== null
 }

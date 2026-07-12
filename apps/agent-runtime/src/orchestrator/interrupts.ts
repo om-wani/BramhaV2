@@ -51,19 +51,14 @@ export const InterruptEventSchema = z.object({
 
 export type InterruptReason = 'stop' | 'redirect' | 'summon'
 
-export interface InterruptEvent {
-  reason: InterruptReason
-  conversationId: string
-  projectId: string
-  raisedBy: { kind: 'user' | 'agent'; id: string }
-  /**
-   * For stop: undefined = stop ALL agents on this conversation.
-   * For summon: the personaId to call in.
-   */
-  personaId?: string
-  /** For redirect: the branchId to archive. */
-  branchId?: string
-}
+/**
+ * Derived from InterruptEventSchema so parsed payloads are assignable as-is
+ * under exactOptionalPropertyTypes.
+ * personaId — for stop: undefined = stop ALL agents on this conversation;
+ *             for summon: the personaId to call in.
+ * branchId  — for redirect: the branchId to archive.
+ */
+export type InterruptEvent = z.infer<typeof InterruptEventSchema>
 
 export interface InterruptDeps {
   redis: Redis

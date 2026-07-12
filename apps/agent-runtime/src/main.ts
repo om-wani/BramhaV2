@@ -14,7 +14,7 @@
  * that must match the RLS-filtered project_id column.
  */
 
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 import { Worker, Queue } from 'bullmq'
 import { EventSubscriber, EventPublisher } from '@bramha/event-bus'
 import type { ConvNodeAppendedPayload } from '@bramha/event-bus'

@@ -107,7 +107,7 @@ describe('claimProactiveTurn', () => {
     expect(result).toBe(true)
     expect(redis.set).toHaveBeenCalledWith(
       expect.stringContaining('persona-1'),
-      1, 'NX', 'EX', 3600,
+      1, 'EX', 3600, 'NX',
     )
   })
 
@@ -122,7 +122,7 @@ describe('claimProactiveTurn', () => {
     await claimProactiveTurn(redis, PERSONA_ID, ROOM_ID)
     expect(redis.set).toHaveBeenCalledWith(
       `proactive:rate:${PERSONA_ID}:${ROOM_ID}`,
-      1, 'NX', 'EX', 3600,
+      1, 'EX', 3600, 'NX',
     )
   })
 })

@@ -119,8 +119,9 @@ export async function syncSqlDatabase(
       try {
         const sampleRows = await client.begin('READ ONLY', async (tx) => {
           await tx`SET LOCAL statement_timeout = '5s'`
-          // Use unsafe for dynamic table name — safe because table_name comes from information_schema
-          return tx.unsafe(`SELECT * FROM "${table_name}" LIMIT 5`)
+          // Dynamic table name: double-quote-escape the identifier. The source DB is
+          // user-supplied (untrusted) — a hostile table name must not escape the quoting.
+          return tx.unsafe(`SELECT * FROM "${table_name.replaceAll('"', '""')}" LIMIT 5`)
         })
 
         if (sampleRows.length > 0) {

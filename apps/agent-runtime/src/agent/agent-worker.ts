@@ -22,13 +22,16 @@ import type { AgentGraphDeps, InsertNodeData, PersistedNodeData } from './agent-
 import type { WorkingMemory } from '../pa/working-memory.js'
 import type { ThreadNode, RagChunk } from '../pa/context-bundle.js'
 import type { ModelPolicy } from '@bramha/agents'
-import type { AgentPersona } from '@bramha/shared'
+import type { AgentPersona, RoomType } from '@bramha/shared'
 import { EventPublisher } from '@bramha/event-bus'
 
 // ── Production dep implementations ────────────────────────────────────────────
 
-const SYSTEM_USER_ID = process.env['SYSTEM_USER_ID']
-if (!SYSTEM_USER_ID) throw new Error('SYSTEM_USER_ID environment variable is required')
+const SYSTEM_USER_ID: string = (() => {
+  const v = process.env['SYSTEM_USER_ID']
+  if (!v) throw new Error('SYSTEM_USER_ID environment variable is required')
+  return v
+})()
 
 /**
  * Build the production AgentGraphDeps, wiring DB/Redis/queue I/O.
@@ -103,8 +106,13 @@ export function buildProductionDeps(
           LIMIT 1
         `
 
-        const [convRow] = await tx<Array<{ room_id: string }>>`
-          SELECT room_id FROM conversations WHERE id = ${conversationId} AND project_id = ${projectId}
+        const [convRow] = await tx<
+          Array<{ room_id: string; room_type: RoomType; is_confidential: boolean }>
+        >`
+          SELECT c.room_id, r.type AS room_type, r.is_confidential
+          FROM conversations c
+          JOIN rooms r ON r.id = c.room_id
+          WHERE c.id = ${conversationId} AND c.project_id = ${projectId}
           LIMIT 1
         `
 
@@ -229,10 +237,43 @@ export function buildProductionDeps(
           modelPolicy,
           projectBrief: projectRow?.brief ?? '',
           roomId: convRow?.room_id ?? '',
+          roomType: convRow?.room_type ?? 'system',
+          roomIsConfidential: convRow?.is_confidential ?? false,
           workingMemory,
           threadNodes,
           triggerText,
         }
+      }, { userId: SYSTEM_USER_ID, projectId })
+    },
+
+    async loadProjectFacts(personaId, projectId, excludeConversationId) {
+      return withTenant(async (tx) => {
+        const rows = await tx<
+          Array<{
+            facts: WorkingMemory['facts']
+            conversation_id: string
+            room_id: string
+            room_type: RoomType
+            is_confidential: boolean
+          }>
+        >`
+          SELECT m.facts, m.conversation_id, c.room_id, r.type AS room_type, r.is_confidential
+          FROM agent_working_memory m
+          JOIN conversations c ON c.id = m.conversation_id
+          JOIN rooms r ON r.id = c.room_id
+          WHERE m.persona_id = ${personaId}
+            AND m.project_id = ${projectId}
+            AND m.conversation_id <> ${excludeConversationId}
+        `
+        return rows.flatMap((row) =>
+          row.facts.map((f) => ({
+            ...f,
+            sourceConversationId: row.conversation_id,
+            sourceRoomId: row.room_id,
+            sourceRoomType: row.room_type,
+            sourceRoomConfidential: row.is_confidential,
+          })),
+        )
       }, { userId: SYSTEM_USER_ID, projectId })
     },
 

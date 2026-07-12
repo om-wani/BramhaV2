@@ -201,9 +201,9 @@ describe('ProactiveScheduler.checkProject', () => {
     expect((deps.redis.set as Mock)).toHaveBeenCalledWith(
       `proactive:rate:${PERSONA_ID}:${ROOM_ID}`,
       1,
-      'NX',
       'EX',
       3600,
+      'NX',
     )
   })
 
