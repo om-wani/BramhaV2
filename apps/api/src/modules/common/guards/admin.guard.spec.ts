@@ -1,8 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { ForbiddenException } from '@nestjs/common'
 import type { ExecutionContext } from '@nestjs/common'
-import { AdminGuard } from './admin.guard'
-import type { RlsDbService } from '../db/rls-db.service'
+import { AdminGuard } from './admin.guard.js'
+import type { RlsDbService } from '../db/rls-db.service.js'
 import type postgres from 'postgres'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

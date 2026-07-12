@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { randomBytes, createHash, timingSafeEqual } from 'crypto'
-import { RlsDbService } from '../../common/db/rls-db.service'
-import { AuthDbService } from '../../auth/auth-db.service'
+import { RlsDbService } from '../../common/db/rls-db.service.js'
+import { AuthDbService } from '../../auth/auth-db.service.js'
 import type { CreateApiKeyInput } from '@bramha/shared'
 
 const PREFIX = 'bmv2'

@@ -10,10 +10,10 @@ import {
 } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { SearchKnowledgeInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { ProjectViewerGuard } from '../common/guards/project-member.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { KnowledgeService } from './knowledge.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { ProjectViewerGuard } from '../common/guards/project-member.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { KnowledgeService } from './knowledge.service.js'
 import type { KnowledgeSearchResult } from '@bramha/shared'
 
 class SearchKnowledgeDto extends createZodDto(SearchKnowledgeInputSchema) {}

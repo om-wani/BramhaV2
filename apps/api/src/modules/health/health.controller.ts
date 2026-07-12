@@ -5,7 +5,7 @@ import {
   HealthIndicatorResult,
 } from '@nestjs/terminus'
 import postgres from 'postgres'
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 
 @Controller('health')
 export class HealthController {

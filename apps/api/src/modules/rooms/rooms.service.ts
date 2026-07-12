@@ -6,8 +6,8 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { EventRelayService } from '../realtime/event-relay.service'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { EventRelayService } from '../realtime/event-relay.service.js'
 import type { CreateRoomInput, UpdateRoomInput, AddParticipantInput } from '@bramha/shared'
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────

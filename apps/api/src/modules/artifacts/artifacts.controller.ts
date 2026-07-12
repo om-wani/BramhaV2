@@ -12,15 +12,15 @@ import {
 } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { CreateArtifactInputSchema, CreateVersionInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
 import {
   ArtifactsService,
   type ArtifactDto,
   type ArtifactVersionDto,
   type CreateArtifactResult,
-} from './artifacts.service'
+} from './artifacts.service.js'
 
 class CreateArtifactDto extends createZodDto(CreateArtifactInputSchema) {}
 class CreateVersionDto extends createZodDto(CreateVersionInputSchema) {}

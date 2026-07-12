@@ -11,13 +11,13 @@ import {
 } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { HirePersonaInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
 import {
   ProjectViewerGuard,
   ProjectEditorGuard,
-} from '../common/guards/project-member.guard'
-import { RoomsService, type HiredPersonaDto, type RoomDto, type TokenUsageDto } from './rooms.service'
+} from '../common/guards/project-member.guard.js'
+import { RoomsService, type HiredPersonaDto, type RoomDto, type TokenUsageDto } from './rooms.service.js'
 
 class HirePersonaDto extends createZodDto(HirePersonaInputSchema) {}
 

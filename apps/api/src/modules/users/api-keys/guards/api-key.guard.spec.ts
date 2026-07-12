@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { UnauthorizedException } from '@nestjs/common'
-import { ApiKeyGuard } from './api-key.guard'
-import type { ApiKeysService } from '../api-keys.service'
+import { ApiKeyGuard } from './api-key.guard.js'
+import type { ApiKeysService } from '../api-keys.service.js'
 import type { ExecutionContext } from '@nestjs/common'
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000'

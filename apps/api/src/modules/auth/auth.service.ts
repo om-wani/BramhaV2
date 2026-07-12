@@ -6,10 +6,10 @@ import {
   OnModuleInit,
   Logger,
 } from '@nestjs/common'
-import { AuthDbService } from './auth-db.service'
-import { JwtService } from './jwt.service'
-import { PasswordService } from './password.service'
-import { SessionService } from './session.service'
+import { AuthDbService } from './auth-db.service.js'
+import { JwtService } from './jwt.service.js'
+import { PasswordService } from './password.service.js'
+import { SessionService } from './session.service.js'
 import { ErrorCodes } from '@bramha/shared'
 import type { RegisterInput, LoginInput } from '@bramha/shared'
 

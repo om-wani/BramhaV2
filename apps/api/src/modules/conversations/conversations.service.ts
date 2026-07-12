@@ -7,9 +7,9 @@ import {
   ConflictException,
   Inject,
 } from '@nestjs/common'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
-import type Redis from 'ioredis'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
 import type {
   CreateConversationInput,

@@ -13,10 +13,10 @@ import {
 import { ConfigService } from '@nestjs/config'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import type { IncomingMessage } from 'http'
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 import { EventSubscriber } from '@bramha/event-bus'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { RlsDbService } from '../common/db/rls-db.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { RlsDbService } from '../common/db/rls-db.service.js'
 
 @Controller('events')
 export class SseController {

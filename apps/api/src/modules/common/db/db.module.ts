@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common'
-import { RlsDbService } from './rls-db.service'
+import { RlsDbService } from './rls-db.service.js'
 
 @Global()
 @Module({

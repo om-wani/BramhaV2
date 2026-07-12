@@ -1,10 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException, Logger, Inject, OnModuleDestroy } from '@nestjs/common'
 import { z } from 'zod'
 import { Queue } from 'bullmq'
-import type Redis from 'ioredis'
+import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 import type { Note, CreateNoteInput, UpdateNoteInput } from '@bramha/shared'
 
 // Content sanitization — reject if contentMd contains script injection

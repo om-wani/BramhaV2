@@ -17,12 +17,12 @@ import {
   ForkInputSchema,
   UpdateBranchInputSchema,
 } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
 import {
   ProjectViewerGuard,
   ProjectEditorGuard,
-} from '../common/guards/project-member.guard'
+} from '../common/guards/project-member.guard.js'
 import {
   ConversationsService,
   type ConversationDto,
@@ -30,7 +30,7 @@ import {
   type BranchDto,
   type GraphDto,
   type SliceDto,
-} from './conversations.service'
+} from './conversations.service.js'
 
 class CreateConversationDto extends createZodDto(CreateConversationInputSchema) {}
 class AppendNodeDto extends createZodDto(AppendNodeInputSchema) {}

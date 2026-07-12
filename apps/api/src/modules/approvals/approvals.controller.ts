@@ -19,15 +19,15 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { ProjectViewerGuard } from '../common/guards/project-member.guard'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { ProjectViewerGuard } from '../common/guards/project-member.guard.js'
 import {
   ApprovalsService,
   type ApprovalDto,
   type CreateApprovalInput,
   type DecideApprovalInput,
-} from './approvals.service'
+} from './approvals.service.js'
 
 @Controller('projects/:projectId/approvals')
 @UseGuards(JwtAuthGuard, ProjectViewerGuard)

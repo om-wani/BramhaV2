@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { BadRequestException } from '@nestjs/common'
-import { PasswordService } from './password.service'
+import { PasswordService } from './password.service.js'
 
 describe('PasswordService', () => {
   const svc = new PasswordService()

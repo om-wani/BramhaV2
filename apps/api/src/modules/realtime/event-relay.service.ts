@@ -6,10 +6,10 @@ import {
   Inject,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 import type { Server } from 'socket.io'
 import { EventSubscriber } from '@bramha/event-bus'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 
 /**
  * Subscribes to all `conv.*` Redis pub/sub channels and relays events to

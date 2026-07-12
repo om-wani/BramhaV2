@@ -11,10 +11,10 @@ import {
 } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { CreateSourceInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { SourcesService } from './sources.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { SourcesService } from './sources.service.js'
 
 class CreateSourceDto extends createZodDto(CreateSourceInputSchema) {}
 

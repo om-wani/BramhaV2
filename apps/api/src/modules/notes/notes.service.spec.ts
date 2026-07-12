@@ -18,8 +18,8 @@ vi.mock('bullmq', () => {
 // ── Actual imports ────────────────────────────────────────────────────────────
 
 import { BadRequestException, NotFoundException } from '@nestjs/common'
-import { NotesService } from './notes.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
+import { NotesService } from './notes.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
 import { Queue } from 'bullmq'
 import type postgres from 'postgres'
 

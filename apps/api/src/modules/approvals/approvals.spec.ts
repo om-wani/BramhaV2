@@ -7,8 +7,8 @@ vi.mock('@bramha/db', () => ({ withTenant: vi.fn() }))
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import { BadRequestException } from '@nestjs/common'
-import { ApprovalsService } from './approvals.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
+import { ApprovalsService } from './approvals.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
 import type postgres from 'postgres'
 
 // ── Constants ─────────────────────────────────────────────────────────────────

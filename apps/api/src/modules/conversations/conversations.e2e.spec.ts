@@ -17,7 +17,7 @@ describe.skipIf(!hasEnv)('ConversationsService — concurrent append auto-fork',
   let withTenantFn: ((fn: (tx: any) => Promise<any>, ctx: { userId: string; projectId?: string }) => Promise<any>) | null = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let redis: any
-  let service: import('./conversations.service').ConversationsService
+  let service: import('./conversations.service.js').ConversationsService
 
   let projectId: string
   let roomId: string
@@ -25,7 +25,7 @@ describe.skipIf(!hasEnv)('ConversationsService — concurrent append auto-fork',
 
   beforeAll(async () => {
     const { withTenant } = await import('@bramha/db')
-    const Redis = (await import('ioredis')).default
+    const { Redis } = await import('ioredis')
     withTenantFn = withTenant as typeof withTenantFn
 
     redis = new Redis(process.env['TEST_REDIS_URL']!)
@@ -37,7 +37,7 @@ describe.skipIf(!hasEnv)('ConversationsService — concurrent append auto-fork',
         withTenant(fn, ctx),
     }
 
-    const { ConversationsService } = await import('./conversations.service')
+    const { ConversationsService } = await import('./conversations.service.js')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     service = new ConversationsService(RlsDbServiceStub as any, redis)
 

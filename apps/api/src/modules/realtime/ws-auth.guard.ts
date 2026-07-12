@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import type { Socket } from 'socket.io'
-import { JwtService } from '../auth/jwt.service'
+import { JwtService } from '../auth/jwt.service.js'
 
 export const WS_SOCKET_CAP = 5
 

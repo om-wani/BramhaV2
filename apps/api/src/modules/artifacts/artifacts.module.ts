@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common'
-import { AuthModule } from '../auth/auth.module'
-import { S3Module } from '../common/s3/s3.module'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
-import { ArtifactsService } from './artifacts.service'
-import { ArtifactsController } from './artifacts.controller'
+import { AuthModule } from '../auth/auth.module.js'
+import { S3Module } from '../common/s3/s3.module.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
+import { ArtifactsService } from './artifacts.service.js'
+import { ArtifactsController } from './artifacts.controller.js'
 
 @Module({
   imports: [AuthModule, S3Module],

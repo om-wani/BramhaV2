@@ -17,11 +17,11 @@ import {
   AddProjectMemberInputSchema,
   UpdateProjectMemberRoleInputSchema,
 } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { OrgMemberGuard } from '../common/guards/org-role.guard'
-import { ProjectViewerGuard, ProjectOwnerGuard } from '../common/guards/project-member.guard'
-import { ProjectsService, type ProjectDto, type ProjectMemberDto } from './projects.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { OrgMemberGuard } from '../common/guards/org-role.guard.js'
+import { ProjectViewerGuard, ProjectOwnerGuard } from '../common/guards/project-member.guard.js'
+import { ProjectsService, type ProjectDto, type ProjectMemberDto } from './projects.service.js'
 
 class CreateProjectDto extends createZodDto(CreateProjectInputSchema) {}
 class UpdateProjectDto extends createZodDto(UpdateProjectInputSchema) {}

@@ -4,7 +4,7 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common'
-import { ApiKeysService } from '../api-keys.service'
+import { ApiKeysService } from '../api-keys.service.js'
 import { ErrorCodes } from '@bramha/shared'
 
 @Injectable()

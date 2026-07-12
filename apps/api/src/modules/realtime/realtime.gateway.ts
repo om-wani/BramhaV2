@@ -16,12 +16,12 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import type { Server, Socket } from 'socket.io'
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 import { createAdapter } from '@socket.io/redis-adapter'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { WsAuthGuard, WS_SOCKET_CAP } from './ws-auth.guard'
-import { EventRelayService } from './event-relay.service'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { WsAuthGuard, WS_SOCKET_CAP } from './ws-auth.guard.js'
+import { EventRelayService } from './event-relay.service.js'
 
 const USER_SOCKETS_KEY = (userId: string): string => `ws:user:${userId}:sockets`
 

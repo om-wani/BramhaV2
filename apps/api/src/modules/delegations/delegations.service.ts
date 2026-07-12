@@ -11,10 +11,10 @@ import {
   BadRequestException,
   Inject,
 } from '@nestjs/common'
-import { RlsDbService } from '../common/db/rls-db.service'
+import { RlsDbService } from '../common/db/rls-db.service.js'
 import { EventPublisher } from '@bramha/event-bus'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
-import type Redis from 'ioredis'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import type { Redis } from 'ioredis'
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 

@@ -9,11 +9,11 @@
  * 5. WsAuthGuard: missing token → auth_expired + disconnect
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { RealtimeGateway } from './realtime.gateway'
-import { WsAuthGuard } from './ws-auth.guard'
-import type { EventRelayService } from './event-relay.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
-import type { JwtService } from '../auth/jwt.service'
+import { RealtimeGateway } from './realtime.gateway.js'
+import { WsAuthGuard } from './ws-auth.guard.js'
+import type { EventRelayService } from './event-relay.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
+import type { JwtService } from '../auth/jwt.service.js'
 import type { ConfigService } from '@nestjs/config'
 import { UnauthorizedException } from '@nestjs/common'
 
@@ -269,7 +269,7 @@ describe('RealtimeGateway', () => {
 
 describe('EventRelayService relay logic', () => {
   it('emits the event to the correct Socket.IO room', async () => {
-    const { EventRelayService } = await import('./event-relay.service')
+    const { EventRelayService } = await import('./event-relay.service.js')
 
     const mockServer = {
       to: vi.fn().mockReturnThis(),
@@ -313,7 +313,7 @@ describe('EventRelayService relay logic', () => {
   })
 
   it('does nothing when server is not yet set', async () => {
-    const { EventRelayService } = await import('./event-relay.service')
+    const { EventRelayService } = await import('./event-relay.service.js')
 
     const mockRedis = { on: vi.fn() }
     const mockConfig = { get: vi.fn().mockReturnValue('redis://localhost:6379') }

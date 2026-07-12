@@ -7,7 +7,7 @@ import {
   mixin,
 } from '@nestjs/common'
 import type { FastifyRequest } from 'fastify'
-import { RlsDbService } from '../db/rls-db.service'
+import { RlsDbService } from '../db/rls-db.service.js'
 import type { ProjectRole } from '@bramha/shared'
 
 const PROJECT_ROLE_ORDER: ProjectRole[] = ['viewer', 'editor', 'owner']

@@ -80,7 +80,7 @@ describe('SourcesService', () => {
   beforeEach(() => {
     dbRun = vi.fn()
 
-    const db = { run: dbRun } as unknown as InstanceType<typeof import('../common/db/rls-db.service').RlsDbService>
+    const db = { run: dbRun } as unknown as InstanceType<typeof import('../common/db/rls-db.service.js').RlsDbService>
     const config = {
       get: vi.fn((key: string) => {
         if (key === 'CREDENTIAL_ENCRYPTION_KEY') return ENCRYPTION_KEY

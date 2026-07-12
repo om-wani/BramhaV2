@@ -8,10 +8,10 @@ import helmet from '@fastify/helmet'
 import cors from '@fastify/cors'
 import { cleanupOpenApiDoc } from 'nestjs-zod'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
-import { AppModule } from './app.module'
+import { AppModule } from './app.module.js'
 import { ZodValidationPipe } from 'nestjs-zod'
-import { ProblemJsonFilter } from './common/filters/problem-json.filter'
-import { createLogger } from './common/logger'
+import { ProblemJsonFilter } from './common/filters/problem-json.filter.js'
+import { createLogger } from './common/logger.js'
 import { Logger } from 'nestjs-pino'
 
 async function bootstrap() {

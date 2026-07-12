@@ -11,16 +11,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { AuthService } from './auth.service'
-import { SessionService } from './session.service'
-import { JwtAuthGuard } from './guards/jwt-auth.guard'
-import { AnyAuthGuard } from './guards/any-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.decorator'
-import { RegisterDto } from './dto/register.dto'
-import { LoginDto } from './dto/login.dto'
-import { VerifyEmailDto } from './dto/verify-email.dto'
-import { ForgotPasswordDto } from './dto/forgot-password.dto'
-import { ResetPasswordDto } from './dto/reset-password.dto'
+import { AuthService } from './auth.service.js'
+import { SessionService } from './session.service.js'
+import { JwtAuthGuard } from './guards/jwt-auth.guard.js'
+import { AnyAuthGuard } from './guards/any-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.decorator.js'
+import { RegisterDto } from './dto/register.dto.js'
+import { LoginDto } from './dto/login.dto.js'
+import { VerifyEmailDto } from './dto/verify-email.dto.js'
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js'
+import { ResetPasswordDto } from './dto/reset-password.dto.js'
 
 /** Parse a raw Cookie header into a key→value map. */
 function parseCookies(cookieHeader?: string | string[]): Record<string, string> {

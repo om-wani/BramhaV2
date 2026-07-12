@@ -11,13 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { JwtAuthGuard } from './guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.decorator'
-import { SessionService } from './session.service'
-import { TwoFactorService } from './twofactor.service'
-import { TotpChallengeDto } from './dto/totp-challenge.dto'
-import { TotpConfirmDto } from './dto/totp-confirm.dto'
-import { TotpDisableDto } from './dto/totp-disable.dto'
+import { JwtAuthGuard } from './guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from './decorators/current-user.decorator.js'
+import { SessionService } from './session.service.js'
+import { TwoFactorService } from './twofactor.service.js'
+import { TotpChallengeDto } from './dto/totp-challenge.dto.js'
+import { TotpConfirmDto } from './dto/totp-confirm.dto.js'
+import { TotpDisableDto } from './dto/totp-disable.dto.js'
 
 @Controller('auth/2fa')
 export class TwoFactorController {

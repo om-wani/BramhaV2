@@ -4,10 +4,10 @@ import {
 } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { CreateNoteInputSchema, UpdateNoteInputSchema, MoveFolderInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { NotesService } from './notes.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { NotesService } from './notes.service.js'
 
 class CreateNoteDto extends createZodDto(CreateNoteInputSchema) {}
 class UpdateNoteDto extends createZodDto(UpdateNoteInputSchema) {}

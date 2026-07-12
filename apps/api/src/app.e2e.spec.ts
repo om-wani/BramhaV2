@@ -4,9 +4,9 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify'
 import { Test } from '@nestjs/testing'
-import { AppModule } from './app.module'
+import { AppModule } from './app.module.js'
 import { ZodValidationPipe } from 'nestjs-zod'
-import { ProblemJsonFilter } from './common/filters/problem-json.filter'
+import { ProblemJsonFilter } from './common/filters/problem-json.filter.js'
 import helmet from '@fastify/helmet'
 import cors from '@fastify/cors'
 

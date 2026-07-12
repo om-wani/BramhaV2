@@ -31,3 +31,4 @@ export type { CachedResult } from './semantic-cache.js'
 // Persona compiler
 export { compilePersona, bustPersonaCache, getPersonaCacheSize } from './persona.js'
 export type { CompileOptions, CompiledPersona } from './persona.js'
+export type { AgentPersona } from '@bramha/shared'

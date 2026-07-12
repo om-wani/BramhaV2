@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common'
-import { RlsDbService } from '../common/db/rls-db.service'
+import { RlsDbService } from '../common/db/rls-db.service.js'
 import type { UpdateProfileInput } from '@bramha/shared'
 
 interface UserRow {

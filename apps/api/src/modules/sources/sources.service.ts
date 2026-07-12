@@ -22,10 +22,10 @@ import {
   createHash,
 } from 'node:crypto'
 import { Queue } from 'bullmq'
-import type Redis from 'ioredis'
+import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 import type { CreateSourceInput, SourceResponse, SourceHistoryEntry, SyncSourceJobData } from '@bramha/shared'
 
 // ── Encryption helpers (AES-256-GCM) ─────────────────────────────────────────

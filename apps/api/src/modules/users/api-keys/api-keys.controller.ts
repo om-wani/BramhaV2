@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req } from '@nestjs/common'
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
-import { ApiKeysService } from './api-keys.service'
-import { CreateApiKeyDto } from './dto/create-api-key.dto'
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard.js'
+import { ApiKeysService } from './api-keys.service.js'
+import { CreateApiKeyDto } from './dto/create-api-key.dto.js'
 
 @Controller('users/me/api-keys')
 @UseGuards(JwtAuthGuard)

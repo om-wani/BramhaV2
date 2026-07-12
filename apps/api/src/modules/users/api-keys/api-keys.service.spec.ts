@@ -2,9 +2,9 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 import { createHash } from 'crypto'
 import { NotFoundException } from '@nestjs/common'
-import { ApiKeysService } from './api-keys.service'
-import type { RlsDbService } from '../../common/db/rls-db.service'
-import type { AuthDbService } from '../../auth/auth-db.service'
+import { ApiKeysService } from './api-keys.service.js'
+import type { RlsDbService } from '../../common/db/rls-db.service.js'
+import type { AuthDbService } from '../../auth/auth-db.service.js'
 
 const USER_ID = '550e8400-e29b-41d4-a716-446655440000'
 const KEY_UUID = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'

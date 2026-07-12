@@ -29,8 +29,8 @@ import {
   NotFoundException,
   HttpStatus,
 } from '@nestjs/common'
-import { FilesService } from './files.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
+import { FilesService } from './files.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
 import type { ConfigService } from '@nestjs/config'
 import type { S3Client } from '@aws-sdk/client-s3'
 import { Queue } from 'bullmq'

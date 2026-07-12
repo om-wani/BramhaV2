@@ -17,10 +17,10 @@ import {
   Inject,
 } from '@nestjs/common'
 import { createEmbeddingProvider, type EmbeddingProvider } from '@bramha/agents'
-import type Redis from 'ioredis'
+import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 import type {
   KnowledgeChunkOrigin,
   KnowledgeSearchResult,

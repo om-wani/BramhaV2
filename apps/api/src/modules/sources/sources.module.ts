@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common'
-import { AuthModule } from '../auth/auth.module'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
-import { SourcesService } from './sources.service'
-import { SourcesController } from './sources.controller'
+import { AuthModule } from '../auth/auth.module.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
+import { SourcesService } from './sources.service.js'
+import { SourcesController } from './sources.controller.js'
 
 @Module({
   imports: [AuthModule],

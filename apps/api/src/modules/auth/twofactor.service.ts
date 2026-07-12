@@ -1,10 +1,10 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common'
 import { randomBytes } from 'crypto'
 import * as argon2 from 'argon2'
-import { AuthDbService } from './auth-db.service'
-import { JwtService } from './jwt.service'
-import { SessionService } from './session.service'
-import { TotpService } from './totp.service'
+import { AuthDbService } from './auth-db.service.js'
+import { JwtService } from './jwt.service.js'
+import { SessionService } from './session.service.js'
+import { TotpService } from './totp.service.js'
 import {
   TOTP_RATE_LIMIT_ATTEMPTS,
   TOTP_RATE_LIMIT_WINDOW_MS,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { randomBytes } from 'crypto'
 import { generateSync } from 'otplib'
-import { TotpService } from './totp.service'
+import { TotpService } from './totp.service.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

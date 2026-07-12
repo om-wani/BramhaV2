@@ -17,10 +17,10 @@ import {
   InviteOrgMemberInputSchema,
   UpdateOrgMemberRoleInputSchema,
 } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { OrgAdminGuard, OrgOwnerGuard, OrgMemberGuard } from '../common/guards/org-role.guard'
-import { OrgsService, type OrgDto, type OrgMemberDto } from './orgs.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { OrgAdminGuard, OrgOwnerGuard, OrgMemberGuard } from '../common/guards/org-role.guard.js'
+import { OrgsService, type OrgDto, type OrgMemberDto } from './orgs.service.js'
 
 class CreateOrgDto extends createZodDto(CreateOrgInputSchema) {}
 class UpdateOrgDto extends createZodDto(UpdateOrgInputSchema) {}

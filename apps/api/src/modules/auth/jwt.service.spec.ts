@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { UnauthorizedException } from '@nestjs/common'
 import { generateKeyPair, exportPKCS8, exportSPKI } from 'jose'
 import { ConfigService } from '@nestjs/config'
-import { JwtService } from './jwt.service'
+import { JwtService } from './jwt.service.js'
 
 let svc: JwtService
 

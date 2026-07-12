@@ -12,9 +12,9 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common'
-import { RoomsService } from './rooms.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
-import type { EventRelayService } from '../realtime/event-relay.service'
+import { RoomsService } from './rooms.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
+import type { EventRelayService } from '../realtime/event-relay.service.js'
 import type postgres from 'postgres'
 
 // ── Constants ──────────────────────────────────────────────────────────────────

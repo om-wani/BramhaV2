@@ -10,9 +10,9 @@ vi.mock('@bramha/agents', () => ({
 // ── Actual imports ─────────────────────────────────────────────────────────────
 
 import { HttpException } from '@nestjs/common'
-import { KnowledgeService } from './knowledge.service'
+import { KnowledgeService } from './knowledge.service.js'
 import { createEmbeddingProvider } from '@bramha/agents'
-import type { RlsDbService } from '../common/db/rls-db.service'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
 import type postgres from 'postgres'
 
 // ── Constants ──────────────────────────────────────────────────────────────────

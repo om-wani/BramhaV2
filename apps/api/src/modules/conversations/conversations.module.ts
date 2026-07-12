@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common'
-import { AuthModule } from '../auth/auth.module'
-import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard'
-import { ConversationsService } from './conversations.service'
-import { ConversationsController } from './conversations.controller'
+import { AuthModule } from '../auth/auth.module.js'
+import { ProjectViewerGuard, ProjectEditorGuard } from '../common/guards/project-member.guard.js'
+import { ConversationsService } from './conversations.service.js'
+import { ConversationsController } from './conversations.controller.js'
 
 @Module({
   imports: [AuthModule],

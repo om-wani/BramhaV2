@@ -4,11 +4,11 @@ import {
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common'
-import { AuthService } from './auth.service'
-import type { AuthDbService, UserRow, SessionRow } from './auth-db.service'
-import type { JwtService } from './jwt.service'
-import type { PasswordService } from './password.service'
-import type { SessionService } from './session.service'
+import { AuthService } from './auth.service.js'
+import type { AuthDbService, UserRow, SessionRow } from './auth-db.service.js'
+import type { JwtService } from './jwt.service.js'
+import type { PasswordService } from './password.service.js'
+import type { SessionService } from './session.service.js'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

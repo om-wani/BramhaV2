@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { UnauthorizedException } from '@nestjs/common'
 import { randomBytes } from 'crypto'
 import { generateSync } from 'otplib'
-import { TwoFactorService } from './twofactor.service'
-import { TotpService } from './totp.service'
-import type { AuthDbService, UserRow, RecoveryCodeRow } from './auth-db.service'
-import type { JwtService } from './jwt.service'
-import type { SessionService } from './session.service'
+import { TwoFactorService } from './twofactor.service.js'
+import { TotpService } from './totp.service.js'
+import type { AuthDbService, UserRow, RecoveryCodeRow } from './auth-db.service.js'
+import type { JwtService } from './jwt.service.js'
+import type { SessionService } from './session.service.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

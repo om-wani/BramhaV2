@@ -3,9 +3,9 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 vi.mock('@bramha/db', () => ({ withTenant: vi.fn() }))
 
 import { NotFoundException, ForbiddenException } from '@nestjs/common'
-import { OrgsService } from './orgs.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
-import type { AuthDbService } from '../auth/auth-db.service'
+import { OrgsService } from './orgs.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
+import type { AuthDbService } from '../auth/auth-db.service.js'
 import type postgres from 'postgres'
 
 const ACTOR_ID = '550e8400-e29b-41d4-a716-446655440000'

@@ -13,9 +13,9 @@ import {
 } from '@nestjs/common'
 import { z } from 'zod'
 import { createZodDto } from 'nestjs-zod'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { AdminGuard } from '../common/guards/admin.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { AdminGuard } from '../common/guards/admin.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
 import {
   AdminService,
   type AdminUser,
@@ -26,7 +26,7 @@ import {
   type AdminTokenUsage,
   type QueueDepth,
   type AuditLogEntry,
-} from './admin.service'
+} from './admin.service.js'
 
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 

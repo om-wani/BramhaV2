@@ -5,8 +5,8 @@ import {
   ConflictException,
   Logger,
 } from '@nestjs/common'
-import { RlsDbService } from '../common/db/rls-db.service'
-import { AuthDbService } from '../auth/auth-db.service'
+import { RlsDbService } from '../common/db/rls-db.service.js'
+import { AuthDbService } from '../auth/auth-db.service.js'
 import type {
   CreateOrgInput,
   UpdateOrgInput,

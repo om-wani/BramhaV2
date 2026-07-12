@@ -17,13 +17,13 @@ import {
   UpdateRoomInputSchema,
   AddParticipantInputSchema,
 } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
 import {
   ProjectViewerGuard,
   ProjectEditorGuard,
-} from '../common/guards/project-member.guard'
-import { RoomsService, type RoomDto, type ParticipantDto } from './rooms.service'
+} from '../common/guards/project-member.guard.js'
+import { RoomsService, type RoomDto, type ParticipantDto } from './rooms.service.js'
 
 class CreateRoomDto extends createZodDto(CreateRoomInputSchema) {}
 class UpdateRoomDto extends createZodDto(UpdateRoomInputSchema) {}

@@ -20,7 +20,7 @@ vi.mock('bullmq', () => ({
 
 import { NotFoundException } from '@nestjs/common'
 import { withAdmin } from '@bramha/db'
-import { AdminService } from './admin.service'
+import { AdminService } from './admin.service.js'
 import type postgres from 'postgres'
 
 const withAdminMock = vi.mocked(withAdmin)

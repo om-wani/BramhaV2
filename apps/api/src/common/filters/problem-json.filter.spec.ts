@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { HttpException, HttpStatus } from '@nestjs/common'
-import { ProblemJsonFilter } from './problem-json.filter'
+import { ProblemJsonFilter } from './problem-json.filter.js'
 import type { ArgumentsHost } from '@nestjs/common'
 
 function mockHost(reply: {

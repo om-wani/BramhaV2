@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common'
 import type { FastifyRequest } from 'fastify'
-import { RlsDbService } from '../db/rls-db.service'
+import { RlsDbService } from '../db/rls-db.service.js'
 
 @Injectable()
 export class AdminGuard implements CanActivate {

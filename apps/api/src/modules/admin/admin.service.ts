@@ -8,8 +8,8 @@ import {
 import { withAdmin } from '@bramha/db'
 import type postgres from 'postgres'
 import { Queue } from 'bullmq'
-import type Redis from 'ioredis'
-import { REDIS_CLIENT } from '../common/redis/redis.module'
+import type { Redis } from 'ioredis'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 

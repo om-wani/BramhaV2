@@ -18,9 +18,9 @@ vi.mock('@aws-sdk/s3-request-presigner', () => ({
 // ── Actual imports ────────────────────────────────────────────────────────────
 
 import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common'
-import { ArtifactsService } from './artifacts.service'
-import type { RlsDbService } from '../common/db/rls-db.service'
-import type { JwtService } from '../auth/jwt.service'
+import { ArtifactsService } from './artifacts.service.js'
+import type { RlsDbService } from '../common/db/rls-db.service.js'
+import type { JwtService } from '../auth/jwt.service.js'
 import type { ConfigService } from '@nestjs/config'
 import type { S3Client } from '@aws-sdk/client-s3'
 import type postgres from 'postgres'

@@ -1,9 +1,9 @@
 import { Controller, Get, Patch, Body, Param, UseGuards } from '@nestjs/common'
 import { createZodDto } from 'nestjs-zod'
 import { UpdateProfileInputSchema } from '@bramha/shared'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator'
-import { UsersService, type UserProfile, type PublicProfile } from './users.service'
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js'
+import { CurrentUser, type AuthenticatedUser } from '../auth/decorators/current-user.decorator.js'
+import { UsersService, type UserProfile, type PublicProfile } from './users.service.js'
 
 class UpdateProfileDto extends createZodDto(UpdateProfileInputSchema) {}
 
