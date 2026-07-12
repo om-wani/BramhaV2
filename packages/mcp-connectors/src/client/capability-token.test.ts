@@ -35,6 +35,9 @@ function makeRedisMock(delReturn: number): RedisLike {
     del: vi.fn().mockResolvedValue(delReturn),
     incr: vi.fn().mockResolvedValue(1),
     expire: vi.fn().mockResolvedValue(1),
+    zrank: vi.fn().mockResolvedValue(null),
+    zadd: vi.fn().mockResolvedValue(0),
+    zremrangebyscore: vi.fn().mockResolvedValue(0),
   }
 }
 
