@@ -8,4 +8,5 @@ coverage/
 *.pem
 *.key
 *.log
+*.tsbuildinfo
 .DS_Store
