@@ -26,8 +26,9 @@ export * from './errors.js'
 // Constants
 export * from './constants.js'
 
-// Telemetry (OTel SDK init + pre-built instruments)
-export * from './telemetry.js'
+// Telemetry is Node-only (OTel SDK pulls grpc/net) — import via
+// '@bramha/shared/telemetry' subpath, never from this index, or it
+// breaks browser bundles (next build).
 
 // Log redaction
 export * from './redaction.js'

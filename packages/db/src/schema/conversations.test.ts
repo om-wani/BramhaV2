@@ -316,7 +316,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM rooms WHERE id = ${roomAId}`
     })
@@ -329,8 +329,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM rooms WHERE id = ${roomAId}`
     })
 
@@ -344,7 +344,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM room_participants WHERE id = ${participantAId}`
     })
@@ -357,8 +357,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM room_participants WHERE id = ${participantAId}`
     })
 
@@ -372,7 +372,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM conversations WHERE id = ${conversationAId}`
     })
@@ -385,8 +385,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM conversations WHERE id = ${conversationAId}`
     })
 
@@ -401,7 +401,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM conversation_nodes WHERE id = ${node.id}`
     })
@@ -415,8 +415,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM conversation_nodes WHERE id = ${node.id}`
     })
 
@@ -430,7 +430,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT from_node FROM node_links WHERE from_node = ${nodeForLinkId}`
     })
@@ -443,8 +443,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT from_node FROM node_links WHERE from_node = ${nodeForLinkId}`
     })
 
@@ -458,7 +458,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM branches WHERE id = ${branchAId}`
     })
@@ -471,8 +471,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM branches WHERE id = ${branchAId}`
     })
 
@@ -486,7 +486,7 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`
         SELECT user_id FROM user_room_state
@@ -502,8 +502,8 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`
         SELECT user_id FROM user_room_state
         WHERE user_id = ${userAId} AND room_id = ${roomAId} AND conversation_id = ${conversationAId}

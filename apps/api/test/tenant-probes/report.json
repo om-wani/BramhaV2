@@ -1,0 +1,152 @@
+{
+  "generatedAt": "2026-07-12T21:49:35.506Z",
+  "dbProbes": {
+    "summary": {
+      "total": 28,
+      "passed": 28,
+      "failed": 0
+    },
+    "probes": [
+      {
+        "probe": "project_members isolation",
+        "table": "project_members",
+        "passed": true
+      },
+      {
+        "probe": "rooms isolation",
+        "table": "rooms",
+        "passed": true
+      },
+      {
+        "probe": "conversations isolation",
+        "table": "conversations",
+        "passed": true
+      },
+      {
+        "probe": "conversation_nodes isolation",
+        "table": "conversation_nodes",
+        "passed": true
+      },
+      {
+        "probe": "branches isolation",
+        "table": "branches",
+        "passed": true
+      },
+      {
+        "probe": "artifacts isolation",
+        "table": "artifacts",
+        "passed": true
+      },
+      {
+        "probe": "files isolation",
+        "table": "files",
+        "passed": true
+      },
+      {
+        "probe": "knowledge_sources isolation",
+        "table": "knowledge_sources",
+        "passed": true
+      },
+      {
+        "probe": "ingestion_jobs isolation",
+        "table": "ingestion_jobs",
+        "passed": true
+      },
+      {
+        "probe": "knowledge_chunks isolation",
+        "table": "knowledge_chunks",
+        "passed": true
+      },
+      {
+        "probe": "agent_working_memory isolation",
+        "table": "agent_working_memory",
+        "passed": true
+      },
+      {
+        "probe": "delegations isolation",
+        "table": "delegations",
+        "passed": true
+      },
+      {
+        "probe": "approvals isolation",
+        "table": "approvals",
+        "passed": true
+      },
+      {
+        "probe": "mcp_connectors isolation",
+        "table": "mcp_connectors",
+        "passed": true
+      },
+      {
+        "probe": "mcp_grants isolation",
+        "table": "mcp_grants",
+        "passed": true
+      },
+      {
+        "probe": "project_agents isolation",
+        "table": "project_agents",
+        "passed": true
+      },
+      {
+        "probe": "token_usage isolation",
+        "table": "token_usage",
+        "passed": true
+      },
+      {
+        "probe": "notes isolation",
+        "table": "notes",
+        "passed": true
+      },
+      {
+        "probe": "agent_personas isolation",
+        "table": "agent_personas",
+        "passed": true
+      },
+      {
+        "probe": "room_participants isolation",
+        "table": "room_participants",
+        "passed": true
+      },
+      {
+        "probe": "node_links isolation",
+        "table": "node_links",
+        "passed": true
+      },
+      {
+        "probe": "artifact_versions isolation",
+        "table": "artifact_versions",
+        "passed": true
+      },
+      {
+        "probe": "note_links isolation",
+        "table": "note_links",
+        "passed": true
+      },
+      {
+        "probe": "user_room_state isolation",
+        "table": "user_room_state",
+        "passed": true
+      },
+      {
+        "probe": "graph_checkpoints unauthenticated",
+        "table": "graph_checkpoints",
+        "passed": true
+      },
+      {
+        "probe": "graph_checkpoints cross-tenant",
+        "table": "graph_checkpoints",
+        "passed": true
+      },
+      {
+        "probe": "audit_log non-admin read",
+        "table": "audit_log",
+        "passed": true
+      },
+      {
+        "probe": "sanity: A reads own rooms",
+        "table": "rooms",
+        "passed": true
+      }
+    ]
+  }
+}

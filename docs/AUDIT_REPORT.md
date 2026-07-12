@@ -1,8 +1,42 @@
 # BramhaV2 Codebase Audit Report
 
-Date: 2026-07-13. Auditor: Claude Code session. Scope: full monorepo — optimization, broken systems, redundancy, security, gaps.
+Date: 2026-07-13 (two passes: static audit + deep runtime audit). Auditor: Claude Code session. Scope: full monorepo — optimization, broken systems, redundancy, security, gaps.
 
-Companion to this report: fixes already applied this session (see "Fixed during audit" at bottom). Everything in sections 1–5 below is **unfixed** and written for an implementing agent. Each item has file:line anchors, rationale, and a concrete fix sketch. Priorities: P0 = broken/blocking, P1 = should fix before next phase, P2 = cleanup/nice-to-have.
+Companion to this report: fixes already applied this session (see "Fixed during audit" at bottom). Everything in sections 0–5 below is **unfixed** and written for an implementing agent. Each item has file:line anchors, rationale, and a concrete fix sketch. Priorities: P0 = broken/blocking, P1 = should fix before next phase, P2 = cleanup/nice-to-have.
+
+---
+
+## 0. Deep-audit P0s (found by actually running things — read these first)
+
+### 0.1 [P0] Web ↔ API auth contract never integrated — every authenticated web call 401s
+`apps/web/lib/api-client.ts` sends only cookies (`credentials: 'include'`); it never stores or sends an access token. `JwtAuthGuard` (apps/api/src/modules/auth/guards/jwt-auth.guard.ts:19) reads ONLY the `Authorization: Bearer` header. Login response returns `accessToken` in the JSON body and sets just the `refresh_token` cookie (auth.controller.ts). Result: the entire authenticated web app is non-functional against the real API — every `api.get/post/patch/delete` after login gets 401. Zero grep hits for `Authorization|accessToken` under apps/web/lib|stores|hooks.
+**Fix (recommended)**: set the access token as an `access_token` httpOnly cookie at login/refresh (SameSite=Strict; matches existing CSP posture), and teach JwtAuthGuard to fall back to that cookie when no Authorization header is present (keep header path for API-key/bearer clients). Alternative: in-memory token store + fetch wrapper on web — worse (XSS exfil surface, page-refresh loss, refresh-race complexity).
+
+### 0.2 [P0] Conversation DAG hard-caps at ~63-deep — then every INSERT on the chain dies
+`idx_conversation_nodes_conv_path` GiST index over `ltree` path (0006): inserting node #64 in a linear chain fails with Postgres `stack depth limit exceeded` (2MB default stack; reproduced live — failure at exactly depth 63 with UUID-underscore labels). One node per message ⇒ any active conversation hits this wall almost immediately. The db test "500-node chain" codifies the requirement and fails.
+**Fix options** (agent must pick one; (a) is the surgical default):
+- (a) Drop the GiST index + `path <@` queries; do ancestor/descendant walks with a recursive CTE over `(conversation_id, parent_id)` btree — chat-scale conversations are thousands of nodes, CTE is fine, and `path` column can stay for display/debug.
+- (b) Shorten labels (e.g. 8-char hash of node id) — only delays the wall ~4× and adds a collision/lookup layer. Not recommended.
+- (c) Raise `max_stack_depth` — fragile, needs matching OS ulimit everywhere, still a cliff. Not recommended.
+Whichever is chosen, update docs/05 §DAG and the failing perf test to match.
+
+### 0.3 [P0] API uploads and ingestion-worker use different S3 buckets — every ingestion job 404s
+API writes uploads to a single `S3_BUCKET` (default `bramha-artifacts`; apps/api/src/modules/common/s3/s3.module.ts:31) with key `staging/{projectId}/{fileId}` (files.service.ts:160). Ingestion reads the same key from `S3_BUCKET_STAGING` = `bramha-staging` (apps/ingestion-worker/src/main.ts:51,90). Compose provisions the 4-bucket layout; the API simply never adopted it. Also 3-way env-name drift: `.env.example` says `S3_ACCESS_KEY/S3_SECRET_KEY`, API reads `AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY`, ingestion reads `S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY`.
+**Fix**: make the API's S3Module provide the 4 named buckets (staging/clean/quarantine/artifacts) from the same env names ingestion uses; presign uploads into STAGING, artifacts into ARTIFACTS; align `.env.example` + bootstrap.sh + compose on ONE credential var pair.
+
+### 0.4 [P0] `system_agent` user + `system_memberships` never implemented — agents see zero rows
+agent-runtime requires `SYSTEM_USER_ID` env and runs all queries under it via withTenant, but no migration/seed creates any system user, and docs/05 §9 rule 2's `system_memberships` view doesn't exist anywhere (only grep hit is the docs line). RLS membership policies therefore filter every agent-runtime query to 0 rows — agents boot but can never read personas/conversations/memory.
+**Fix**: migration creating a reserved `system_agent` user (fixed UUID, no password, status system), auto-membership mechanism (trigger adding it to project_members on project creation, or a `system_memberships` view UNION'd into the policies), bootstrap.sh exporting `SYSTEM_USER_ID`, and a tenant-probe asserting the system user sees exactly its projects.
+
+### 0.5 [P0] Dockerfile.api runtime stage cannot build
+`npm install --omit=dev` at infra/docker/Dockerfile.api:72 dies on `workspace:*` (EUNSUPPORTEDPROTOCOL) — npm can't read pnpm workspace protocol. Same disease Dockerfile.mcp-node had; that file's fixed `pnpm deploy --prod --legacy` pattern (commit 696dc9d) is the proven template. Dockerfile.web also fails to build (its `pnpm --filter @bramha/web build` stage) — diagnose after api. Dockerfile.ingestion copies the whole pnpm-symlinked `/build/node_modules` (line 76) — verify COPY dereferences to a working tree or convert to the deploy pattern too. None of the three app images currently build.
+
+### 0.6 [P1] xlsx parses untrusted uploads; npm version is abandoned with HIGH CVEs
+`xlsx@0.18.5` (ingestion extraction pipeline) has prototype-pollution + ReDoS advisories; the npm package is no longer updated (official distribution moved to cdn.sheetjs.com). It parses user-uploaded spreadsheets post-ClamAV — malware scan does not stop ReDoS/proto-pollution.
+**Fix**: swap to `exceljs` for xlsx/csv extraction, or pin SheetJS ≥0.20.2 from the official CDN registry. Keep extraction inside the worker sandbox either way.
+
+### 0.7 [P1] Remaining `next` HIGH advisories require Next 15
+Bumped 14.2.29→14.2.35 this session (several DoS fixes). The middleware-bypass and remaining DoS advisories are only fixed in 15.5.16+. Middleware guards routes here, so plan the Next 15 upgrade (App Router migration cost is low; `output: 'standalone'` and middleware API are compatible).
 
 ---
 
@@ -124,3 +158,15 @@ apps/agent-runtime/src/pa/proactive-scheduler.ts:37 `roomType: string` with comm
 5. **SQL ident escape** apps/ingestion-worker/src/sources/sql-sync.ts:123 — hostile external-DB table name could break out of quoted identifier; now `"` doubled.
 6. **Deleted** apps/ingestion-worker/src/sources/gitlab-sync.ts — 8-line unused re-export alias.
 7. **tsx** added where actually used (packages/db devDep, root devDep for scripts/).
+
+### Deep-audit pass (same day, second commit)
+
+8. **withTenant was broken on every call** — `SET LOCAL app.user_id = ${param}`: Postgres forbids bind parameters in SET (syntax error at $1), so the sole sanctioned query path threw on EVERY invocation; unit tests mock withTenant so all were green. Fixed packages/db/src/rls.ts with parameterizable `SELECT set_config('…', $1, true)` (transaction-local). Also fixed the same pattern in 32 test-file sites (rls.test.ts, conversations.test.ts, rls-probes.test.ts) — those suites skip without DATABASE_URL, which is why it was never caught.
+9. **RLS infinite recursion** — project_members/org_members policies (0001) subselected their own tables → Postgres 42P17 on ANY membership-scoped query. Migration `0020_fix_rls_recursion.sql`: SECURITY DEFINER `current_user_project_ids()`/`current_user_org_ids()` + repointed the 4 self/mutually-recursive policies.
+10. **graph_checkpoints cross-tenant read** — policy was "any authenticated user" (0012); checkpoint bytea is serialized agent state = conversation content. Migration `0021_graph_checkpoints_tenancy.sql`: added `project_id` column + membership-scoped policy.
+11. **audit_log had no RLS at all** with SELECT granted to bramha_app — any user could read the whole cross-tenant audit trail. Migration `0022_audit_log_rls.sql`: FORCE RLS, open INSERT, admin-only (app.is_admin GUC) SELECT. Added dedicated probe.
+12. **Append-only DAG guard never enforced** — `pg_trigger_depth() > 0` is always true inside a directly-fired trigger, so UPDATE/DELETE on conversation_nodes silently succeeded. Migration `0023_fix_append_only_guard.sql`: `> 1` (direct=reject at depth 1, FK-cascade=allow at 2). Verified both directions live.
+13. **next build was broken** (never run before) — `@bramha/shared` index re-exported Node-only `telemetry.js` (OTel SDK → grpc → `net`) into client bundles. Removed from index; added `./telemetry` subpath export (zero consumers existed). `next build` now passes.
+14. **Tenant probe suite fixture bugs** — `'\x00'` eaten by JS template escaping (→ `'\\x00'`), `sql.array()` misuse crashing cleanup every run (→ plain arrays; the accumulated stale rows had been masking results). Registered graph_checkpoints + audit_log in the schema-coverage set. Suite now 27/27 green against live DB; db package 48/49 (the 1 failure = the ltree depth cap, item 0.2).
+15. **CVE bumps** — next 14.2.29→14.2.35, dompurify →3.4.8 (direct dep).
+16. **Runtime boots verified** — agent-runtime and ingestion-worker both boot against the compose stack and shut down gracefully on SIGTERM (compile ≠ run; item 1.1 closed, but see 0.4 for why agents still can't read data).

@@ -58,8 +58,8 @@ async function queryAsTenantB<T extends Record<string, unknown>>(
   query: (tx: postgres.TransactionSql) => Promise<postgres.RowList<T[]>>,
 ): Promise<T[]> {
   return appSql.begin(async (tx) => {
-    await tx`SET LOCAL app.user_id    = ${tenantB.userId}`
-    await tx`SET LOCAL app.project_id = ${tenantB.projectId}`
+    await tx`SELECT set_config('app.user_id', ${tenantB.userId}, true)`
+    await tx`SELECT set_config('app.project_id', ${tenantB.projectId}, true)`
     return query(tx)
   }) as Promise<T[]>
 }
@@ -90,6 +90,9 @@ const PROBED_TABLES = new Set([
   'token_usage',
   'notes',
   'agent_personas',
+  // probed by dedicated tests below (non-standard shapes)
+  'graph_checkpoints',
+  'audit_log',
 ])
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -494,8 +497,8 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
     expect(aThreadId).toBeTruthy()
 
     const crossTenantRows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id    = ${tenantB.userId}`
-      await tx`SET LOCAL app.project_id = ${tenantB.projectId}`
+      await tx`SELECT set_config('app.user_id', ${tenantB.userId}, true)`
+      await tx`SELECT set_config('app.project_id', ${tenantB.projectId}, true)`
       return tx`SELECT thread_id FROM graph_checkpoints WHERE thread_id = ${aThreadId!}`
     })
 
@@ -516,14 +519,39 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
     expect(crossTenantRows, 'graph_checkpoints cross-tenant read returned rows').toHaveLength(0)
   })
 
+  it('audit_log — non-admin authenticated user cannot read audit rows', async () => {
+    // Seed one audit row for tenant A via migrator (BYPASSRLS)
+    await migratorSql`
+      INSERT INTO audit_log (actor_id, action, target_type, target_id, project_id)
+      VALUES (${tenantA.userId}, 'probe.test', 'probe', 'probe-1', ${tenantA.projectId})
+    `
+    try {
+      // Authenticated tenant B, is_admin NOT set → must see nothing
+      const rows = await appSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.user_id', ${tenantB.userId}, true)`
+        return tx`SELECT id FROM audit_log LIMIT 1`
+      })
+      const passed = rows.length === 0
+      results.push({
+        probe: 'audit_log non-admin read',
+        table: 'audit_log',
+        passed,
+        ...(passed ? {} : { failReason: `non-admin read ${rows.length} audit_log row(s)` }),
+      })
+      expect(rows, 'audit_log non-admin read returned rows').toHaveLength(0)
+    } finally {
+      await migratorSql`DELETE FROM audit_log WHERE action = 'probe.test'`
+    }
+  })
+
   // ─────────────────────────────────────────────────────────────────────────
   // Positive sanity check — tenant A CAN read their own data
   // ─────────────────────────────────────────────────────────────────────────
 
   it('sanity: A can read their own rooms', async () => {
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id    = ${tenantA.userId}`
-      await tx`SET LOCAL app.project_id = ${tenantA.projectId}`
+      await tx`SELECT set_config('app.user_id', ${tenantA.userId}, true)`
+      await tx`SELECT set_config('app.project_id', ${tenantA.projectId}, true)`
       return tx`SELECT id FROM rooms WHERE project_id = ${tenantA.projectId} LIMIT 1`
     })
     expect(rows.length).toBeGreaterThan(0)

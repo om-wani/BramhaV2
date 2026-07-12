@@ -328,8 +328,8 @@ async function createTenantData(
   // ── Graph checkpoint (authenticated-only RLS; no project_id column) ────────
   const checkpointThreadId = `probe-${convId}:${branchId}:${GLOBAL_CTO_PERSONA_ID}:test-turn`
   await sql`
-    INSERT INTO graph_checkpoints (thread_id, checkpoint, metadata)
-    VALUES (${checkpointThreadId}, '\x00'::bytea, '{}'::jsonb)
+    INSERT INTO graph_checkpoints (thread_id, checkpoint, metadata, project_id)
+    VALUES (${checkpointThreadId}, '\\x00'::bytea, '{}'::jsonb, ${projectId})
   `
   rows['graph_checkpoints'] = [checkpointThreadId]
 
@@ -438,9 +438,9 @@ export async function teardownFixtures(fixtures: {
   const migratorUrl = getMigratorUrl(DATABASE_URL)
   const sql = postgres(migratorUrl, { max: 1 })
 
-  const pIds = sql.array([tenantA.projectId, tenantB.projectId])
-  const orgIds = sql.array([tenantA.orgId, tenantB.orgId])
-  const userIds = sql.array([tenantA.userId, tenantB.userId])
+  const pIds = [tenantA.projectId, tenantB.projectId]
+  const orgIds = [tenantA.orgId, tenantB.orgId]
+  const userIds = [tenantA.userId, tenantB.userId]
 
   try {
     // 1. note_links — no cascade from project; join with notes to identify our rows
@@ -465,7 +465,7 @@ export async function teardownFixtures(fixtures: {
       ...(tenantB.rows['graph_checkpoints'] ?? []),
     ]
     if (gcIds.length > 0) {
-      await sql`DELETE FROM graph_checkpoints WHERE thread_id = ANY(${sql.array(gcIds)}::text[])`
+      await sql`DELETE FROM graph_checkpoints WHERE thread_id = ANY(${gcIds}::text[])`
     }
 
     // 4. Break conversations.default_branch_id circular FK before deleting branches

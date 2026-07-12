@@ -77,7 +77,7 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userBId}`
+      await tx`SELECT set_config('app.user_id', ${userBId}, true)`
       await tx`SET LOCAL app.project_id = ''`
       return tx`SELECT id FROM projects WHERE id = ${projectAId}`
     })
@@ -90,8 +90,8 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const rows = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       return tx`SELECT id FROM projects WHERE id = ${projectAId}`
     })
 
@@ -104,8 +104,8 @@ describe.skipIf(!runRlsTests)('RLS isolation probes', () => {
     const appSql = postgres(getAppRoleUrl(), { max: 1 })
 
     const [row] = await appSql.begin(async (tx) => {
-      await tx`SET LOCAL app.user_id = ${userAId}`
-      await tx`SET LOCAL app.project_id = ${projectAId}`
+      await tx`SELECT set_config('app.user_id', ${userAId}, true)`
+      await tx`SELECT set_config('app.project_id', ${projectAId}, true)`
       await tx`SET LOCAL enable_seqscan = off`
       return tx`EXPLAIN (FORMAT JSON) SELECT * FROM projects WHERE id = ${projectAId}`
     })

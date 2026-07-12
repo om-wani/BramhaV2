@@ -8,6 +8,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./telemetry": {
+      "import": "./dist/telemetry.js",
+      "types": "./dist/telemetry.d.ts"
     }
   },
   "scripts": {
