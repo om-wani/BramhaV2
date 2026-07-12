@@ -70,3 +70,9 @@ variable "audit_log_group_name" {
   type        = string
   default     = "bramha-audit"
 }
+
+variable "dlq_queue_name" {
+  description = "SQS DLQ queue name to monitor for message accumulation"
+  type        = string
+  default     = ""
+}

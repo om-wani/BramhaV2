@@ -267,6 +267,34 @@ module "observability" {
 }
 
 ###############################################################################
+# WAF spike alarm — must be in us-east-1 (CloudFront WAF metrics are published there)
+###############################################################################
+
+resource "aws_cloudwatch_metric_alarm" "waf_spike" {
+  provider = aws.us_east_1
+
+  alarm_name          = "bramha-${var.environment}-waf-spike"
+  alarm_description   = "WAF blocked requests spike — potential attack"
+  namespace           = "AWS/WAFV2"
+  metric_name         = "BlockedRequests"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 500
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    WebACL = "bramha-${var.environment}"
+    Region = "CloudFront"
+    Rule   = "ALL"
+  }
+
+  alarm_actions = [module.observability.critical_sns_arn]
+  ok_actions    = [module.observability.warning_sns_arn]
+}
+
+###############################################################################
 # Outputs (useful for CI/CD)
 ###############################################################################
 

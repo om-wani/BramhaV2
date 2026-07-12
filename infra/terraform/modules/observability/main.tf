@@ -118,7 +118,10 @@ resource "aws_cloudwatch_metric_alarm" "budget_critical" {
 }
 
 # ---- DLQ growth ----
+# Only created when dlq_queue_name is provided (BullMQ DLQ name comes from app provisioning).
 resource "aws_cloudwatch_metric_alarm" "dlq_growth" {
+  count = var.dlq_queue_name != "" ? 1 : 0
+
   alarm_name          = "${var.name_prefix}-dlq-growth"
   alarm_description   = "More than 10 messages visible in a Dead Letter Queue"
   namespace           = "AWS/SQS"
@@ -130,8 +133,10 @@ resource "aws_cloudwatch_metric_alarm" "dlq_growth" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
 
-  # Dimensions intentionally empty — fires on any SQS queue exceeding the threshold.
-  # In production, scope with queue name dimensions for DLQ-specific queues.
+  dimensions = {
+    QueueName = var.dlq_queue_name
+  }
+
   alarm_actions = [aws_sns_topic.warning.arn]
   ok_actions    = [aws_sns_topic.warning.arn]
 
@@ -161,36 +166,8 @@ resource "aws_cloudwatch_metric_alarm" "egress_denials" {
   }
 }
 
-# ---- WAF spike ----
-resource "aws_cloudwatch_metric_alarm" "waf_spike" {
-  alarm_name          = "${var.name_prefix}-waf-spike"
-  alarm_description   = "WAF blocked more than 500 requests in 5 minutes"
-  namespace           = "AWS/WAFV2"
-  metric_name         = "BlockedRequests"
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  threshold           = 500
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-
-  # WAF metrics are in us-east-1 for CloudFront WAF; this alarm must be created
-  # in the same region as the WAF ACL. The module caller is responsible for
-  # using the correct provider alias when scoped to CloudFront WAF.
-  dimensions = {
-    Rule   = "ALL"
-    WebACL = "${var.name_prefix}-waf"
-    Region = "us-east-1"
-    Scope  = "CLOUDFRONT"
-  }
-
-  alarm_actions = [aws_sns_topic.critical.arn]
-  ok_actions    = [aws_sns_topic.critical.arn]
-
-  tags = {
-    Name = "${var.name_prefix}-waf-spike"
-  }
-}
+# WAF spike alarm intentionally excluded — CloudFront WAF metrics are in us-east-1;
+# create separately in staging/main.tf using aws.us_east_1 provider.
 
 # ---- RDS connections ----
 resource "aws_cloudwatch_metric_alarm" "rds_connections" {
@@ -716,6 +693,16 @@ resource "aws_opensearch_domain" "siem" {
     subnet_ids         = [var.isolated_subnet_ids[0]]
     security_group_ids = [aws_security_group.opensearch.id]
   }
+
+  access_policies = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+      Action    = "es:*"
+      Resource  = "arn:aws:es:${var.aws_region}:${data.aws_caller_identity.current.account_id}:domain/${var.name_prefix}-siem/*"
+    }]
+  })
 
   snapshot_options {
     automated_snapshot_start_hour = 3  # 03:00 UTC daily
