@@ -241,6 +241,7 @@ module "cdn" {
   artifact_acm_certificate_arn          = var.artifact_acm_certificate_arn
   web_domain_aliases                    = var.web_domain_aliases
   artifact_domain_aliases               = var.artifact_domain_aliases
+  web_origin                            = length(var.web_domain_aliases) > 0 ? "https://${var.web_domain_aliases[0]}" : "https://staging.bramha.ai"
 }
 
 ###############################################################################

@@ -44,3 +44,9 @@ variable "artifact_domain_aliases" {
   type        = list(string)
   default     = []
 }
+
+variable "web_origin" {
+  description = "Web app origin URL allowed to embed artifacts (used in CSP frame-ancestors)"
+  type        = string
+  default     = "https://staging.bramha.ai"
+}

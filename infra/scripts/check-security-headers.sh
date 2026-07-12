@@ -40,7 +40,9 @@ if [[ "$ARTIFACT" == "true" ]]; then
   # ---- Artifact distribution headers ----
   echo "[mode: artifact distribution]"
   check_header "x-content-type-options"  "nosniff"
-  check_header "x-frame-options"         "DENY"
+  # X-Frame-Options is NOT set on artifact distribution (cannot express selective origin allow).
+  # CSP frame-ancestors is the correct check — must allow web origin but deny third parties.
+  check_header "content-security-policy" "frame-ancestors"
   check_header "content-security-policy" "default-src 'none'"
   check_header "cache-control"           "no-store"
 else

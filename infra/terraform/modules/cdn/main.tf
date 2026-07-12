@@ -64,18 +64,16 @@ resource "aws_cloudfront_response_headers_policy" "artifacts" {
 
   security_headers_config {
     content_security_policy {
-      content_security_policy = "default-src 'none'; sandbox"
+      # frame-ancestors replaces X-Frame-Options; allows only our web app to embed artifacts.
+      content_security_policy = "default-src 'none'; frame-ancestors 'self' ${var.web_origin}; sandbox"
       override                = true
     }
 
     content_type_options {
       override = true
     }
-
-    frame_options {
-      frame_option = "DENY"
-      override     = true
-    }
+    # X-Frame-Options intentionally omitted: it cannot express allow-by-origin.
+    # frame-ancestors in CSP above is the correct mechanism for selective framing.
   }
 
   custom_headers_config {
