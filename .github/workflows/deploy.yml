@@ -57,6 +57,18 @@ jobs:
             }
           done
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies (db package only)
+        run: pnpm install --frozen-lockfile --filter @bramha/db
+
       - name: Run DB migrations (bramha_migrator role)
         env:
           DATABASE_URL: ${{ secrets.STAGING_MIGRATOR_DATABASE_URL }}
@@ -120,18 +132,26 @@ jobs:
           ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
         run: |
           echo "Rolling back staging to previous task definitions..."
+          CLUSTER_NAME="${{ secrets.STAGING_ECS_CLUSTER }}"
           for svc in api web agent-runtime ingestion-worker; do
-            PREV_ARN=$(aws ecs describe-services \
-              --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
-              --services "bramha-staging-${svc}" \
-              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
-              --output text)
-            if [[ -n "$PREV_ARN" ]]; then
-              aws ecs update-service \
-                --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
-                --service "bramha-staging-${svc}" \
-                --task-definition "$PREV_ARN"
+            SERVICE_NAME="bramha-staging-${svc}"
+            DEPLOYMENTS=$(aws ecs describe-services \
+              --cluster "$CLUSTER_NAME" \
+              --services "$SERVICE_NAME" \
+              --query 'services[0].deployments' \
+              --output json 2>/dev/null || echo '[]')
+
+            ACTIVE_ARN=$(echo "$DEPLOYMENTS" | jq -r '.[] | select(.status == "ACTIVE") | .taskDefinition' | head -1)
+
+            if [[ -z "$ACTIVE_ARN" || "$ACTIVE_ARN" == "null" ]]; then
+              echo "  WARNING: No ACTIVE deployment found for $SERVICE_NAME (already at earliest revision or fully rolled out). Skipping."
+              continue
             fi
+
+            aws ecs update-service \
+              --cluster "$CLUSTER_NAME" \
+              --service "$SERVICE_NAME" \
+              --task-definition "$ACTIVE_ARN"
           done
           echo "Rollback triggered — monitor ECS for stabilization."
 
@@ -172,6 +192,18 @@ jobs:
               exit 1
             }
           done
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies (db package only)
+        run: pnpm install --frozen-lockfile --filter @bramha/db
 
       - name: Run DB migrations (prod — bramha_migrator role)
         env:
@@ -228,23 +260,31 @@ jobs:
         if: failure() && steps.prod_ecs_deploy.outcome == 'success'
         run: |
           echo "Prod deploy failed — rolling back to previous task definitions..."
+          CLUSTER_NAME="bramha-prod"
           for svc in api web agent-runtime ingestion-worker; do
-            PREV_ARN=$(aws ecs describe-services \
-              --cluster bramha-prod \
-              --services "bramha-prod-${svc}" \
-              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
-              --output text)
-            if [[ -n "$PREV_ARN" ]]; then
-              aws ecs update-service \
-                --cluster bramha-prod \
-                --service "bramha-prod-${svc}" \
-                --task-definition "$PREV_ARN"
+            SERVICE_NAME="bramha-prod-${svc}"
+            DEPLOYMENTS=$(aws ecs describe-services \
+              --cluster "$CLUSTER_NAME" \
+              --services "$SERVICE_NAME" \
+              --query 'services[0].deployments' \
+              --output json 2>/dev/null || echo '[]')
+
+            ACTIVE_ARN=$(echo "$DEPLOYMENTS" | jq -r '.[] | select(.status == "ACTIVE") | .taskDefinition' | head -1)
+
+            if [[ -z "$ACTIVE_ARN" || "$ACTIVE_ARN" == "null" ]]; then
+              echo "  WARNING: No ACTIVE deployment found for $SERVICE_NAME (already at earliest revision or fully rolled out). Skipping."
+              continue
             fi
+
+            aws ecs update-service \
+              --cluster "$CLUSTER_NAME" \
+              --service "$SERVICE_NAME" \
+              --task-definition "$ACTIVE_ARN"
           done
           echo "Rollback triggered."
 
       - name: Audit log — prod deploy event
-        if: success()
+        if: always()
         env:
           PROD_AUDIT_WEBHOOK: ${{ secrets.PROD_AUDIT_WEBHOOK }}
         run: |
@@ -255,5 +295,6 @@ jobs:
               \"tag\": \"${{ github.ref_name }}\",
               \"actor\": \"${{ github.actor }}\",
               \"sha\": \"${{ github.sha }}\",
+              \"status\": \"${{ job.status }}\",
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }" || true
+            }" || { echo "::warning::Prod audit webhook failed"; }

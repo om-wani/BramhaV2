@@ -74,7 +74,7 @@ jobs:
           output-file: sbom-${{ matrix.service.name }}.spdx.json
 
       - name: Scan image (trivy) — fail on CRITICAL/HIGH unfixed
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ env.ECR_REGISTRY }}/bramha-${{ matrix.service.name }}:${{ steps.meta.outputs.sha_short }}
           format: table
@@ -83,6 +83,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Push image to ECR
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service.context }}
@@ -90,6 +91,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -99,7 +103,7 @@ jobs:
           COSIGN_EXPERIMENTAL: "1"
         run: |
           for tag in $(echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n'); do
-            cosign sign --yes "${tag}@${{ steps.build.outputs.digest }}"
+            cosign sign --yes "${tag}@${{ steps.push.outputs.digest }}"
           done
 
       - name: Upload SBOM artifact
@@ -109,8 +113,3 @@ jobs:
           path: sbom-${{ matrix.service.name }}.spdx.json
           retention-days: 90
 
-      - name: Verify no secrets leaked in build output
-        run: |
-          # Secrets are referenced only via secrets.* context — they are never echo'd
-          # or interpolated into run: blocks directly. This step is a standing assertion.
-          echo "Secret masking check: PASS"
