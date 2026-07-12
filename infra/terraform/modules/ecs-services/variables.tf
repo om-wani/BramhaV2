@@ -173,3 +173,9 @@ variable "sandbox_host_desired_count" {
   type        = number
   default     = 1
 }
+
+variable "enable_autoscaling" {
+  description = "Enable Application AutoScaling for ECS services (CPU-based scale-out)"
+  type        = bool
+  default     = true
+}

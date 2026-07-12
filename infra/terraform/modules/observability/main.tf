@@ -758,6 +758,27 @@ resource "aws_cloudwatch_log_group" "opensearch_es_application" {
   }
 }
 
+# ── AZ failure detection — ECS zero-task alarm ────────────────────────────────
+resource "aws_cloudwatch_metric_alarm" "ecs_unhealthy_tasks" {
+  alarm_name          = "${var.name_prefix}-ecs-unhealthy-tasks"
+  alarm_description   = "ECS service has zero running tasks in at least one service — possible AZ failure"
+  namespace           = "AWS/ECS"
+  metric_name         = "RunningTaskCount"
+  statistic           = "Minimum"
+  period              = 60
+  evaluation_periods  = 2
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+
+  alarm_actions = [aws_sns_topic.critical.arn]
+  ok_actions    = [aws_sns_topic.warning.arn]
+
+  tags = {
+    Name = "${var.name_prefix}-ecs-unhealthy-tasks"
+  }
+}
+
 # Resource-based policy so OpenSearch service can write to these log groups
 resource "aws_cloudwatch_log_resource_policy" "opensearch" {
   policy_name = "${var.name_prefix}-opensearch-log-policy"

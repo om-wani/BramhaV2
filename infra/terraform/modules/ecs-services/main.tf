@@ -1069,3 +1069,132 @@ resource "aws_ecs_service" "sandbox_host" {
     Name = "${local.name_prefix}-sandbox-host-service"
   }
 }
+
+###############################################################################
+# ECS Application AutoScaling — CPU-based scale-out for core services
+# sandbox-host and mcp-node are excluded (they scale differently).
+###############################################################################
+
+# ── API ──────────────────────────────────────────────────────────────────────
+
+resource "aws_appautoscaling_target" "ecs_api" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = 6
+  min_capacity       = var.api_desired_count
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.api.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_cpu_api" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-api-cpu-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_api[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_api[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_api[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# ── Web ───────────────────────────────────────────────────────────────────────
+
+resource "aws_appautoscaling_target" "ecs_web" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = 4
+  min_capacity       = var.web_desired_count
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.web.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_cpu_web" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-web-cpu-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_web[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_web[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_web[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# ── Agent-runtime ─────────────────────────────────────────────────────────────
+
+resource "aws_appautoscaling_target" "ecs_agent_runtime" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = 8
+  min_capacity       = var.agent_runtime_desired_count
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.agent_runtime.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_cpu_agent_runtime" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-agent-runtime-cpu-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_agent_runtime[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_agent_runtime[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_agent_runtime[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 60.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+# ── Ingestion-worker ──────────────────────────────────────────────────────────
+
+resource "aws_appautoscaling_target" "ecs_ingestion_worker" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  max_capacity       = 6
+  min_capacity       = var.ingestion_worker_desired_count
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.ingestion_worker.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_cpu_ingestion_worker" {
+  count = var.enable_autoscaling ? 1 : 0
+
+  name               = "${local.name_prefix}-ingestion-worker-cpu-scale"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_ingestion_worker[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_ingestion_worker[0].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_ingestion_worker[0].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    target_value       = 60.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
