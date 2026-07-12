@@ -25,3 +25,9 @@ export * from './errors.js'
 
 // Constants
 export * from './constants.js'
+
+// Telemetry (OTel SDK init + pre-built instruments)
+export * from './telemetry.js'
+
+// Log redaction
+export * from './redaction.js'

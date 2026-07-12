@@ -71,3 +71,15 @@ variable "artifact_domain_aliases" {
   type        = list(string)
   default     = []
 }
+
+variable "oncall_email" {
+  description = "On-call email address for CloudWatch alarm SNS subscriptions"
+  type        = string
+  default     = "oncall@bramha.ai"
+}
+
+variable "pagerduty_webhook_url" {
+  description = "PagerDuty HTTPS webhook URL for critical SNS alerts (empty = disabled)"
+  type        = string
+  default     = ""
+}

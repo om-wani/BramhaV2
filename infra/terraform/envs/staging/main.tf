@@ -246,6 +246,27 @@ module "cdn" {
 }
 
 ###############################################################################
+# Observability — CloudWatch dashboards/alarms, Firehose→S3 audit, OpenSearch SIEM
+###############################################################################
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix                           = "bramha-${var.environment}"
+  aws_region                            = var.aws_region
+  kms_key_id                            = module.secrets.kms_key_arn
+  audit_export_bucket_id                = module.s3.audit_export_bucket_id
+  audit_export_bucket_arn               = module.s3.audit_export_bucket_arn
+  oncall_email                          = var.oncall_email
+  pagerduty_webhook_url                 = var.pagerduty_webhook_url
+  monthly_token_budget                  = 500000  # staging budget
+  rds_max_connections                   = 100
+  isolated_subnet_ids                   = module.network.isolated_subnet_ids
+  vpc_id                                = module.network.vpc_id
+  opensearch_master_password_secret_arn = module.secrets.opensearch_master_password_secret_arn
+}
+
+###############################################################################
 # Outputs (useful for CI/CD)
 ###############################################################################
 

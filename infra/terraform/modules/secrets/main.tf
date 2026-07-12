@@ -177,3 +177,23 @@ resource "aws_secretsmanager_secret_version" "encryption_key_placeholder" {
     ignore_changes = [secret_string]
   }
 }
+
+resource "aws_secretsmanager_secret" "opensearch_master_password" {
+  name                    = "${local.name_prefix}/opensearch_master_password"
+  description             = "OpenSearch SIEM fine-grained access control master password for Bramha ${var.environment}"
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.main.arn
+
+  tags = {
+    Name = "bramha-${var.environment}-opensearch-master-password"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "opensearch_master_password_placeholder" {
+  secret_id     = aws_secretsmanager_secret.opensearch_master_password.id
+  secret_string = jsonencode({ password = "REPLACE_ME_BEFORE_APPLY" })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}

@@ -43,6 +43,12 @@ output "encryption_key_arn" {
   sensitive   = true
 }
 
+output "opensearch_master_password_secret_arn" {
+  description = "ARN of the OpenSearch SIEM master password secret"
+  value       = aws_secretsmanager_secret.opensearch_master_password.arn
+  sensitive   = true
+}
+
 output "all_secret_arns" {
   description = "All secret ARNs — used for IAM task role policies"
   sensitive   = true
@@ -52,5 +58,6 @@ output "all_secret_arns" {
     aws_secretsmanager_secret.jwt_secret.arn,
     aws_secretsmanager_secret.api_key_salt.arn,
     aws_secretsmanager_secret.encryption_key.arn,
+    aws_secretsmanager_secret.opensearch_master_password.arn,
   ]
 }
