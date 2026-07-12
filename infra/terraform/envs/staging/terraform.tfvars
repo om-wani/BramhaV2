@@ -24,6 +24,14 @@ ingestion_worker_image = "REPLACE_WITH_ECR_URI/bramha-ingestion-worker:latest"
 sandbox_host_image     = "REPLACE_WITH_ECR_URI/bramha-sandbox-host:latest"
 mcp_node_image_uri     = "REPLACE_WITH_ECR_URI/bramha-mcp-node:latest"
 
-# ACM certificate ARN for the staging domain (must be in us-east-1 for ALB)
+# ACM certificate ARN for the staging domain (must be in us-east-1 for CloudFront)
 # Create via ACM console or CLI; add DNS validation records.
 acm_certificate_arn = "REPLACE_WITH_ACM_CERT_ARN"
+
+# ACM certificate ARN for the artifact CloudFront distribution (must be in us-east-1)
+# Issue a separate cert for artifacts-staging.bramha.ai.
+artifact_acm_certificate_arn = "REPLACE_WITH_ACM_CERT_ARN"
+
+# CloudFront distribution domain aliases
+web_domain_aliases      = ["staging.bramha.ai"]
+artifact_domain_aliases = ["artifacts-staging.bramha.ai"]

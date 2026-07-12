@@ -38,6 +38,11 @@ output "artifacts_bucket_arn" {
   value       = aws_s3_bucket.artifacts.arn
 }
 
+output "artifacts_bucket_regional_domain_name" {
+  description = "S3 artifacts bucket regional domain name (used as CloudFront S3 origin)"
+  value       = aws_s3_bucket.artifacts.bucket_regional_domain_name
+}
+
 output "audit_export_bucket_id" {
   description = "S3 audit-export bucket name"
   value       = aws_s3_bucket.audit_export.id

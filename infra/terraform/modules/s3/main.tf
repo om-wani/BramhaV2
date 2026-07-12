@@ -289,10 +289,10 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_policy" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
-  policy = data.aws_iam_policy_document.deny_non_https["artifacts"].json
-}
+# NOTE: The artifacts bucket policy is intentionally omitted here.
+# The cdn module owns the artifacts bucket policy (OAC grant + deny-non-HTTPS)
+# to avoid two Terraform resources managing the same bucket policy.
+# See: infra/terraform/modules/cdn/main.tf → aws_s3_bucket_policy.artifacts_oac
 
 resource "aws_s3_bucket_logging" "artifacts" {
   bucket        = aws_s3_bucket.artifacts.id
@@ -398,11 +398,11 @@ resource "aws_s3_bucket_policy" "logs" {
 ###############################################################################
 
 data "aws_iam_policy_document" "deny_non_https" {
+  # NOTE: "artifacts" is excluded — its bucket policy is managed by the cdn module.
   for_each = {
     staging      = aws_s3_bucket.staging.arn
     clean        = aws_s3_bucket.clean.arn
     quarantine   = aws_s3_bucket.quarantine.arn
-    artifacts    = aws_s3_bucket.artifacts.arn
     audit_export = aws_s3_bucket.audit_export.arn
     logs         = aws_s3_bucket.logs.arn
   }

@@ -27,6 +27,20 @@ provider "aws" {
   }
 }
 
+# WAF for CloudFront MUST reside in us-east-1 regardless of the main region.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = {
+      Project     = "bramha"
+      Environment = var.environment
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
 ###############################################################################
 # Secrets + KMS (must come first — other modules reference KMS key + secret ARNs)
 ###############################################################################
@@ -195,6 +209,41 @@ resource "aws_security_group_rule" "ingestion_to_redis" {
 }
 
 ###############################################################################
+# WAF — must be in us-east-1 for CloudFront
+###############################################################################
+
+module "waf" {
+  source = "../../modules/waf"
+
+  name_prefix       = "bramha-${var.environment}"
+  scope             = "CLOUDFRONT"
+  bot_control_block = false  # staging: count mode; flip to true for prod
+  rate_limit        = 2000
+
+  providers = {
+    aws = aws.us_east_1
+  }
+}
+
+###############################################################################
+# CDN — web + artifact distributions with WAF, TLS 1.2+, HSTS
+###############################################################################
+
+module "cdn" {
+  source = "../../modules/cdn"
+
+  name_prefix                           = "bramha-${var.environment}"
+  waf_acl_arn                           = module.waf.waf_acl_arn
+  alb_dns_name                          = module.ecs_services.alb_dns_name
+  artifacts_bucket_regional_domain_name = module.s3.artifacts_bucket_regional_domain_name
+  artifacts_bucket_id                   = module.s3.artifacts_bucket_id
+  acm_certificate_arn                   = var.acm_certificate_arn
+  artifact_acm_certificate_arn          = var.artifact_acm_certificate_arn
+  web_domain_aliases                    = var.web_domain_aliases
+  artifact_domain_aliases               = var.artifact_domain_aliases
+}
+
+###############################################################################
 # Outputs (useful for CI/CD)
 ###############################################################################
 
@@ -228,4 +277,19 @@ output "staging_bucket" {
 output "artifacts_bucket" {
   description = "S3 artifacts bucket name"
   value       = module.s3.artifacts_bucket_id
+}
+
+output "web_cloudfront_domain" {
+  description = "CloudFront web distribution domain name"
+  value       = module.cdn.web_domain_name
+}
+
+output "artifact_cloudfront_domain" {
+  description = "CloudFront artifact distribution domain name"
+  value       = module.cdn.artifact_domain_name
+}
+
+output "waf_acl_arn" {
+  description = "WAF Web ACL ARN"
+  value       = module.waf.waf_acl_arn
 }
