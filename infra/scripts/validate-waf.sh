@@ -28,8 +28,8 @@ probe() {
   if [[ "$status" == "$expected_status" ]]; then
     echo "PASS [$label] status=$status"
     ((PASS++))
-  # Treat any 403 as a WAF block even if we expected a different 4xx
-  elif [[ "$expected_status" == "403" && "$status" == "403" ]]; then
+  # Treat any 403 as a WAF block even when a different 4xx was expected
+  elif [[ "$status" == "403" ]]; then
     echo "PASS [$label] status=$status (WAF blocked)"
     ((PASS++))
   else

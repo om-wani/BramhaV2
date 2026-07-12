@@ -45,8 +45,16 @@ variable "artifact_domain_aliases" {
   default     = []
 }
 
-variable "web_origin" {
-  description = "Web app origin URL allowed to embed artifacts (used in CSP frame-ancestors)"
+variable "logs_bucket_domain_name" {
+  description = "S3 logs bucket domain name for CloudFront access logging (format: bucket.s3.amazonaws.com)"
   type        = string
-  default     = "https://staging.bramha.ai"
+}
+
+variable "web_origin" {
+  description = "Web app origin URL (https://...) allowed to embed artifacts in iframes — used in CSP frame-ancestors. Required; no default to prevent env cross-contamination."
+  type        = string
+  validation {
+    condition     = can(regex("^https://", var.web_origin))
+    error_message = "web_origin must be a full https:// URL."
+  }
 }

@@ -58,6 +58,11 @@ output "logs_bucket_id" {
   value       = aws_s3_bucket.logs.id
 }
 
+output "logs_bucket_domain_name" {
+  description = "S3 logs bucket domain name for CloudFront access logging (bucket.s3.amazonaws.com)"
+  value       = aws_s3_bucket.logs.bucket_domain_name
+}
+
 output "all_bucket_arns" {
   description = "List of all S3 bucket ARNs"
   value = [

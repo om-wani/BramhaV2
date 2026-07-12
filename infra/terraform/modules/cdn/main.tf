@@ -112,6 +112,12 @@ resource "aws_cloudfront_distribution" "web" {
   aliases             = var.web_domain_aliases
   web_acl_id          = var.waf_acl_arn
 
+  logging_config {
+    bucket          = var.logs_bucket_domain_name
+    prefix          = "cloudfront-web/"
+    include_cookies = false
+  }
+
   origin {
     domain_name = var.alb_dns_name
     origin_id   = "alb-${var.name_prefix}"
@@ -177,6 +183,12 @@ resource "aws_cloudfront_distribution" "artifacts" {
   price_class     = "PriceClass_100"
   aliases         = var.artifact_domain_aliases
   web_acl_id      = var.waf_acl_arn
+
+  logging_config {
+    bucket          = var.logs_bucket_domain_name
+    prefix          = "cloudfront-artifacts/"
+    include_cookies = false
+  }
 
   origin {
     domain_name              = var.artifacts_bucket_regional_domain_name
