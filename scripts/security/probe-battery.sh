@@ -5,7 +5,7 @@
 # Usage: BASE_URL=https://staging.bramha.ai ./scripts/security/probe-battery.sh
 set -euo pipefail
 
-BASE_URL="${BASE_URL:-https://staging.bramha.ai}"
+BASE_URL="${BASE_URL:?BASE_URL must be set (e.g. BASE_URL=https://bramha.ai ./probe-battery.sh)}"
 PASS=0; FAIL=0; SKIP=0
 
 probe() {

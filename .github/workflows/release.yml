@@ -17,12 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run security probe battery
+      - name: Run gitleaks secret scan (blocking)
         run: |
-          echo "Security scan on release commit..."
-          # gitleaks
+          echo "Running gitleaks on release commit..."
           docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:latest detect \
-            --source /repo --no-git -l error || true
+            --source /repo --no-git -l error
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

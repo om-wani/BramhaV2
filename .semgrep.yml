@@ -29,12 +29,12 @@ rules:
   - id: no-hardcoded-secret
     patterns:
       - pattern: |
-          const $X = "..."
+          const $X = "$VALUE"
       - metavariable-regex:
           metavariable: $X
           regex: ".*(password|secret|token|api_key|apikey).*"
       - metavariable-regex:
-          metavariable: "..."
+          metavariable: $VALUE
           regex: ".{8,}"
     message: "Possible hardcoded secret in variable $X"
     languages: [typescript, javascript]

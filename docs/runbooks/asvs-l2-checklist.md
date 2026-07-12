@@ -143,7 +143,7 @@ Legend: ✅ Pass · ❌ OPEN · ➖ N/A
 | 5.2.3 | URL validation before use as redirect | ✅ | `startsWith('/') && !startsWith('//')` in auth controller |
 | 5.2.4 | Data passed to scripting engines sanitized | ✅ | Agent sandbox via gVisor — no direct eval path |
 | 5.2.5 | Template injection prevented | ✅ | No server-side templating; React JSX only |
-| 5.2.6 | SSRF prevention — URL validation before fetch | ❌ | **OPEN**: FQDN allowlist for MCP/git URLs deferred (V12.6 also) |
+| 5.2.6 | SSRF prevention — URL validation before fetch | ⚠️ | **OPEN-MEDIUM**: git restricted to https://, MCP gated by policy engine + grants; FQDN allowlist post-launch P1 |
 | 5.2.7 | SVG files sanitized or disallowed | ✅ | SVG blocked in upload content-type allowlist |
 | 5.2.8 | Markdown rendered safely | ✅ | `react-markdown` with `rehype-sanitize` |
 
@@ -274,7 +274,7 @@ Legend: ✅ Pass · ❌ OPEN · ➖ N/A
 | 12.5.1 | Web tier serves only allowed file types | ✅ | CloudFront artifact origin separate; allowlist enforced |
 | 12.5.2 | Direct access to uploaded files prevented | ✅ | S3 bucket policy blocks public access; OAC only |
 | 12.6.1 | Web or app server configured to serve only required files | ✅ | NestJS/Next.js serve app routes only |
-| 12.6.2 | SSRF — FQDN allowlist on outbound fetch | ❌ | **OPEN**: MCP tool URL allowlist pending; git clone restricted to https:// only (partial) |
+| 12.6.2 | SSRF — FQDN allowlist on outbound fetch | ⚠️ | **OPEN-MEDIUM**: same as V5.2.6 — MCP policy engine + grants + sandbox network isolation as compensating controls |
 
 **Section total: 14/15 Pass · 1 OPEN (12.6.2)**
 
@@ -351,15 +351,20 @@ Legend: ✅ Pass · ❌ OPEN · ➖ N/A
 
 ---
 
-## Open Items (must fix before launch)
+## Open Items
 
 ### OPEN-1: SSRF FQDN Allowlist (V5.2.6 / V12.6.2)
 
-- **Risk**: HIGH — MCP tool URLs and git clone targets not validated against FQDN allowlist
-- **Current state**: `git clone` restricted to `https://` scheme; MCP tool calls lack URL allowlist
-- **Mitigation**: gVisor sandbox limits blast radius; MCP policy engine blocks unapproved tools
-- **Fix**: Implement FQDN allowlist in `apps/agent-runtime/src/mcp/` before general availability
-- **Owner**: T5.3 follow-up — post-launch P1
+- **Risk**: ~~HIGH~~ **MEDIUM** — downgraded based on active compensating controls (see below)
+- **Current state**: `git clone` restricted to `https://` scheme only (non-https rejected at API level); MCP tool calls lack per-FQDN allowlist but are constrained by policy engine
+- **Compensating controls** (reduce likelihood and blast radius to MEDIUM):
+  1. **MCP policy engine** (`packages/mcp-connectors/src/client/policy-engine.ts`): every tool call requires a valid grant, scope check, and capability JWT — unapproved connectors cannot be invoked
+  2. **Sandbox network isolation**: sandbox containers run with `--network none` (no outbound access)
+  3. **Private-app SG egress**: port 443 only to external; isolated subnets have no internet route
+  4. **git clone HTTPS-only**: `only_https_urls_allowed` check at API entry point
+- **Residual risk**: MCP connector endpoints registered by operators could be SSRF vectors if an operator registers a malicious endpoint — mitigated by admin-only connector registration
+- **Fix**: AWS Network Firewall FQDN allowlist (`infra/terraform/modules/waf/`) — deferred to post-launch sprint
+- **Owner**: Platform team — post-launch P1 (within 30 days of GA)
 
 ### OPEN-2: Magic-byte content-type validation (partial — V5.2 related)
 
