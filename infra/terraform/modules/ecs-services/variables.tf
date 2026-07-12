@@ -63,7 +63,6 @@ variable "sandbox_host_image" {
 variable "mcp_node_image_uri" {
   description = "ECR image URI for the mcp-node service"
   type        = string
-  default     = "REPLACE_WITH_ECR_URI/bramha-mcp-node:latest"
 }
 
 # ---- ALB / HTTPS ----
@@ -138,8 +137,8 @@ variable "audit_export_bucket_arn" {
   type        = string
 }
 
-variable "audit_export_bucket_id" {
-  description = "Name (ID) of the audit-export S3 bucket — used for ALB access log target"
+variable "logs_bucket_id" {
+  description = "Name (ID) of the dedicated logs S3 bucket — target for ALB access logs and S3 server access logs"
   type        = string
 }
 

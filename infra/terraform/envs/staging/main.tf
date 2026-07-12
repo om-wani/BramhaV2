@@ -53,6 +53,7 @@ module "network" {
 
   enable_flow_logs        = true
   flow_log_retention_days = 30
+  kms_key_id              = module.secrets.kms_key_arn
 }
 
 ###############################################################################
@@ -88,13 +89,13 @@ module "ecs_services" {
   encryption_key_arn   = module.secrets.encryption_key_arn
   all_secret_arns      = module.secrets.all_secret_arns
 
-  # S3 bucket ARNs + bucket name for ALB access logs
+  # S3 bucket ARNs + dedicated logs bucket for ALB access logs
   staging_bucket_arn      = module.s3.staging_bucket_arn
   clean_bucket_arn        = module.s3.clean_bucket_arn
   quarantine_bucket_arn   = module.s3.quarantine_bucket_arn
   artifacts_bucket_arn    = module.s3.artifacts_bucket_arn
   audit_export_bucket_arn = module.s3.audit_export_bucket_arn
-  audit_export_bucket_id  = module.s3.audit_export_bucket_id
+  logs_bucket_id          = module.s3.logs_bucket_id
 
   # Staging: 1 replica each (cost-optimised)
   api_desired_count             = 1
@@ -164,6 +165,33 @@ module "s3" {
 
   staging_lifecycle_days      = 7
   audit_export_retention_days = 365
+}
+
+###############################################################################
+# Cross-module SG rules — ECS services → Redis (avoids circular module deps)
+# These must live here because ecs-services and elasticache each depend on
+# each other's SG IDs (ecs-services exposes client SG IDs; elasticache uses them
+# for ingress rules). Egress rules from ECS clients to Redis are wired here.
+###############################################################################
+
+resource "aws_security_group_rule" "runtime_to_redis" {
+  type                     = "egress"
+  description              = "Redis from agent-runtime"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  security_group_id        = module.ecs_services.runtime_sg_id
+  source_security_group_id = module.elasticache.redis_sg_id
+}
+
+resource "aws_security_group_rule" "ingestion_to_redis" {
+  type                     = "egress"
+  description              = "Redis from ingestion-worker"
+  from_port                = 6379
+  to_port                  = 6379
+  protocol                 = "tcp"
+  security_group_id        = module.ecs_services.ingestion_sg_id
+  source_security_group_id = module.elasticache.redis_sg_id
 }
 
 ###############################################################################

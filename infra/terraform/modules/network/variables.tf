@@ -50,3 +50,9 @@ variable "flow_log_retention_days" {
   type        = number
   default     = 30
 }
+
+variable "kms_key_id" {
+  description = "KMS key ARN for CloudWatch log group encryption (flow logs). Requires the KMS key policy to allow logs.amazonaws.com."
+  type        = string
+  default     = null
+}

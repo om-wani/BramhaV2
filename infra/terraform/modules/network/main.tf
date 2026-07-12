@@ -263,6 +263,7 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
   count             = var.enable_flow_logs ? 1 : 0
   name              = "/aws/vpc/flow-logs/${local.name_prefix}"
   retention_in_days = var.flow_log_retention_days
+  kms_key_id        = var.kms_key_id
 
   tags = {
     Name = "${local.name_prefix}-flow-logs"
@@ -299,7 +300,7 @@ resource "aws_iam_role_policy" "flow_logs" {
         "logs:DescribeLogGroups",
         "logs:DescribeLogStreams",
       ]
-      Resource = "*"
+      Resource = "${aws_cloudwatch_log_group.flow_logs[0].arn}:*"
     }]
   })
 }

@@ -422,14 +422,15 @@ resource "aws_security_group" "web" {
 # Agent-runtime — no ALB ingress; communicates via Redis
 resource "aws_security_group" "agent_runtime" {
   name        = "${local.name_prefix}-sg-agent-runtime"
-  description = "Agent-runtime — no inbound; egress to Redis + VPC endpoints"
+  description = "Agent-runtime — no inbound; HTTPS egress to LLM APIs + explicit Redis/MCP rules"
   vpc_id      = var.vpc_id
 
+  # TODO T5.3: replace 443/0.0.0.0/0 with FQDN allowlist via Network Firewall
   egress {
-    description = "All outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS to LLM APIs and AWS services via NAT"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -441,14 +442,15 @@ resource "aws_security_group" "agent_runtime" {
 # Ingestion-worker — no ALB ingress; S3 via endpoint + Redis
 resource "aws_security_group" "ingestion_worker" {
   name        = "${local.name_prefix}-sg-ingestion-worker"
-  description = "Ingestion-worker — no inbound; egress to S3 endpoint + Redis"
+  description = "Ingestion-worker — no inbound; HTTPS egress for AV scanning APIs + explicit Redis rule"
   vpc_id      = var.vpc_id
 
+  # TODO T5.3: replace 443/0.0.0.0/0 with FQDN allowlist via Network Firewall
   egress {
-    description = "All outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS to AV scanning APIs and AWS services via NAT"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -536,11 +538,11 @@ resource "aws_lb" "main" {
 
   enable_deletion_protection = true
 
-  # ALB access logs — ELB service account needs s3:PutObject on audit-export bucket.
-  # See modules/s3/main.tf (aws_s3_bucket_policy.audit_export_combined) for bucket policy.
+  # ALB access logs — ELB service account needs s3:PutObject on the dedicated logs bucket.
+  # See modules/s3/main.tf (aws_s3_bucket_policy.logs + data.logs_combined) for bucket policy.
   # AWS docs: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
   access_logs {
-    bucket  = var.audit_export_bucket_id
+    bucket  = var.logs_bucket_id
     prefix  = "alb-access-logs"
     enabled = true
   }
@@ -1026,9 +1028,9 @@ resource "aws_ecs_service" "mcp_node" {
   launch_type      = "FARGATE"
   platform_version = "LATEST"
 
-  # MCP node runs in isolated subnets — same tier as sandbox; no public IP
+  # MCP node in private-app subnets (needs external MCP endpoint access via NAT; FQDN allowlist deferred to T5.3)
   network_configuration {
-    subnets          = var.isolated_subnet_ids
+    subnets          = var.private_app_subnet_ids
     security_groups  = [aws_security_group.mcp.id]
     assign_public_ip = false
   }

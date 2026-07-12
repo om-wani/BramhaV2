@@ -20,10 +20,3 @@ variable "audit_export_retention_days" {
   default     = 365
 }
 
-variable "access_log_bucket_name" {
-  description = "Name of the bucket to receive S3 server access logs (must exist separately)"
-  type        = string
-  default     = ""
-  # When empty, access logging is configured but points to the audit-export bucket itself.
-  # For production, provide a dedicated logging bucket.
-}

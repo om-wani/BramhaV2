@@ -10,18 +10,8 @@ directory:
 
 # Skip checks with documented rationale
 skip-check:
-  # CKV_AWS_19: S3 access logging — the audit-export bucket acts as the
-  # central log target; individual bucket logging targets it. A separate
-  # dedicated logging bucket (CKV_AWS_19) is out of scope for T5.2 but
-  # configured in the access_log_bucket_name variable for production override.
-  - CKV_AWS_19
-
   # CKV_AWS_86: CloudFront logging — CloudFront/WAF is T5.3, not T5.2.
   - CKV_AWS_86
-
-  # CKV_AWS_91: ALB access logging — requires a separate S3 logging bucket
-  # with specific bucket policy; planned for T5.5 (observability).
-  - CKV_AWS_91
 
   # CKV_AWS_150: ALB deletion protection is enabled. This check fires for
   # staging because staging intentionally sets deletion_protection=false on

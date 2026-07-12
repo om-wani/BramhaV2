@@ -16,7 +16,8 @@ resource "aws_kms_key" "main" {
   enable_key_rotation     = true
   multi_region            = false
 
-  # Policy allows the account root and Secrets Manager service
+  # Policy allows the account root, Secrets Manager service, and CloudWatch Logs
+  # (CloudWatch Logs requires explicit KMS grant to encrypt log groups with CMK)
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -38,6 +39,21 @@ resource "aws_kms_key" "main" {
         Action = [
           "kms:GenerateDataKey",
           "kms:Decrypt",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "Allow CloudWatch Logs"
+        Effect = "Allow"
+        Principal = {
+          Service = "logs.amazonaws.com"
+        }
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey",
         ]
         Resource = "*"
       },

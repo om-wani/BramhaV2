@@ -16,12 +16,64 @@ locals {
 }
 
 ###############################################################################
-# Logging bucket — receives server access logs from all other buckets
-# (self-referential for simplicity; override with var.access_log_bucket_name)
+# Logging bucket — dedicated bucket for S3 server access logs + ALB access logs
+# Separate from audit_export to avoid COMPLIANCE Object Lock on ephemeral logs.
 ###############################################################################
 
+resource "aws_s3_bucket" "logs" {
+  bucket        = "${local.name_prefix}-logs-${local.env}"
+  force_destroy = true # logs bucket can be wiped on teardown
+
+  tags = {
+    Name    = "${local.name_prefix}-logs-${local.env}"
+    Purpose = "s3-alb-access-logs"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = var.kms_key_id
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "logs" {
+  bucket                  = aws_s3_bucket.logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    id     = "expire-logs-after-90-days"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+}
+
 locals {
-  log_bucket = var.access_log_bucket_name != "" ? var.access_log_bucket_name : aws_s3_bucket.audit_export.id
+  log_bucket = aws_s3_bucket.logs.id
 }
 
 ###############################################################################
@@ -303,15 +355,26 @@ resource "aws_s3_bucket_public_access_block" "audit_export" {
   restrict_public_buckets = true
 }
 
-# ELB service account for this region — needs s3:PutObject to write ALB access logs.
+resource "aws_s3_bucket_policy" "audit_export" {
+  bucket = aws_s3_bucket.audit_export.id
+  policy = data.aws_iam_policy_document.deny_non_https["audit_export"].json
+}
+
+resource "aws_s3_bucket_logging" "audit_export" {
+  bucket        = aws_s3_bucket.audit_export.id
+  target_bucket = aws_s3_bucket.logs.id
+  target_prefix = "s3-access-logs/${local.buckets.audit_export}/"
+}
+
+###############################################################################
+# ALB access-log bucket policy — ELB service account needs s3:PutObject.
 # See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
-# NOTE: Object Lock COMPLIANCE mode on this bucket means ELB log writes must also include
-# retention headers; standard ELB logging does not supply them. Consider a separate
-# non-Object-Lock bucket for ALB access logs in production if this causes write failures.
+###############################################################################
+
 data "aws_elb_service_account" "main" {}
 
-data "aws_iam_policy_document" "audit_export_combined" {
-  source_policy_documents = [data.aws_iam_policy_document.deny_non_https["audit_export"].json]
+data "aws_iam_policy_document" "logs_combined" {
+  source_policy_documents = [data.aws_iam_policy_document.deny_non_https["logs"].json]
 
   statement {
     sid    = "AllowELBAccessLogs"
@@ -321,20 +384,13 @@ data "aws_iam_policy_document" "audit_export_combined" {
       identifiers = [data.aws_elb_service_account.main.arn]
     }
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.audit_export.arn}/alb-access-logs/*"]
+    resources = ["${aws_s3_bucket.logs.arn}/alb-access-logs/*"]
   }
 }
 
-resource "aws_s3_bucket_policy" "audit_export" {
-  bucket = aws_s3_bucket.audit_export.id
-  policy = data.aws_iam_policy_document.audit_export_combined.json
-}
-
-# S3 server access logging for the audit-export bucket (self-referential, prefix "s3-access-logs/")
-resource "aws_s3_bucket_logging" "audit_export" {
-  bucket        = aws_s3_bucket.audit_export.id
-  target_bucket = aws_s3_bucket.audit_export.id
-  target_prefix = "s3-access-logs/"
+resource "aws_s3_bucket_policy" "logs" {
+  bucket = aws_s3_bucket.logs.id
+  policy = data.aws_iam_policy_document.logs_combined.json
 }
 
 ###############################################################################
@@ -348,6 +404,7 @@ data "aws_iam_policy_document" "deny_non_https" {
     quarantine   = aws_s3_bucket.quarantine.arn
     artifacts    = aws_s3_bucket.artifacts.arn
     audit_export = aws_s3_bucket.audit_export.arn
+    logs         = aws_s3_bucket.logs.arn
   }
 
   statement {

@@ -48,6 +48,11 @@ output "audit_export_bucket_arn" {
   value       = aws_s3_bucket.audit_export.arn
 }
 
+output "logs_bucket_id" {
+  description = "S3 dedicated logs bucket name (S3 server access logs + ALB access logs)"
+  value       = aws_s3_bucket.logs.id
+}
+
 output "all_bucket_arns" {
   description = "List of all S3 bucket ARNs"
   value = [

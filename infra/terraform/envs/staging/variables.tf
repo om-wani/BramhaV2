@@ -45,7 +45,6 @@ variable "sandbox_host_image" {
 variable "mcp_node_image_uri" {
   description = "ECR image URI for the mcp-node service"
   type        = string
-  default     = "REPLACE_WITH_ECR_URI/bramha-mcp-node:latest"
 }
 
 # ---- ALB ----
