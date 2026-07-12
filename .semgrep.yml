@@ -1,0 +1,59 @@
+# Semgrep rules for BramhaV2 security scanning.
+# Run: semgrep --config .semgrep.yml --error .
+rules:
+  - id: no-console-log
+    pattern: console.log(...)
+    message: "Use structured Pino logger instead of console.log"
+    languages: [typescript, javascript]
+    severity: WARNING
+    paths:
+      include:
+        - "apps/**"
+        - "packages/**"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.spec.ts"
+
+  - id: no-eval
+    pattern: eval(...)
+    message: "eval() is dangerous — never use"
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: no-dangerously-set-inner-html
+    pattern: dangerouslySetInnerHTML
+    message: "dangerouslySetInnerHTML is an XSS risk — use React's safe rendering"
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: no-hardcoded-secret
+    patterns:
+      - pattern: |
+          const $X = "..."
+      - metavariable-regex:
+          metavariable: $X
+          regex: ".*(password|secret|token|api_key|apikey).*"
+      - metavariable-regex:
+          metavariable: "..."
+          regex: ".{8,}"
+    message: "Possible hardcoded secret in variable $X"
+    languages: [typescript, javascript]
+    severity: ERROR
+
+  - id: no-sql-string-concat
+    pattern: |
+      $SQL + $VAR
+    message: "Possible SQL injection via string concatenation — use parameterized queries"
+    languages: [typescript, javascript]
+    severity: WARNING
+    paths:
+      include:
+        - "packages/db/**"
+        - "apps/api/**"
+
+  - id: open-redirect-check
+    pattern: |
+      res.redirect($URL)
+    message: "Ensure redirect target is validated against allowlist (startsWith('/') && !startsWith('//'))"
+    languages: [typescript]
+    severity: WARNING

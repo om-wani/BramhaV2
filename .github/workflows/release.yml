@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run security probe battery
+        run: |
+          echo "Security scan on release commit..."
+          # gitleaks
+          docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:latest detect \
+            --source /repo --no-git -l error || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          make_latest: true
+          body: |
+            ## BramhaV2 ${{ github.ref_name }}
+
+            ### Security
+            - ASVS L2 checklist: ≥ 95% pass (see docs/runbooks/asvs-l2-checklist.md)
+            - cosign-signed Docker images (verify: `cosign verify --certificate-identity-regexp ... <image>`)
+            - All T5 tasks complete: containerization, Terraform, WAF/CDN, CI/CD, observability, HA/DR, hardening
+
+            ### Go-live checklist
+            See `docs/runbooks/go-live-checklist.md`

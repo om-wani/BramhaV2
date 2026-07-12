@@ -5,3 +5,8 @@
 
 ALTER TABLE auth_sessions
   ADD COLUMN IF NOT EXISTS two_factor_verified boolean NOT NULL DEFAULT false;
+
+-- Next migration: 0019_*.sql
+-- NOTE: Never add DROP COLUMN or DROP TABLE without first confirming a point-in-time
+-- backup exists and a rollback migration is authored. Use ADD COLUMN with DEFAULT instead.
+
