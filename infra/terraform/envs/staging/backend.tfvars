@@ -11,4 +11,4 @@ key            = "staging/terraform.tfstate"
 region         = "us-east-1"
 dynamodb_table = "bramha-terraform-lock-staging"
 encrypt        = true
-# kms_key_id = "alias/bramha-staging"  # Uncomment after KMS key exists
+kms_key_id = "alias/bramha-staging-tfstate"  # Created by infra/scripts/bootstrap-state-bucket.sh

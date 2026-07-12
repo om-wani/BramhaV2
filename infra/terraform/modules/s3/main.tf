@@ -303,9 +303,38 @@ resource "aws_s3_bucket_public_access_block" "audit_export" {
   restrict_public_buckets = true
 }
 
+# ELB service account for this region — needs s3:PutObject to write ALB access logs.
+# See: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+# NOTE: Object Lock COMPLIANCE mode on this bucket means ELB log writes must also include
+# retention headers; standard ELB logging does not supply them. Consider a separate
+# non-Object-Lock bucket for ALB access logs in production if this causes write failures.
+data "aws_elb_service_account" "main" {}
+
+data "aws_iam_policy_document" "audit_export_combined" {
+  source_policy_documents = [data.aws_iam_policy_document.deny_non_https["audit_export"].json]
+
+  statement {
+    sid    = "AllowELBAccessLogs"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.audit_export.arn}/alb-access-logs/*"]
+  }
+}
+
 resource "aws_s3_bucket_policy" "audit_export" {
   bucket = aws_s3_bucket.audit_export.id
-  policy = data.aws_iam_policy_document.deny_non_https["audit_export"].json
+  policy = data.aws_iam_policy_document.audit_export_combined.json
+}
+
+# S3 server access logging for the audit-export bucket (self-referential, prefix "s3-access-logs/")
+resource "aws_s3_bucket_logging" "audit_export" {
+  bucket        = aws_s3_bucket.audit_export.id
+  target_bucket = aws_s3_bucket.audit_export.id
+  target_prefix = "s3-access-logs/"
 }
 
 ###############################################################################

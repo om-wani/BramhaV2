@@ -48,6 +48,11 @@ output "sandbox_sg_id" {
   value       = aws_security_group.sandbox_host.id
 }
 
+output "mcp_sg_id" {
+  description = "Security group ID of the mcp-node service"
+  value       = aws_security_group.mcp.id
+}
+
 output "task_execution_role_arn" {
   description = "ARN of the shared ECS task execution role"
   value       = aws_iam_role.task_execution.arn

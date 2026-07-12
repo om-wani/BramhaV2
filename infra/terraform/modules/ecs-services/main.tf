@@ -113,7 +113,7 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
 
 # Helper: create a task role
 resource "aws_iam_role" "task_roles" {
-  for_each = toset(["api", "web", "agent-runtime", "ingestion-worker", "sandbox-host"])
+  for_each = toset(["api", "web", "agent-runtime", "ingestion-worker", "sandbox-host", "mcp-node"])
 
   name = "${local.name_prefix}-ecs-task-${each.key}-role"
 
@@ -290,6 +290,24 @@ resource "aws_iam_role_policy" "ingestion_worker_task" {
   })
 }
 
+# MCP-node task role — CloudWatch logs only; no S3 or secret access
+resource "aws_iam_role_policy" "mcp_node_task" {
+  name = "${local.name_prefix}-mcp-node-task-policy"
+  role = aws_iam_role.task_roles["mcp-node"].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "CloudWatchLogsWrite"
+        Effect = "Allow"
+        Action = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = ["${aws_cloudwatch_log_group.ecs.arn}:*"]
+      },
+    ]
+  })
+}
+
 # Sandbox-host task role — minimal; no S3 or secret access
 resource "aws_iam_role_policy" "sandbox_host_task" {
   name = "${local.name_prefix}-sandbox-host-task-policy"
@@ -439,6 +457,45 @@ resource "aws_security_group" "ingestion_worker" {
   }
 }
 
+# MCP node — accept from agent-runtime on 8801 only; egress open (reaches external MCP endpoints)
+# TODO T5.3: FQDN allowlist for LLM API egress via AWS Network Firewall
+resource "aws_security_group" "mcp" {
+  name        = "${local.name_prefix}-sg-mcp-node"
+  description = "MCP node — accept 8801 from agent-runtime; egress open for external MCP endpoints"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "MCP port from agent-runtime"
+    from_port       = 8801
+    to_port         = 8801
+    protocol        = "tcp"
+    security_groups = [aws_security_group.agent_runtime.id]
+  }
+
+  egress {
+    description = "All outbound (reaches external MCP endpoints)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-sg-mcp-node"
+  }
+}
+
+# Explicit egress rule: agent-runtime → mcp-node on 8801
+resource "aws_security_group_rule" "runtime_to_mcp" {
+  type                     = "egress"
+  description              = "MCP node port from agent-runtime"
+  from_port                = 8801
+  to_port                  = 8801
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.agent_runtime.id
+  source_security_group_id = aws_security_group.mcp.id
+}
+
 # Sandbox-host — accept from API on 4200
 resource "aws_security_group" "sandbox_host" {
   name        = "${local.name_prefix}-sg-sandbox-host"
@@ -479,9 +536,14 @@ resource "aws_lb" "main" {
 
   enable_deletion_protection = true
 
-  # Access logs to audit-export bucket would require policy changes;
-  # enable via separate configuration post-deploy.
-  # access_logs { bucket = var.audit_export_bucket_id; enabled = true }
+  # ALB access logs — ELB service account needs s3:PutObject on audit-export bucket.
+  # See modules/s3/main.tf (aws_s3_bucket_policy.audit_export_combined) for bucket policy.
+  # AWS docs: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+  access_logs {
+    bucket  = var.audit_export_bucket_id
+    prefix  = "alb-access-logs"
+    enabled = true
+  }
 
   tags = {
     Name = "${local.name_prefix}-alb"
@@ -761,6 +823,40 @@ resource "aws_ecs_task_definition" "ingestion_worker" {
   }
 }
 
+# ---- MCP node ----
+resource "aws_ecs_task_definition" "mcp_node" {
+  family                   = "${local.name_prefix}-mcp-node"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.task_roles["mcp-node"].arn
+
+  container_definitions = jsonencode([{
+    name      = "mcp-node"
+    image     = var.mcp_node_image_uri
+    essential = true
+
+    portMappings = [{
+      containerPort = 8801
+      protocol      = "tcp"
+    }]
+
+    environment = [
+      { name = "NODE_ENV", value = var.environment },
+      { name = "MCP_PORT", value = "8801" },
+    ]
+
+    logConfiguration = local.log_config
+    readonlyRootFilesystem = true
+  }])
+
+  tags = {
+    Name = "${local.name_prefix}-mcp-node-task-def"
+  }
+}
+
 # ---- Sandbox-host ----
 resource "aws_ecs_task_definition" "sandbox_host" {
   family                   = "${local.name_prefix}-sandbox-host"
@@ -922,6 +1018,31 @@ resource "aws_ecs_service" "ingestion_worker" {
   }
 }
 
+resource "aws_ecs_service" "mcp_node" {
+  name             = "${local.name_prefix}-mcp-node"
+  cluster          = aws_ecs_cluster.main.id
+  task_definition  = aws_ecs_task_definition.mcp_node.arn
+  desired_count    = 1
+  launch_type      = "FARGATE"
+  platform_version = "LATEST"
+
+  # MCP node runs in isolated subnets — same tier as sandbox; no public IP
+  network_configuration {
+    subnets          = var.isolated_subnet_ids
+    security_groups  = [aws_security_group.mcp.id]
+    assign_public_ip = false
+  }
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-mcp-node-service"
+  }
+}
+
 resource "aws_ecs_service" "sandbox_host" {
   name             = "${local.name_prefix}-sandbox-host"
   cluster          = aws_ecs_cluster.main.id
@@ -930,8 +1051,9 @@ resource "aws_ecs_service" "sandbox_host" {
   launch_type      = "FARGATE"
   platform_version = "LATEST"
 
+  # Sandbox host runs in isolated subnets per doc §6 (not private-app)
   network_configuration {
-    subnets          = var.private_app_subnet_ids
+    subnets          = var.isolated_subnet_ids
     security_groups  = [aws_security_group.sandbox_host.id]
     assign_public_ip = false
   }

@@ -67,6 +67,7 @@ module "ecs_services" {
   vpc_id                 = module.network.vpc_id
   public_subnet_ids      = module.network.public_subnet_ids
   private_app_subnet_ids = module.network.private_app_subnet_ids
+  isolated_subnet_ids    = module.network.isolated_subnet_ids
   kms_key_id             = module.secrets.kms_key_arn
 
   # ECR images — set in terraform.tfvars or CI pipeline
@@ -75,6 +76,7 @@ module "ecs_services" {
   agent_runtime_image    = var.agent_runtime_image
   ingestion_worker_image = var.ingestion_worker_image
   sandbox_host_image     = var.sandbox_host_image
+  mcp_node_image_uri     = var.mcp_node_image_uri
 
   acm_certificate_arn = var.acm_certificate_arn
 
@@ -86,12 +88,13 @@ module "ecs_services" {
   encryption_key_arn   = module.secrets.encryption_key_arn
   all_secret_arns      = module.secrets.all_secret_arns
 
-  # S3 bucket ARNs
+  # S3 bucket ARNs + bucket name for ALB access logs
   staging_bucket_arn      = module.s3.staging_bucket_arn
   clean_bucket_arn        = module.s3.clean_bucket_arn
   quarantine_bucket_arn   = module.s3.quarantine_bucket_arn
   artifacts_bucket_arn    = module.s3.artifacts_bucket_arn
   audit_export_bucket_arn = module.s3.audit_export_bucket_arn
+  audit_export_bucket_id  = module.s3.audit_export_bucket_id
 
   # Staging: 1 replica each (cost-optimised)
   api_desired_count             = 1

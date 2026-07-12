@@ -1,0 +1,5 @@
+# SOPS configuration for BramhaV2.
+# Encrypt sensitive tfvars with: sops --encrypt --in-place file.yaml
+creation_rules:
+  - path_regex: infra/.*\.enc\.(yaml|json)$
+    kms: "alias/bramha-staging-tfstate"
