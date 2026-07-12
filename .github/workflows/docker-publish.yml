@@ -28,7 +28,7 @@ jobs:
           - { name: sandbox-host, dockerfile: infra/docker/Dockerfile.sandbox-host, context: . }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
