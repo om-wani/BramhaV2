@@ -1,0 +1,72 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, "claude/multi-agent-ai-orchestration-zt6xvw"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare test environment file
+        run: |
+          cp .env.example .env.test
+          cat >> .env.test << 'EOF'
+          DATABASE_URL=postgres://bramha_app:test_app_pw@localhost:5432/bramha_test
+          REDIS_URL=redis://localhost:6379
+          JWT_SECRET=test_jwt_secret_min_32_chars_here_ok
+          NEXTAUTH_SECRET=test_nextauth_secret_here_32chars
+          NEXTAUTH_URL=http://localhost:3001
+          EOF
+
+      - name: Start ephemeral compose stack
+        run: docker compose -f docker-compose.prod-sim.yml up -d --wait
+        env:
+          COMPOSE_FILE: docker-compose.prod-sim.yml
+
+      - name: Run DB migrations (test env — bramha_migrator role)
+        run: pnpm --filter @bramha/db migrate:deploy
+        env:
+          DATABASE_URL: postgres://bramha_migrator:test_migrator_pw@localhost:5432/bramha_test
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @bramha/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: pnpm --filter @bramha/web exec playwright test
+        env:
+          BASE_URL: http://localhost:3001
+          PLAYWRIGHT_TEST_BASE_URL: http://localhost:3001
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose -f docker-compose.prod-sim.yml down -v

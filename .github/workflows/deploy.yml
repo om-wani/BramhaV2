@@ -1,0 +1,259 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Build & Publish Docker Images"]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+  deployments: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+
+# ── Staging: auto-deploy when main build succeeds ──────────────────────────────
+jobs:
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — staging role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_DEPLOY_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify image signatures — reject unsigned images
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          SHA_SHORT=$(echo "$SHA" | cut -c1-7)
+          for svc in api web agent-runtime ingestion-worker sandbox-host; do
+            echo "Verifying bramha-${svc}:${SHA_SHORT} ..."
+            cosign verify \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/.*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${{ env.ECR_REGISTRY }}/bramha-${svc}:${SHA_SHORT}" || {
+              echo "FATAL: unsigned image rejected for ${svc}"
+              exit 1
+            }
+          done
+
+      - name: Run DB migrations (bramha_migrator role)
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_MIGRATOR_DATABASE_URL }}
+        run: |
+          # Advisory lock is acquired inside migrate:deploy to prevent concurrent runs.
+          # STAGING_MIGRATOR_DATABASE_URL must use bramha_migrator credentials.
+          pnpm --filter @bramha/db migrate:deploy
+
+      - name: Deploy services to ECS (rolling update)
+        id: ecs_deploy
+        env:
+          ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          SHA_SHORT=$(echo "$SHA" | cut -c1-7)
+          for svc in api web agent-runtime ingestion-worker; do
+            TASK_DEF=$(aws ecs describe-task-definition \
+              --task-definition "bramha-staging-${svc}" \
+              --query 'taskDefinition' --output json)
+            NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
+              --arg img "${{ env.ECR_REGISTRY }}/bramha-${svc}:${SHA_SHORT}" \
+              '.containerDefinitions[0].image = $img |
+               del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                   .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_ARN=$(aws ecs register-task-definition \
+              --cli-input-json "$NEW_TASK_DEF" \
+              --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service \
+              --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
+              --service "bramha-staging-${svc}" \
+              --task-definition "$NEW_ARN"
+          done
+
+      - name: Wait for staging services to stabilize
+        env:
+          ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+        run: |
+          for svc in api web agent-runtime ingestion-worker; do
+            aws ecs wait services-stable \
+              --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
+              --services "bramha-staging-${svc}"
+          done
+
+      - name: Health check — uptime probe (120 s timeout)
+        run: |
+          for i in $(seq 1 12); do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://staging.bramha.ai/api/health || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Health check PASS (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: status=${STATUS}, retrying in 10 s..."
+            sleep 10
+          done
+          echo "Health check FAILED after 120 s"
+          exit 1
+
+      - name: Auto-rollback on deploy or health-check failure
+        if: failure() && steps.ecs_deploy.outcome == 'success'
+        env:
+          ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+        run: |
+          echo "Rolling back staging to previous task definitions..."
+          for svc in api web agent-runtime ingestion-worker; do
+            PREV_ARN=$(aws ecs describe-services \
+              --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
+              --services "bramha-staging-${svc}" \
+              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
+              --output text)
+            if [[ -n "$PREV_ARN" ]]; then
+              aws ecs update-service \
+                --cluster "${{ secrets.STAGING_ECS_CLUSTER }}" \
+                --service "bramha-staging-${svc}" \
+                --task-definition "$PREV_ARN"
+            fi
+          done
+          echo "Rollback triggered — monitor ECS for stabilization."
+
+# ── Prod: tag push + environment approval gate ─────────────────────────────────
+  deploy-prod:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: production   # GitHub Environment: requires manual reviewer approval
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — prod role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_DEPLOY_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify image signatures — reject unsigned images
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          TAG=${{ github.ref_name }}
+          for svc in api web agent-runtime ingestion-worker sandbox-host; do
+            echo "Verifying bramha-${svc}:${TAG} ..."
+            cosign verify \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/.*" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${{ env.ECR_REGISTRY }}/bramha-${svc}:${TAG}" || {
+              echo "FATAL: unsigned image rejected for ${svc} at ${TAG}"
+              exit 1
+            }
+          done
+
+      - name: Run DB migrations (prod — bramha_migrator role)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_MIGRATOR_DATABASE_URL }}
+        run: |
+          # PROD_MIGRATOR_DATABASE_URL must use bramha_migrator credentials.
+          pnpm --filter @bramha/db migrate:deploy
+
+      - name: Deploy services to prod ECS (rolling — zero-downtime)
+        id: prod_ecs_deploy
+        run: |
+          TAG=${{ github.ref_name }}
+          for svc in api web agent-runtime ingestion-worker; do
+            TASK_DEF=$(aws ecs describe-task-definition \
+              --task-definition "bramha-prod-${svc}" \
+              --query 'taskDefinition' --output json)
+            NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
+              --arg img "${{ env.ECR_REGISTRY }}/bramha-${svc}:${TAG}" \
+              '.containerDefinitions[0].image = $img |
+               del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                   .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+            NEW_ARN=$(aws ecs register-task-definition \
+              --cli-input-json "$NEW_TASK_DEF" \
+              --query 'taskDefinition.taskDefinitionArn' --output text)
+            aws ecs update-service \
+              --cluster bramha-prod \
+              --service "bramha-prod-${svc}" \
+              --task-definition "$NEW_ARN"
+          done
+
+      - name: Wait for prod services to stabilize
+        run: |
+          for svc in api web agent-runtime ingestion-worker; do
+            aws ecs wait services-stable \
+              --cluster bramha-prod \
+              --services "bramha-prod-${svc}"
+          done
+
+      - name: Prod health check (300 s timeout)
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://bramha.ai/api/health || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Prod health check PASS (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: status=${STATUS}, retrying in 10 s..."
+            sleep 10
+          done
+          echo "Prod health check FAILED after 300 s"
+          exit 1
+
+      - name: Auto-rollback on prod deploy or health-check failure
+        if: failure() && steps.prod_ecs_deploy.outcome == 'success'
+        run: |
+          echo "Prod deploy failed — rolling back to previous task definitions..."
+          for svc in api web agent-runtime ingestion-worker; do
+            PREV_ARN=$(aws ecs describe-services \
+              --cluster bramha-prod \
+              --services "bramha-prod-${svc}" \
+              --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' \
+              --output text)
+            if [[ -n "$PREV_ARN" ]]; then
+              aws ecs update-service \
+                --cluster bramha-prod \
+                --service "bramha-prod-${svc}" \
+                --task-definition "$PREV_ARN"
+            fi
+          done
+          echo "Rollback triggered."
+
+      - name: Audit log — prod deploy event
+        if: success()
+        env:
+          PROD_AUDIT_WEBHOOK: ${{ secrets.PROD_AUDIT_WEBHOOK }}
+        run: |
+          curl -sf -X POST "$PROD_AUDIT_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"event\": \"prod_deploy\",
+              \"tag\": \"${{ github.ref_name }}\",
+              \"actor\": \"${{ github.actor }}\",
+              \"sha\": \"${{ github.sha }}\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+            }" || true
