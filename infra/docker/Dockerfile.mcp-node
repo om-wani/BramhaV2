@@ -39,8 +39,9 @@ COPY tsconfig.base.json ./
 # Build shared first, then mcp-connectors
 RUN pnpm --filter @bramha/shared build && pnpm --filter @bramha/mcp-connectors build
 
-# pnpm deploy resolves workspace:* deps to real packages, prod only
-RUN pnpm --filter @bramha/mcp-connectors deploy --prod /build/deploy
+# pnpm deploy resolves workspace:* deps to real packages, prod only.
+# --legacy: pnpm v10+ otherwise requires inject-workspace-packages=true.
+RUN pnpm --filter @bramha/mcp-connectors deploy --prod --legacy /build/deploy
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 

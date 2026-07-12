@@ -82,7 +82,7 @@ services:
     volumes:
       - clamav_data:/var/lib/clamav
     healthcheck:
-      test: ["CMD", "clamdcheck"]
+      test: ["CMD", "clamdcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -143,7 +143,7 @@ services:
       - mcp-isolated
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4100/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4100/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -162,7 +162,7 @@ services:
       - data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4101/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4101/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -180,7 +180,7 @@ services:
       - mcp-isolated
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4102/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4102/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -199,7 +199,7 @@ services:
       - mcp-web-egress
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4103/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4103/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

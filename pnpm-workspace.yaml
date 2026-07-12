@@ -10,4 +10,4 @@ allowBuilds:
   es5-ext: true
   msgpackr-extract: true
   sharp: false
-  protobufjs: set this to true or false
+  protobufjs: true
