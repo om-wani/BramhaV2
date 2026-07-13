@@ -9,6 +9,12 @@ export function middleware(request: NextRequest) {
   const randomBytes = crypto.getRandomValues(new Uint8Array(16)) 
   const nonce = btoa(String.fromCharCode(...randomBytes))
   // -----------------------------------------
+
+  const apiUrl =
+    process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+
+  const apiOrigin = new URL(apiUrl).origin
+  const websocketOrigin = apiOrigin.replace(/^http/, 'ws')
   
   const cspHeader = [
     `default-src 'self'`,
