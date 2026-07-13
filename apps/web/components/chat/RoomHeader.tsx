@@ -1,6 +1,8 @@
 'use client'
 
+import { Layers } from 'lucide-react'
 import { useChatStore } from '@/lib/stores/chat-store'
+import { cn } from '@/lib/utils'
 
 interface Room {
   id: string
@@ -11,14 +13,16 @@ interface Room {
 interface RoomHeaderProps {
   room: Room | null
   onSwitchBranch: (branchId: string) => void
+  artifactsOpen: boolean
+  onToggleArtifacts: () => void
 }
 
 /**
  * Top bar for a chat room.
- * Shows the room name, current branch (when not on 'main'), and a branch
- * selector dropdown when multiple branches exist.
+ * Shows the room name, current branch (when not on 'main'), a branch
+ * selector dropdown when multiple branches exist, and the Artifacts pane toggle.
  */
-export function RoomHeader({ room, onSwitchBranch }: RoomHeaderProps) {
+export function RoomHeader({ room, onSwitchBranch, artifactsOpen, onToggleArtifacts }: RoomHeaderProps) {
   const { branches, activeBranchId, isConnected } = useChatStore()
   const activeBranch = branches.find((b) => b.id === activeBranchId)
   const isNonMainBranch = activeBranch && activeBranch.name !== 'main'
@@ -45,6 +49,23 @@ export function RoomHeader({ room, onSwitchBranch }: RoomHeaderProps) {
           className="inline-block h-2 w-2 rounded-full"
           style={{ background: isConnected ? 'hsl(142 71% 45%)' : 'hsl(38 92% 50%)' }}
         />
+
+        <button
+          type="button"
+          onClick={onToggleArtifacts}
+          aria-pressed={artifactsOpen}
+          aria-label={artifactsOpen ? 'Hide artifacts pane' : 'Show artifacts pane'}
+          title="Artifacts"
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors',
+            artifactsOpen
+              ? 'border-primary bg-primary/10 text-primary'
+              : 'border-input text-muted-foreground hover:bg-card',
+          )}
+        >
+          <Layers className="h-3.5 w-3.5" aria-hidden />
+          Artifacts
+        </button>
 
         {/* Branch selector dropdown — only when there are multiple branches */}
         {branches.length > 1 && (

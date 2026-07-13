@@ -12,8 +12,6 @@
 import {
   Injectable,
   Logger,
-  HttpException,
-  HttpStatus,
   Inject,
 } from '@nestjs/common'
 import { createEmbeddingProvider, type EmbeddingProvider } from '@bramha/agents'
@@ -21,6 +19,7 @@ import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
 import { RlsDbService } from '../common/db/rls-db.service.js'
 import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import { enforceRateLimit } from '../common/redis/rate-limit.js'
 import type {
   KnowledgeChunkOrigin,
   KnowledgeSearchResult,
@@ -37,18 +36,6 @@ const VEC_LIMIT = 40
 const FUSION_TOP_N = 12
 const ORIGIN_ID_DEDUPE_LIMIT = 3
 const SNIPPET_CHARS = 300
-
-/**
- * Atomic INCR + conditional EXPIRE in a single Lua round-trip.
- * Prevents permanent rate-limit keys if the process crashes between INCR and EXPIRE.
- */
-const LUA_RATE_LIMIT = `
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-  redis.call('EXPIRE', KEYS[1], 60)
-end
-return count
-`
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 
@@ -96,24 +83,13 @@ export class KnowledgeService {
   // ── Rate limit ─────────────────────────────────────────────────────────────
 
   private async checkRateLimit(userId: string): Promise<void> {
-    const key = `ratelimit:search:${userId}`
-    let count: number
-    try {
-      count = (await this.redis.eval(LUA_RATE_LIMIT, 1, key)) as number
-    } catch (err) {
-      // Redis unavailable: fail-closed (deny) to prevent unbounded compute under outage
-      this.logger.error({ event: 'knowledge.rate_limit_redis_error', err: String(err) })
-      throw new HttpException(
-        { statusCode: 503, code: 'service_unavailable', message: 'Search temporarily unavailable' },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      )
-    }
-    if (count > RATE_LIMIT_SEARCH_PER_MIN) {
-      throw new HttpException(
-        { statusCode: 429, code: 'rate_limit_exceeded', message: 'Too many searches' },
-        HttpStatus.TOO_MANY_REQUESTS,
-      )
-    }
+    // Redis unavailable: fail-closed (deny) to prevent unbounded compute under outage
+    await enforceRateLimit(this.redis, `ratelimit:search:${userId}`, {
+      limit: RATE_LIMIT_SEARCH_PER_MIN,
+      windowSeconds: 60,
+      exceededMessage: 'Too many searches',
+      unavailableMessage: 'Search temporarily unavailable',
+    })
   }
 
   // ── Lexical search ─────────────────────────────────────────────────────────

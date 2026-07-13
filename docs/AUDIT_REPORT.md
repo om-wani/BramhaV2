@@ -1,52 +1,40 @@
 # BramhaV2 Codebase Audit Report
 
-Date: 2026-07-13 (two passes: static audit + deep runtime audit). Auditor: Claude Code session. Scope: full monorepo — optimization, broken systems, redundancy, security, gaps.
+Date: 2026-07-13 (three passes: static audit, deep runtime audit, fix round). Auditor: Claude Code session. Scope: full monorepo — optimization, broken systems, redundancy, security, gaps.
 
-Companion to this report: fixes already applied this session (see "Fixed during audit" at bottom). Everything in sections 0–5 below is **unfixed** and written for an implementing agent. Each item has file:line anchors, rationale, and a concrete fix sketch. Priorities: P0 = broken/blocking, P1 = should fix before next phase, P2 = cleanup/nice-to-have.
+Items marked **[FIXED]** below are resolved — see "Fixed during audit" at the bottom for what changed and how it was verified (this report does not restate the fix inline; only a pointer). All other items remain **unfixed** and are written for an implementing agent, with file:line anchors, rationale, and a concrete fix sketch. Priorities: P0 = broken/blocking, P1 = should fix before next phase, P2 = cleanup/nice-to-have. All 5 P0s (section 0) are fixed as of this pass; the only unfixed P0-adjacent item is 2.2, which turned out to need its own dedicated task (see its note).
 
 ---
 
 ## 0. Deep-audit P0s (found by actually running things — read these first)
 
-### 0.1 [P0] Web ↔ API auth contract never integrated — every authenticated web call 401s
-`apps/web/lib/api-client.ts` sends only cookies (`credentials: 'include'`); it never stores or sends an access token. `JwtAuthGuard` (apps/api/src/modules/auth/guards/jwt-auth.guard.ts:19) reads ONLY the `Authorization: Bearer` header. Login response returns `accessToken` in the JSON body and sets just the `refresh_token` cookie (auth.controller.ts). Result: the entire authenticated web app is non-functional against the real API — every `api.get/post/patch/delete` after login gets 401. Zero grep hits for `Authorization|accessToken` under apps/web/lib|stores|hooks.
-**Fix (recommended)**: set the access token as an `access_token` httpOnly cookie at login/refresh (SameSite=Strict; matches existing CSP posture), and teach JwtAuthGuard to fall back to that cookie when no Authorization header is present (keep header path for API-key/bearer clients). Alternative: in-memory token store + fetch wrapper on web — worse (XSS exfil surface, page-refresh loss, refresh-race complexity).
+### 0.1 [FIXED] Web ↔ API auth contract never integrated — every authenticated web call 401s
+✅ Fixed — see "Fixed during audit" #17.
 
-### 0.2 [P0] Conversation DAG hard-caps at ~63-deep — then every INSERT on the chain dies
-`idx_conversation_nodes_conv_path` GiST index over `ltree` path (0006): inserting node #64 in a linear chain fails with Postgres `stack depth limit exceeded` (2MB default stack; reproduced live — failure at exactly depth 63 with UUID-underscore labels). One node per message ⇒ any active conversation hits this wall almost immediately. The db test "500-node chain" codifies the requirement and fails.
-**Fix options** (agent must pick one; (a) is the surgical default):
-- (a) Drop the GiST index + `path <@` queries; do ancestor/descendant walks with a recursive CTE over `(conversation_id, parent_id)` btree — chat-scale conversations are thousands of nodes, CTE is fine, and `path` column can stay for display/debug.
-- (b) Shorten labels (e.g. 8-char hash of node id) — only delays the wall ~4× and adds a collision/lookup layer. Not recommended.
-- (c) Raise `max_stack_depth` — fragile, needs matching OS ulimit everywhere, still a cliff. Not recommended.
-Whichever is chosen, update docs/05 §DAG and the failing perf test to match.
+### 0.2 [FIXED] Conversation DAG hard-caps at ~63-deep — then every INSERT on the chain dies
+✅ Fixed — see "Fixed during audit" #17. Went with option (a) from the original fix sketch (dropped the GiST index, recursive CTE for ancestor walks).
 
-### 0.3 [P0] API uploads and ingestion-worker use different S3 buckets — every ingestion job 404s
-API writes uploads to a single `S3_BUCKET` (default `bramha-artifacts`; apps/api/src/modules/common/s3/s3.module.ts:31) with key `staging/{projectId}/{fileId}` (files.service.ts:160). Ingestion reads the same key from `S3_BUCKET_STAGING` = `bramha-staging` (apps/ingestion-worker/src/main.ts:51,90). Compose provisions the 4-bucket layout; the API simply never adopted it. Also 3-way env-name drift: `.env.example` says `S3_ACCESS_KEY/S3_SECRET_KEY`, API reads `AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY`, ingestion reads `S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY`.
-**Fix**: make the API's S3Module provide the 4 named buckets (staging/clean/quarantine/artifacts) from the same env names ingestion uses; presign uploads into STAGING, artifacts into ARTIFACTS; align `.env.example` + bootstrap.sh + compose on ONE credential var pair.
+### 0.3 [FIXED] API uploads and ingestion-worker use different S3 buckets — every ingestion job 404s
+✅ Fixed — see "Fixed during audit" #17.
 
-### 0.4 [P0] `system_agent` user + `system_memberships` never implemented — agents see zero rows
-agent-runtime requires `SYSTEM_USER_ID` env and runs all queries under it via withTenant, but no migration/seed creates any system user, and docs/05 §9 rule 2's `system_memberships` view doesn't exist anywhere (only grep hit is the docs line). RLS membership policies therefore filter every agent-runtime query to 0 rows — agents boot but can never read personas/conversations/memory.
-**Fix**: migration creating a reserved `system_agent` user (fixed UUID, no password, status system), auto-membership mechanism (trigger adding it to project_members on project creation, or a `system_memberships` view UNION'd into the policies), bootstrap.sh exporting `SYSTEM_USER_ID`, and a tenant-probe asserting the system user sees exactly its projects.
+### 0.4 [FIXED] `system_agent` user + membership mechanism never implemented — agents see zero rows
+✅ Fixed — see "Fixed during audit" #17. Went with the trigger-based auto-membership option (not a `system_memberships` view) — SECURITY DEFINER on `projects` INSERT, plus a backfill for pre-existing projects.
 
-### 0.5 [P0] Dockerfile.api runtime stage cannot build
-`npm install --omit=dev` at infra/docker/Dockerfile.api:72 dies on `workspace:*` (EUNSUPPORTEDPROTOCOL) — npm can't read pnpm workspace protocol. Same disease Dockerfile.mcp-node had; that file's fixed `pnpm deploy --prod --legacy` pattern (commit 696dc9d) is the proven template. Dockerfile.web also fails to build (its `pnpm --filter @bramha/web build` stage) — diagnose after api. Dockerfile.ingestion copies the whole pnpm-symlinked `/build/node_modules` (line 76) — verify COPY dereferences to a working tree or convert to the deploy pattern too. None of the three app images currently build.
+### 0.5 [FIXED] None of the 3 app Dockerfiles built or ran correctly
+✅ Fixed — see "Fixed during audit" #17. Turned out to be 6 distinct bugs across the 3 files, not just the `pnpm deploy` one originally flagged.
 
-### 0.6 [P1] xlsx parses untrusted uploads; npm version is abandoned with HIGH CVEs
-`xlsx@0.18.5` (ingestion extraction pipeline) has prototype-pollution + ReDoS advisories; the npm package is no longer updated (official distribution moved to cdn.sheetjs.com). It parses user-uploaded spreadsheets post-ClamAV — malware scan does not stop ReDoS/proto-pollution.
-**Fix**: swap to `exceljs` for xlsx/csv extraction, or pin SheetJS ≥0.20.2 from the official CDN registry. Keep extraction inside the worker sandbox either way.
+### 0.6 [FIXED] xlsx parses untrusted uploads; npm version is abandoned with HIGH CVEs
+✅ Fixed — see "Fixed during audit" #18. Went with the exceljs swap (not pinning SheetJS from their non-npm CDN registry).
 
-### 0.7 [P1] Remaining `next` HIGH advisories require Next 15
-Bumped 14.2.29→14.2.35 this session (several DoS fixes). The middleware-bypass and remaining DoS advisories are only fixed in 15.5.16+. Middleware guards routes here, so plan the Next 15 upgrade (App Router migration cost is low; `output: 'standalone'` and middleware API are compatible).
+### 0.7 [P1, deferred — deliberately not fixed] Remaining `next` HIGH advisories require Next 15
+Bumped 14.2.29→14.2.35 this session (several DoS fixes). The middleware-bypass and remaining DoS advisories are only fixed in 15.5.16+. Middleware guards routes here, so plan the Next 15 upgrade (App Router migration cost is low; `output: 'standalone'` and middleware API are compatible). Deliberately not attempted — major-version bump with real breaking-change surface, deserves its own dedicated pass with full regression, not a squeeze-in during an already-large session. Same reasoning applies to the `@opentelemetry/sdk-node` HIGH advisory (needs 0.52→0.217, also a major jump) — lower urgency since the vulnerable component (Prometheus exporter) isn't used in this codebase.
 
 ---
 
 ## 1. Broken / never-exercised systems
 
-### 1.1 [P0] `apps/agent-runtime` and `apps/ingestion-worker` have never been booted
-Same disease `apps/api` had (fixed this session): code merged on green unit tests, but the composition root was never executed. Typecheck now passes (fixed this session), but **runtime boot is unverified**. Known hazards:
-- `apps/agent-runtime/src/main.ts` — reads `SYSTEM_USER_ID`, `REDIS_URL`, `DATABASE_URL` env vars; no `.env` loader wired at all (nest ConfigModule absent here — plain node process). Needs an env-file story consistent with bootstrap.sh, or documented required-envs check at startup (a `check-env`-style assert).
-- `apps/ingestion-worker/src/main.ts` — same. Also `credentialEncryptionKey` handling (grep `CREDENTIAL_ENCRYPTION_KEY`) — verify a key-format assert exists like TotpService's 32-byte check.
-- **Fix**: boot both against compose stack, smoke one BullMQ job end-to-end each, fix what falls out. Expect the same class of DI/env/import bugs api had.
+### 1.1 [FIXED] `apps/agent-runtime` and `apps/ingestion-worker` have never been booted
+✅ Fixed — see "Fixed during audit" #16 (boot verified) and #17 (agent-runtime's `loadContext` verified to actually return data, not just start cleanly). One hazard from the original note still stands, unaddressed: neither app has a `.env` loader — both read `process.env` directly with no dotenv-equivalent, unlike apps/api's ConfigModule. Works today because bootstrap.sh/docker-compose inject env vars directly; would bite anyone trying to run either with a `.env` file the way apps/api supports.
 
 ### 1.2 [P1] `apps/api` `test:e2e` + `test:tenant-probes` unverified in CI context
 `vitest.e2e.config.ts` and `vitest.tenant-probes.config.ts` exist; `conversations.e2e.spec.ts` reads `TEST_REDIS_URL` (apps/api/src/modules/conversations/conversations.e2e.spec.ts:31). No CI wiring found that provides it. Verify these suites actually run somewhere; wire into CI with compose services or they will rot.
@@ -61,19 +49,15 @@ Check `apps/web/playwright.config.*` existence; script is aspirational. Either a
 
 ## 2. Security
 
-### 2.1 [P1] In-memory rate limiters — single-process only
-- apps/api/src/modules/auth/auth.service.ts:31 (login/register limiter)
-- apps/api/src/modules/auth/twofactor.service.ts:27 (2FA attempts)
-Code comments acknowledge it. Fine for one instance; broken the moment api scales horizontally (each pod gets its own bucket → limit multiplied by pod count). Conversations + knowledge services already use Redis Lua rate limiting — port auth limiters to the same pattern. Extract shared helper (see 3.1) first.
+### 2.1 [FIXED] In-memory rate limiters — single-process only
+✅ Fixed this round — see "Fixed during audit" #17 below.
 
-### 2.2 [P1] `users` SELECT policy now `USING (true)` (migration 0019)
-Applied this session to unblock registration (AuthDbService holds a raw connection, runs pre-session). Pragmatic but broad: any bramha_app connection can now read all `users` rows (including `password_hash`, `totp_secret_enc`) — not just AuthDbService. Defense-in-depth improvement for the implementing agent:
-- Option A: column-level `GRANT SELECT (id, email, display_name, avatar_key, status, created_at) ON users TO bramha_app` + separate `bramha_auth` role with full column access used only by AuthDbService's connection string.
-- Option B: move all `users` access behind SECURITY DEFINER functions.
-Option A is less invasive. Same reasoning applies to `auth_sessions`.
+### 2.2 [P1, scope corrected] `users`/`auth_sessions` SELECT policy is `USING (true)`
+Investigated this round; the report's original "Option A" (column-level `GRANT SELECT` restricting `bramha_app` to non-sensitive columns, elevated access only via a separate `bramha_auth` role) does not work as described — it was scoped only against `AuthDbService`. **`AdminService` also reads/writes `totp_secret_enc` through the exact same `bramha_app` role** (admin.service.ts:358 lists it in the user table; :414 nulls it out for admin-triggered 2FA reset) via `withAdmin()`. Postgres column privileges are a role-wide, pre-RLS layer — they can't be conditionally scoped per RLS-bypass-GUC the way row policies can. Revoking column access from `bramha_app` broadly would break admin 2FA reset alongside locking out `AuthDbService`.
+Actual fix needs a 3-way split, each its own connection pool + DI token: `bramha_app` (no sensitive columns — the general withTenant path), `bramha_auth` (full columns, `AuthDbService` only), and either extend `bramha_auth` to cover the admin-2FA-reset queries too or keep a third role for that path specifically. Non-trivial: new migration, new env vars (`AUTH_DATABASE_URL` or similar), new NestJS provider wiring for the second/third pool, full live re-verification of login + 2FA + admin panel. Scope it as its own task, not a quick follow-up.
 
-### 2.3 [P1] JWT access tokens lack revocation path
-apps/api/src/modules/auth/jwt.service.ts — EdDSA-signed, TTL from shared constants; verification is purely cryptographic. Sessions table exists (`auth_sessions`) for refresh rotation, but a compromised access token is valid until expiry. Verify TTL is short (≤15m); if not, shorten. Consider jti + Redis denylist for logout-all.
+### 2.3 [Verified sufficient] JWT access token TTL
+Checked: `SESSION_ACCESS_TOKEN_TTL_SECONDS = 900` (15 min, packages/shared/src/constants.ts) — already at the report's own "≤15m" bar. No change made. The jti + Redis denylist idea for logout-all remains a legitimate future enhancement (the report itself framed it as "consider," not a required fix) — worth doing before a real logout-all/security-incident feature is needed, not before.
 
 ### 2.4 [P2] `mcp-web` egress allowlist is env-var default
 infra/docker/compose.dev.yml:195 `MCP_WEB_ALLOWLIST` defaults to `api.github.com,docs.anthropic.com`. Fine for dev. Confirm the policy engine (packages/mcp-connectors/src/policy) rejects on empty/missing allowlist rather than allowing all — grep `MCP_WEB_ALLOWLIST` consumer and check the deny-by-default branch.
@@ -88,13 +72,11 @@ infra/docker/compose.dev.yml:195 `MCP_WEB_ALLOWLIST` defaults to `api.github.com
 
 ## 3. Redundancy / reinvented wheels
 
-### 3.1 [P1] Identical `LUA_RATE_LIMIT` script duplicated
-- apps/api/src/modules/conversations/conversations.service.ts:178
-- apps/api/src/modules/knowledge/knowledge.service.ts:45
-Byte-identical (verified by diff). Extract to `apps/api/src/modules/common/redis/rate-limit.ts` as `redisRateLimit(redis, key, limit, windowSec)`. Then auth limiters (2.1) migrate onto it too. Also `realtime.gateway.ts:33` has a similar-but-different socket-cap Lua — leave that one.
+### 3.1 [FIXED] Identical `LUA_RATE_LIMIT` script duplicated
+✅ Fixed this round — see "Fixed during audit" #17 below.
 
-### 3.2 [P1] `packages/db/src/seed/personas.ts` (421 lines) duplicates migration 0011 persona data
-Unreferenced by seed.ts (only seed.test.ts imports it). Two sources of truth for persona prompts — they WILL drift (0011's CFO apostrophe bug was already fixed only in the migration). Either: (a) delete personas.ts and keep 0011 canonical, or (b) generate a future migration from personas.ts. Recommend (a) — persona edits post-launch happen via Admin API, not seeds.
+### 3.2 [FIXED] `packages/db/src/seed/personas.ts` duplicated migration 0011 persona data
+✅ Fixed this round — see "Fixed during audit" #17 below.
 
 ### 3.3 [P2] Env parsing hand-rolled in scripts/check-env.ts
 `parseEnvFile` (scripts/check-env.ts:7) reimplements dotenv parsing. Works, tested, tiny — acceptable. If dotenv is ever added as a root dep, swap.
@@ -105,7 +87,7 @@ apps/api/src/modules/auth/auth-db.service.ts:43 — second `postgres()` pool alo
 ### 3.5 [P2] Unused dependencies (knip-verified, spot-check before removing)
 - apps/api: `fastify-plugin`, `supertest`+`@types/supertest` (devDeps; e2e config may want them — verify), `pino-pretty` (likely used via CLI pipe — keep), `tsx` (now unused after start:dev switch to tsc watch — REMOVE)
 - apps/ingestion-worker: `csv-parse` (extraction pipeline may intend xlsx only), `@bramha/db` (main.ts uses raw postgres?  verify then remove), `@types/dompurify` (dompurify ships own types now)
-- apps/web: `@codesandbox/sandpack-react`, `@monaco-editor/react` (artifact renderer never wired — see 4.1), `@radix-ui/react-dropdown-menu`, `@radix-ui/react-tooltip`, `@tiptap/suggestion`
+- apps/web: `@codesandbox/sandpack-react` — confirmed still genuinely unused (grepped for `sandpack` after mounting ArtifactPane this round, zero hits; ArtifactFrame uses its own iframe sandbox, not Sandpack — REMOVE). `@monaco-editor/react` is no longer on this list: ArtifactPane is now mounted (4.1, fixed) and DiffView imports it directly. `@radix-ui/react-dropdown-menu`, `@radix-ui/react-tooltip`, `@tiptap/suggestion` still unverified.
 - packages/db: `@bramha/shared` (verify no type-only imports), `drizzle-kit` (db:push still uses it — keep until schema workflow decided)
 - packages/mcp-connectors: `ajv` (policy engine validates with zod — remove), `@bramha/shared`
 
@@ -116,11 +98,11 @@ apps/agent-runtime/src/pa/context-bundle.ts:89. Knowledge service (api) returns 
 
 ## 4. Gaps (declared but not delivered)
 
-### 4.1 [P1] Artifact renderer UI orphaned
-apps/web/components/artifacts/{ArtifactPane,DiffView,VersionSwitcher}.tsx — zero imports anywhere. Sandpack + Monaco deps installed for them (3.5). Backend artifacts module works (T2.2.1 done). The UI (T2.2.2) was written but never mounted into any route/page. Implementing agent: mount ArtifactPane in the chat room layout per docs/06 §artifact-pane, or delete and re-plan.
+### 4.1 [FIXED] Artifact renderer UI orphaned
+✅ Fixed this round — see "Fixed during audit" #17 below. One gap remains: docs/06 §8 specifies the pane should auto-slide-open on the first `artifact.stream.chunk` realtime event; that event listener doesn't exist on the web side yet (no `useArtifactStream`-style hook, unlike `useAgentStream`/`useActivityEvents`). What's mounted now is a manual toggle (an "Artifacts" button in RoomHeader) — fully functional, just not the auto-open convenience. Worth a follow-up, not urgent.
 
-### 4.2 [P1] `apps/web/lib/auth.ts` orphaned
-Unreferenced. Web auth currently inlined in route handlers/pages? Verify intended usage; consolidate or delete.
+### 4.2 [FIXED] `apps/web/lib/auth.ts` orphaned
+✅ Fixed this round — see "Fixed during audit" #17 below.
 
 ### 4.3 [P2] `searchKnowledge` stub in agent-runtime returns []
 apps/agent-runtime/src/agent/agent-worker.ts (searchKnowledge) — "Phase 3 stub". Agents currently get zero RAG. Fine per phase plan; flagging so it's not forgotten: wire to knowledge service hybrid search (T2.3.4) via internal HTTP or direct DB query.
@@ -170,3 +152,11 @@ apps/agent-runtime/src/pa/proactive-scheduler.ts:37 `roomType: string` with comm
 14. **Tenant probe suite fixture bugs** — `'\x00'` eaten by JS template escaping (→ `'\\x00'`), `sql.array()` misuse crashing cleanup every run (→ plain arrays; the accumulated stale rows had been masking results). Registered graph_checkpoints + audit_log in the schema-coverage set. Suite now 27/27 green against live DB; db package 48/49 (the 1 failure = the ltree depth cap, item 0.2).
 15. **CVE bumps** — next 14.2.29→14.2.35, dompurify →3.4.8 (direct dep).
 16. **Runtime boots verified** — agent-runtime and ingestion-worker both boot against the compose stack and shut down gracefully on SIGTERM (compile ≠ run; item 1.1 closed, but see 0.4 for why agents still can't read data).
+
+### Round 3: all P0s from section 0, xlsx CVE, P1 batch (third commit round)
+
+17. **All 5 P0s in section 0 closed** — web/API auth contract (access_token cookie + guard fallback + refresh-and-retry), DAG depth cap (dropped the GiST index, recursive-CTE ancestor walk, verified live at depth 100), S3 bucket wiring (4 named buckets aligned with ingestion-worker, `updateFileStorageKey` added, and a real, previously-undiscovered bug fixed along the way: the upload quota check did `SELECT SUM(...) ... FOR UPDATE`, which Postgres flatly rejects — **upload had never worked, ever**, now locks the project row instead), system_agent (migration 0026, verified agent-runtime's `loadContext` actually resolves data through RLS), and all 3 Dockerfiles (6 distinct bugs across api/web/ingestion — wrong deploy pattern, wrong healthcheck host/port/path, inverted logger env check, missing `@bramha/shared`/`tsconfig.base.json` copies, missing `public/`, wrong standalone-output paths, nonexistent healthcheck target — every container now builds, boots, and passes its own HEALTHCHECK against the live compose network). Two more real bugs surfaced and fixed while verifying 0.2's fix: `orgs`/`project` creation was RLS-blocked from migration 0001 onward (same INSERT-time bootstrap class of bug as the `users` fix in 0019 — `OrgsService.create()`/`ProjectsService.create()` had never worked either; migration 0025), and the `conversations.e2e.spec.ts` fixture (first successful run ever) had its own bug omitting `orgs.owner_id`.
+18. **xlsx CVE (0.6)** — swapped SheetJS's abandoned npm package for exceljs; rewrote the extractor (no `sheet_to_csv` equivalent — manual row/cell walk + CSV quoting), added 4 tests (this extractor had zero prior coverage). Found and fixed a collateral regression the swap caused: exceljs's shipped types globally augment `Buffer` (a known upstream wart), and separately pulled a second, newer `@types/node@26` into the lockfile that pnpm resolved for the unrelated `mcp-connectors` package too, breaking 3 files there. Pinned `@types/node` workspace-wide via `pnpm.overrides` so one package's tooling deps can't do that again.
+19. **P1 batch** — extracted the duplicated `LUA_RATE_LIMIT` script (byte-identical in conversations/knowledge) into `apps/api/src/modules/common/redis/rate-limit.ts` (`enforceRateLimit` + the lower-level `incrementCounterWithExpiry`), then ported the in-memory auth/2FA rate limiters (IP bucket, account lockout, 2FA challenge attempts — all single-process-only, broken under horizontal scaling) onto the same Redis primitive, preserving each one's original HTTP status semantics (401 for auth, 429/503 for conversations/knowledge). Verified live against real Redis: lockout counter reaches the threshold with the correct TTL, IP bucket independently enforces too. Deleted `packages/db/src/seed/personas.ts` (421 lines, fully unreferenced, migration 0011 is canonical). Mounted `ArtifactPane` into `ChatRoom` behind a new toggle button in `RoomHeader` (`DiffView`/`VersionSwitcher` were never independently orphaned — `ArtifactPane` already imports both; the whole subtree just needed one mount point) — added tests for the toggle (RoomHeader.test.tsx) since none existed. Wired `apps/web/lib/auth.ts`'s `redirectToLogin` into the api-client's failed-refresh path (session fully expired, not just the access token) — the missing other half of the 0.1 fix; added 4 tests covering the refresh/retry/redirect/dedup behavior, since api-client.ts had zero prior coverage. Investigated 2.2 (`users` SELECT policy) and 2.3 (JWT revocation) — found the report's suggested 2.2 fix would break admin's 2FA-reset flow (see the corrected note in section 2), confirmed 2.3's TTL already meets the report's own bar. Both left for a dedicated follow-up rather than a rushed fix.
+
+Full-workspace regression after every round in this session: 0 typecheck errors, all tests green (892 across 10 packages as of round 3), tenant-probe suite 28/28 live, db suite 50/50 live.

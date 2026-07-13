@@ -1,15 +1,20 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common'
+import { Injectable, UnauthorizedException, Logger, Inject } from '@nestjs/common'
 import { randomBytes } from 'crypto'
 import * as argon2 from 'argon2'
+import type { Redis } from 'ioredis'
 import { AuthDbService } from './auth-db.service.js'
 import { JwtService } from './jwt.service.js'
 import { SessionService } from './session.service.js'
 import { TotpService } from './totp.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import { incrementCounterWithExpiry } from '../common/redis/rate-limit.js'
 import {
   TOTP_RATE_LIMIT_ATTEMPTS,
   TOTP_RATE_LIMIT_WINDOW_MS,
   RECOVERY_CODE_COUNT,
 } from '@bramha/shared'
+
+const TOTP_RATE_LIMIT_WINDOW_SECONDS = TOTP_RATE_LIMIT_WINDOW_MS / 1000
 
 // ── Recovery code format ────────────────────────────────────────────────────
 // 16 random bytes → 32 hex chars → formatted as XXXX-XXXX-XXXX-XXXX (4×8 hex)
@@ -23,31 +28,23 @@ function generateRawRecoveryCode(): string {
 export class TwoFactorService {
   private readonly logger = new Logger(TwoFactorService.name)
 
-  /**
-   * In-memory rate limiter for 2FA challenge attempts.
-   * NOTE: single process only — replace with Redis before horizontal scaling.
-   */
-  private readonly challengeAttempts = new Map<string, { count: number; windowStart: number }>()
-
   constructor(
     private readonly authDb: AuthDbService,
     private readonly jwt: JwtService,
     private readonly session: SessionService,
     private readonly totp: TotpService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  // ── Rate limiting ───────────────────────────────────────────────────────────
+  // ── Rate limiting (Redis-backed — correct under horizontal scaling) ────────
 
-  private checkChallengeRateLimit(userId: string): void {
-    const now = Date.now()
-    const entry = this.challengeAttempts.get(userId) ?? { count: 0, windowStart: now }
-    if (now - entry.windowStart > TOTP_RATE_LIMIT_WINDOW_MS) {
-      entry.count = 0
-      entry.windowStart = now
-    }
-    entry.count++
-    this.challengeAttempts.set(userId, entry)
-    if (entry.count > TOTP_RATE_LIMIT_ATTEMPTS) {
+  private async checkChallengeRateLimit(userId: string): Promise<void> {
+    const count = await incrementCounterWithExpiry(
+      this.redis,
+      `ratelimit:2fa-challenge:${userId}`,
+      TOTP_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    if (count > TOTP_RATE_LIMIT_ATTEMPTS) {
       throw new UnauthorizedException({
         code: 'rate_limit_exceeded',
         message: 'Too many 2FA attempts. Please try again later.',
@@ -55,8 +52,8 @@ export class TwoFactorService {
     }
   }
 
-  private clearChallengeAttempts(userId: string): void {
-    this.challengeAttempts.delete(userId)
+  private async clearChallengeAttempts(userId: string): Promise<void> {
+    await this.redis.del(`ratelimit:2fa-challenge:${userId}`)
   }
 
   // ── Enrollment ──────────────────────────────────────────────────────────────
@@ -138,7 +135,7 @@ export class TwoFactorService {
    * Disable 2FA. Requires either a valid TOTP code or a recovery code.
    */
   async disable(userId: string, code: string): Promise<void> {
-    this.checkChallengeRateLimit(userId)
+    await this.checkChallengeRateLimit(userId)
     const user = await this.authDb.findUserById(userId)
     if (!user) {
       throw new UnauthorizedException({ code: 'invalid_token', message: 'User not found' })
@@ -188,7 +185,7 @@ export class TwoFactorService {
     const { userId } = await this.jwt.verifyPreAuth(preAuthToken)
 
     // Rate limit per userId
-    this.checkChallengeRateLimit(userId)
+    await this.checkChallengeRateLimit(userId)
 
     const user = await this.authDb.findUserById(userId)
     if (!user || !user.totp_secret_enc) {
@@ -214,7 +211,7 @@ export class TwoFactorService {
     }
 
     // Success — clear rate limit and issue full session
-    this.clearChallengeAttempts(userId)
+    await this.clearChallengeAttempts(userId)
 
     const { accessToken, expiresIn } = await this.jwt.sign(userId, { twoFactorVerified: true })
     const { raw: rawRefreshToken, hash: refreshHash } = this.session.generateToken()

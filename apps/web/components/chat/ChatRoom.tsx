@@ -13,6 +13,7 @@ import { RoomHeader } from './RoomHeader'
 import { useAgentStream } from '@/hooks/useAgentStream'
 import { useActivityEvents } from '@/hooks/useActivityEvents'
 import { ActivityPane } from '@/components/activity/ActivityPane'
+import { ArtifactPane } from '@/components/artifacts/ArtifactPane'
 
 // ── Zod schemas ────────────────────────────────────────────────────────────────
 
@@ -419,13 +420,21 @@ export function ChatRoom({ projectId, roomType = 'conference', roomId: specificR
   // ── Agent stream controls ────────────────────────────────────────────────────
   const { stopAgent } = useAgentStream(conversationId ?? '')
 
+  // ── Artifacts pane ────────────────────────────────────────────────────────────
+  const [artifactsOpen, setArtifactsOpen] = useState(false)
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const isLoading = convLoading || nodesLoading
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <RoomHeader room={room} onSwitchBranch={handleSwitchBranch} />
+      <RoomHeader
+        room={room}
+        onSwitchBranch={handleSwitchBranch}
+        artifactsOpen={artifactsOpen}
+        onToggleArtifacts={() => setArtifactsOpen((v) => !v)}
+      />
       <MessageList
         isLoading={isLoading}
         isTransitioning={isTransitioning}
@@ -435,6 +444,12 @@ export function ChatRoom({ projectId, roomType = 'conference', roomId: specificR
       />
       <Composer onSend={handleSend} onTyping={handleTyping} />
       <ActivityPane projectId={projectId} />
+      <ArtifactPane
+        projectId={projectId}
+        conversationId={conversationId}
+        isOpen={artifactsOpen}
+        onClose={() => setArtifactsOpen(false)}
+      />
     </div>
   )
 }

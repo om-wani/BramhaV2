@@ -12,6 +12,28 @@ import type { SessionService } from './session.service.js'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Minimal stateful Redis double — INCR/GET/DEL against an in-memory map, close
+ *  enough to real semantics for the rate-limit/lockout tests to accumulate state
+ *  across calls the way the real Lua-backed counters do. */
+function makeFakeRedis() {
+  const counters = new Map<string, number>()
+  return {
+    eval: vi.fn(async (_script: string, _numKeys: number, key: string) => {
+      const next = (counters.get(key) ?? 0) + 1
+      counters.set(key, next)
+      return next
+    }),
+    get: vi.fn(async (key: string) => {
+      const v = counters.get(key)
+      return v === undefined ? null : String(v)
+    }),
+    del: vi.fn(async (key: string) => {
+      counters.delete(key)
+      return 1
+    }),
+  }
+}
+
 function makeUserRow(overrides: Partial<UserRow> = {}): UserRow {
   return {
     id: 'user-uuid-1',
@@ -74,7 +96,9 @@ function buildMocks() {
     getVerificationTokenExpiry: vi.fn().mockReturnValue(new Date()),
   }
 
-  return { authDb, jwt, password, session }
+  const redis = makeFakeRedis()
+
+  return { authDb, jwt, password, session, redis }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -90,6 +114,7 @@ describe('AuthService', () => {
       mocks.jwt as JwtService,
       mocks.password as PasswordService,
       mocks.session as SessionService,
+      mocks.redis as unknown as import('ioredis').default,
     )
     // Initialize sentinel hash (normally done via OnModuleInit)
     await svc.onModuleInit()

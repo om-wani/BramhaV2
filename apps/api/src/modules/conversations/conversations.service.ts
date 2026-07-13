@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common'
 import { RlsDbService } from '../common/db/rls-db.service.js'
 import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import { enforceRateLimit } from '../common/redis/rate-limit.js'
 import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
 import type {
@@ -171,18 +172,6 @@ const RATE_LIMIT_MSG_PER_MIN = 20
 const IDEMPOTENCY_TTL_SECS = 86400 // 24h
 const CONTENT_MAX_BYTES = 32768
 
-/**
- * Atomic INCR + conditional EXPIRE in a single Lua round-trip.
- * Prevents permanent rate-limit keys if the process crashes between INCR and EXPIRE.
- */
-const LUA_RATE_LIMIT = `
-local count = redis.call('INCR', KEYS[1])
-if count == 1 then
-  redis.call('EXPIRE', KEYS[1], 60)
-end
-return count
-`
-
 type Tx = postgres.TransactionSql
 
 @Injectable()
@@ -200,14 +189,11 @@ export class ConversationsService {
   // ── Rate limiting (atomic Lua) ────────────────────────────────────────────
 
   private async checkRateLimit(userId: string): Promise<void> {
-    const key = `ratelimit:msg:${userId}`
-    const count = (await this.redis.eval(LUA_RATE_LIMIT, 1, key)) as number
-    if (count > RATE_LIMIT_MSG_PER_MIN) {
-      throw new HttpException(
-        { statusCode: 429, code: 'rate_limit_exceeded', message: 'Too many messages' },
-        HttpStatus.TOO_MANY_REQUESTS,
-      )
-    }
+    await enforceRateLimit(this.redis, `ratelimit:msg:${userId}`, {
+      limit: RATE_LIMIT_MSG_PER_MIN,
+      windowSeconds: 60,
+      exceededMessage: 'Too many messages',
+    })
   }
 
   // ── Idempotency ───────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { redirectToLogin } from './auth'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
 
@@ -72,6 +73,11 @@ async function request<TResponse>(
     const refreshed = await refreshSession()
     if (refreshed) {
       response = await doFetch(path, method, body, extraHeaders)
+    } else if (typeof window !== 'undefined') {
+      // refresh_token itself is invalid/expired — the session is over, not
+      // just the access token. Send the user back to login rather than let
+      // every caller independently discover this via a raw 401.
+      redirectToLogin(window.location.pathname + window.location.search)
     }
   }
 

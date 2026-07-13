@@ -34,6 +34,28 @@ function makeUserRow(overrides: Partial<UserRow> = {}): UserRow {
   }
 }
 
+/** Minimal stateful Redis double — INCR/GET/DEL against an in-memory map, close
+ *  enough to real semantics for the rate-limit test to accumulate state across
+ *  calls the way the real Lua-backed counter does. */
+function makeFakeRedis() {
+  const counters = new Map<string, number>()
+  return {
+    eval: vi.fn(async (_script: string, _numKeys: number, key: string) => {
+      const next = (counters.get(key) ?? 0) + 1
+      counters.set(key, next)
+      return next
+    }),
+    get: vi.fn(async (key: string) => {
+      const v = counters.get(key)
+      return v === undefined ? null : String(v)
+    }),
+    del: vi.fn(async (key: string) => {
+      counters.delete(key)
+      return 1
+    }),
+  }
+}
+
 function buildMocks() {
   const authDb: Partial<AuthDbService> = {
     findUserById: vi.fn().mockResolvedValue(makeUserRow()),
@@ -59,7 +81,9 @@ function buildMocks() {
     getRefreshTokenExpiry: vi.fn().mockReturnValue(new Date()),
   }
 
-  return { authDb, jwt, session }
+  const redis = makeFakeRedis()
+
+  return { authDb, jwt, session, redis }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -77,6 +101,7 @@ describe('TwoFactorService', () => {
       mocks.jwt as JwtService,
       mocks.session as SessionService,
       totpSvc,
+      mocks.redis as unknown as import('ioredis').default,
     )
   })
 

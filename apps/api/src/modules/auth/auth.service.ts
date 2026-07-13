@@ -5,34 +5,31 @@ import {
   UnauthorizedException,
   OnModuleInit,
   Logger,
+  Inject,
 } from '@nestjs/common'
+import type { Redis } from 'ioredis'
 import { AuthDbService } from './auth-db.service.js'
 import { JwtService } from './jwt.service.js'
 import { PasswordService } from './password.service.js'
 import { SessionService } from './session.service.js'
+import { REDIS_CLIENT } from '../common/redis/redis.module.js'
+import { incrementCounterWithExpiry } from '../common/redis/rate-limit.js'
 import { ErrorCodes } from '@bramha/shared'
 import type { RegisterInput, LoginInput } from '@bramha/shared'
 
 // ── Rate-limit constants ────────────────────────────────────────────────────
 
 const LOCKOUT_ATTEMPTS = 10
-const LOCKOUT_WINDOW_MS = 15 * 60 * 1000 // 15 min
+const LOCKOUT_WINDOW_SECONDS = 15 * 60 // 15 min
 
 const IP_BUCKET_MAX = 20
-const IP_BUCKET_WINDOW_MS = 15 * 60 * 1000
+const IP_BUCKET_WINDOW_SECONDS = 15 * 60
 
 // ── AuthService ─────────────────────────────────────────────────────────────
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name)
-
-  /**
-   * NOTE: In-memory rate limiter — single process only.
-   * Replace with Redis INCR + EXPIRE before horizontal scaling.
-   */
-  private readonly accountAttempts = new Map<string, { count: number; windowStart: number }>()
-  private readonly ipAttempts = new Map<string, { count: number; windowStart: number }>()
 
   /**
    * Sentinel hash used to ensure constant-time response when user not found.
@@ -45,24 +42,22 @@ export class AuthService implements OnModuleInit {
     private readonly jwt: JwtService,
     private readonly password: PasswordService,
     private readonly session: SessionService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async onModuleInit(): Promise<void> {
     this.sentinelHash = await this.password.hash('__sentinel_timing_protection__')
   }
 
-  // ── Rate-limit helpers ──────────────────────────────────────────────────
+  // ── Rate-limit helpers (Redis-backed — correct under horizontal scaling) ──
 
-  private checkIpBucket(ip: string): void {
-    const now = Date.now()
-    const entry = this.ipAttempts.get(ip) ?? { count: 0, windowStart: now }
-    if (now - entry.windowStart > IP_BUCKET_WINDOW_MS) {
-      entry.count = 0
-      entry.windowStart = now
-    }
-    entry.count++
-    this.ipAttempts.set(ip, entry)
-    if (entry.count > IP_BUCKET_MAX) {
+  private async checkIpBucket(ip: string): Promise<void> {
+    const count = await incrementCounterWithExpiry(
+      this.redis,
+      `ratelimit:login-ip:${ip}`,
+      IP_BUCKET_WINDOW_SECONDS,
+    )
+    if (count > IP_BUCKET_MAX) {
       throw new UnauthorizedException({
         code: 'rate_limit_exceeded',
         message: 'Too many requests. Please try again later.',
@@ -70,15 +65,10 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private checkAccountLocked(email: string, ip: string | null): void {
-    const now = Date.now()
-    const entry = this.accountAttempts.get(email)
-    if (!entry) return
-    if (now - entry.windowStart > LOCKOUT_WINDOW_MS) {
-      this.accountAttempts.delete(email)
-      return
-    }
-    if (entry.count >= LOCKOUT_ATTEMPTS) {
+  private async checkAccountLocked(email: string, ip: string | null): Promise<void> {
+    const raw = await this.redis.get(`ratelimit:login-lockout:${email}`)
+    const count = raw ? Number(raw) : 0
+    if (count >= LOCKOUT_ATTEMPTS) {
       this.logger.warn({ event: 'account_locked', email, ip }, 'Account temporarily locked')
       throw new UnauthorizedException({
         code: 'invalid_credentials',
@@ -87,19 +77,16 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private recordFailedAttempt(email: string): void {
-    const now = Date.now()
-    const entry = this.accountAttempts.get(email) ?? { count: 0, windowStart: now }
-    if (now - entry.windowStart > LOCKOUT_WINDOW_MS) {
-      entry.count = 0
-      entry.windowStart = now
-    }
-    entry.count++
-    this.accountAttempts.set(email, entry)
+  private async recordFailedAttempt(email: string): Promise<void> {
+    await incrementCounterWithExpiry(
+      this.redis,
+      `ratelimit:login-lockout:${email}`,
+      LOCKOUT_WINDOW_SECONDS,
+    )
   }
 
-  private clearAttempts(email: string): void {
-    this.accountAttempts.delete(email)
+  private async clearAttempts(email: string): Promise<void> {
+    await this.redis.del(`ratelimit:login-lockout:${email}`)
   }
 
   // ── Auth operations ─────────────────────────────────────────────────────
@@ -170,8 +157,8 @@ export class AuthService implements OnModuleInit {
     // Falls back to 'unknown' when IP is unavailable (e.g. misconfigured proxy).
     // All requests sharing the 'unknown' key share the same rate limit bucket.
     const ipKey = ip ?? 'unknown'
-    this.checkIpBucket(ipKey)
-    this.checkAccountLocked(input.email, ip)
+    await this.checkIpBucket(ipKey)
+    await this.checkAccountLocked(input.email, ip)
 
     // 2. Look up user — do NOT short-circuit before argon2 to prevent timing oracle
     const user = await this.authDb.findUserByEmail(input.email)
@@ -179,7 +166,7 @@ export class AuthService implements OnModuleInit {
     if (!user || !user.password_hash) {
       // Run sentinel verify to maintain constant time even for unknown accounts
       await this.password.verify(this.sentinelHash, input.password).catch(() => {})
-      this.recordFailedAttempt(input.email)
+      await this.recordFailedAttempt(input.email)
       this.logger.warn(
         { email: input.email, ip, event: 'login_failed_unknown' },
         'Login failed: unknown email',
@@ -193,7 +180,7 @@ export class AuthService implements OnModuleInit {
     // Suspended users: run password check (constant time), then return generic error
     if (user.status === 'suspended') {
       await this.password.verify(user.password_hash, input.password).catch(() => {})
-      this.recordFailedAttempt(input.email)
+      await this.recordFailedAttempt(input.email)
       this.logger.warn(
         { userId: user.id, ip, event: 'login_failed_suspended' },
         'Login failed: suspended account',
@@ -207,7 +194,7 @@ export class AuthService implements OnModuleInit {
     // 3. Verify password
     const valid = await this.password.verify(user.password_hash, input.password)
     if (!valid) {
-      this.recordFailedAttempt(input.email)
+      await this.recordFailedAttempt(input.email)
       this.logger.warn(
         { userId: user.id, ip, event: 'login_failed_bad_password' },
         'Login failed: wrong password',
@@ -228,7 +215,7 @@ export class AuthService implements OnModuleInit {
     }
 
     // 5. On success: clear failed attempts
-    this.clearAttempts(input.email)
+    await this.clearAttempts(input.email)
 
     // 5a. Check if 2FA is enabled — if so, return pre-auth token instead of full session
     if (user.totp_secret_enc) {
