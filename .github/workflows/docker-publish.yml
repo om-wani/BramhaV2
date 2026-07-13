@@ -74,7 +74,7 @@ jobs:
           output-file: sbom-${{ matrix.service.name }}.spdx.json
 
       - name: Scan image (trivy) — fail on CRITICAL/HIGH unfixed
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.24.0
         with:
           image-ref: ${{ env.ECR_REGISTRY }}/bramha-${{ matrix.service.name }}:${{ steps.meta.outputs.sha_short }}
           format: table
