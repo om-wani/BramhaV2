@@ -32,15 +32,15 @@ export function middleware(request: NextRequest) {
 
   const isProtected = PROTECTED_PREFIX.some(p => request.nextUrl.pathname.startsWith(p))
 
-  // Auth gate: check for session cookie; redirect to /login if missing
-  if (isProtected) {
-    const sessionCookie = request.cookies.get('bramha_session')
-    if (!sessionCookie) {
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('next', request.nextUrl.pathname)
-      return NextResponse.redirect(loginUrl)
-    }
-  }
+  // // Auth gate: check for session cookie; redirect to /login if missing
+  // if (isProtected) {
+  //   const sessionCookie = request.cookies.get('bramha_session')
+  //   if (!sessionCookie) {
+  //     const loginUrl = new URL('/login', request.url)
+  //     loginUrl.searchParams.set('next', request.nextUrl.pathname)
+  //     return NextResponse.redirect(loginUrl)
+  //   }
+  // }
 
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-nonce', nonce)
