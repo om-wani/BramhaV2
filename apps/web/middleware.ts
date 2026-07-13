@@ -4,7 +4,12 @@ import type { NextRequest } from 'next/server'
 const PROTECTED_PREFIX = ['/dashboard', '/settings', '/p/', '/admin']
 
 export function middleware(request: NextRequest) {
-  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64')
+  // const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64')   //this original
+  // below two lines are for vercel deployment
+  const randomBytes = crypto.getRandomValues(new Uint8Array(16)) 
+  const nonce = btoa(String.fromCharCode(...randomBytes))
+  // -----------------------------------------
+  
   const cspHeader = [
     `default-src 'self'`,
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
