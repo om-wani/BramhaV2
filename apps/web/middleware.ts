@@ -16,6 +16,7 @@ export function middleware(request: NextRequest) {
     `style-src 'self' 'unsafe-inline'`,  // Tailwind requires this
     `img-src 'self' data: blob:`,
     `font-src 'self'`,
+    `connect-src 'self' ${apiOrigin} ${websocketOrigin}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
