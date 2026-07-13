@@ -167,7 +167,10 @@ export async function syncGitRepo(
 
       let content: string
       try {
-        content = await readFile(filePath, 'utf8')
+        // exceljs's shipped types augment the global Buffer interface (a
+        // known upstream wart), which throws off readFile's overload
+        // resolution here even though 'utf8' always returns a string.
+        content = (await readFile(filePath, 'utf8')) as unknown as string
       } catch {
         skippedCount++
         continue
