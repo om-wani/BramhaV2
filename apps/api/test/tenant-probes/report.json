@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-07-12T21:49:35.506Z",
+  "generatedAt": "2026-07-13T06:10:08.574Z",
   "dbProbes": {
     "summary": {
-      "total": 28,
-      "passed": 28,
+      "total": 29,
+      "passed": 29,
       "failed": 0
     },
     "probes": [
@@ -145,6 +145,11 @@
       {
         "probe": "sanity: A reads own rooms",
         "table": "rooms",
+        "passed": true
+      },
+      {
+        "probe": "system_agent project membership",
+        "table": "project_members",
         "passed": true
       }
     ]

@@ -101,7 +101,8 @@ function buildService(mocks: ReturnType<typeof buildMocks>): FilesService {
     mocks.db as RlsDbService,
     mocks.config as ConfigService,
     mocks.s3 as S3Client,
-    'bramha-files',
+    'bramha-staging',
+    'bramha-clean',
     mocks.redis as unknown as import('ioredis').default,
   )
 }
@@ -183,9 +184,10 @@ describe('FilesService', () => {
   describe('initiateUpload — project quota', () => {
     it('throws BadRequestException with code project_quota_exceeded when quota is full', async () => {
       // Used = 500 MB exactly (quota is 500 MB), and file adds 1 byte → over limit
+      // Call order: SELECT ... FOR UPDATE (project lock, row content unused), then quota SELECT.
       const usedBytes = 500 * 1024 * 1024
       vi.mocked(mocks.db.run!).mockImplementation(async (_ctx, fn) => {
-        return fn(makeTx([[{ total: String(usedBytes) }]]))
+        return fn(makeTx([[{ id: PROJECT_ID }], [{ total: String(usedBytes) }]]))
       })
 
       await expect(
@@ -209,9 +211,9 @@ describe('FilesService', () => {
     it('calls S3 getSignedUrl with correct key format staging/projectId/fileId and expiresIn=60', async () => {
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner')
 
-      // Quota check + INSERT are now in one db.run (two sequential tx calls)
+      // Project lock + quota check + INSERT are in one db.run (three sequential tx calls)
       vi.mocked(mocks.db.run!).mockImplementationOnce(async (_ctx, fn) =>
-        fn(makeTx([[{ total: '0' }], []])))
+        fn(makeTx([[{ id: PROJECT_ID }], [{ total: '0' }], []])))
 
       const result = await svc.initiateUpload(USER_ID, PROJECT_ID, {
         name: 'report.pdf',

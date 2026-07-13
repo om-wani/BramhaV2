@@ -123,8 +123,10 @@ export const conversationNodes = pgTable(
     // NO updatedAt — this is an append-only table; the trigger enforces it at DB level.
   },
   (t) => [
-    // GiST index for ltree ancestor/descendant queries (requires btree_gist extension)
-    index('idx_conversation_nodes_conv_path').using('gist', t.conversationId, t.path),
+    // No GiST index on path: it crashes Postgres with "stack depth limit
+    // exceeded" past ~63-deep chains (0024_drop_ltree_gist_index.sql).
+    // Ancestor/descendant walks use idx_conversation_nodes_conv_parent via a
+    // recursive CTE instead; path stays for display/debug only.
     index('idx_conversation_nodes_conv_parent').on(t.conversationId, t.parentId),
     index('idx_conversation_nodes_project_created').on(t.projectId, t.createdAt),
   ],

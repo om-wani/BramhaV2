@@ -22,3 +22,17 @@ export async function updateFileStatus(
     WHERE id = ${fileId}
   `
 }
+
+/**
+ * Updates storage_key after the security gate promotes a file to the clean
+ * bucket — the object no longer exists at the original staging key.
+ */
+export async function updateFileStorageKey(fileId: string, storageKey: string): Promise<void> {
+  await sql`
+    UPDATE files
+    SET
+      storage_key = ${storageKey},
+      updated_at  = NOW()
+    WHERE id = ${fileId}
+  `
+}

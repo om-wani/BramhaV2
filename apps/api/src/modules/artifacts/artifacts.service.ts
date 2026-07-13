@@ -17,7 +17,7 @@ import { RlsDbService } from '../common/db/rls-db.service.js'
 import { JwtService } from '../auth/jwt.service.js'
 import { EventPublisher } from '@bramha/event-bus'
 import { REDIS_CLIENT } from '../common/redis/redis.module.js'
-import { S3_CLIENT, S3_BUCKET } from '../common/s3/s3.module.js'
+import { S3_CLIENT, S3_BUCKET_ARTIFACTS } from '../common/s3/s3.module.js'
 import type { Redis } from 'ioredis'
 import type { CreateArtifactInput, CreateVersionInput } from '@bramha/shared'
 
@@ -126,7 +126,7 @@ export class ArtifactsService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     @Inject(S3_CLIENT) private readonly s3: S3Client,
-    @Inject(S3_BUCKET) private readonly bucket: string,
+    @Inject(S3_BUCKET_ARTIFACTS) private readonly bucket: string,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.publisher = new EventPublisher(redis)

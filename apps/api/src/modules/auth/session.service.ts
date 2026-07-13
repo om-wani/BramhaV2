@@ -51,4 +51,21 @@ export class SessionService {
     const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
     return `refresh_token=; Path=/; HttpOnly${secure}; SameSite=Lax; Max-Age=0`
   }
+
+  /**
+   * Build a Set-Cookie header for the access_token cookie — the web client's
+   * only auth transport (it never stores the token itself; see JwtAuthGuard's
+   * cookie fallback). SameSite=Strict: this cookie is only ever needed for
+   * same-origin fetch() calls, never a cross-site top-level navigation.
+   */
+  buildAccessCookieHeader(accessToken: string, expiresInSeconds: number): string {
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `access_token=${accessToken}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${expiresInSeconds}`
+  }
+
+  /** Build a Set-Cookie header that immediately expires the access_token cookie. */
+  buildClearAccessCookieHeader(): string {
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `access_token=; Path=/; HttpOnly${secure}; SameSite=Strict; Max-Age=0`
+  }
 }

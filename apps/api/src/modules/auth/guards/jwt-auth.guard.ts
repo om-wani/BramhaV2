@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import type { FastifyRequest } from 'fastify'
 import { JwtService } from '../jwt.service.js'
+import { parseCookies } from '../../common/cookies.js'
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -17,14 +18,22 @@ export class JwtAuthGuard implements CanActivate {
       .getRequest<FastifyRequest & { user?: { userId: string; twoFactorVerified: boolean } }>()
 
     const authHeader = request.headers['authorization']
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException({
-        code: 'invalid_token',
-        message: 'Missing authorization header',
-      })
-    }
+    let token: string
 
-    const token = authHeader.slice(7) // strip "Bearer "
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7) // strip "Bearer "
+    } else {
+      // Web client transport: same-origin fetch sends the HttpOnly access_token
+      // cookie set at login/refresh. Bearer header remains for API-key/bearer clients.
+      const cookieToken = parseCookies(request.headers['cookie'])['access_token']
+      if (!cookieToken) {
+        throw new UnauthorizedException({
+          code: 'invalid_token',
+          message: 'Missing authorization header',
+        })
+      }
+      token = cookieToken
+    }
 
     // Decode header to detect pre_auth tokens before full verify
     // (pre_auth tokens embed a `type` claim in the payload)

@@ -17,7 +17,7 @@ import { Queue } from 'bullmq'
 import type { Redis } from 'ioredis'
 import type postgres from 'postgres'
 import { RlsDbService } from '../common/db/rls-db.service.js'
-import { S3_CLIENT, S3_BUCKET } from '../common/s3/s3.module.js'
+import { S3_CLIENT, S3_BUCKET_STAGING, S3_BUCKET_CLEAN } from '../common/s3/s3.module.js'
 import { REDIS_CLIENT } from '../common/redis/redis.module.js'
 import type { InitiateUploadInput, FileDto, ScanStatus } from '@bramha/shared'
 
@@ -110,7 +110,8 @@ export class FilesService {
     private readonly db: RlsDbService,
     private readonly config: ConfigService,
     @Inject(S3_CLIENT) private readonly s3: S3Client,
-    @Inject(S3_BUCKET) private readonly bucket: string,
+    @Inject(S3_BUCKET_STAGING) private readonly stagingBucket: string,
+    @Inject(S3_BUCKET_CLEAN) private readonly cleanBucket: string,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.ingestionQueue = new Queue('ingestion', {
@@ -160,13 +161,14 @@ export class FilesService {
     const key = `staging/${projectId}/${fileId}`
 
     await this.db.run({ userId, projectId }, async (tx: Tx) => {
-      // FOR UPDATE locks matching rows so concurrent transactions queue here,
-      // preventing TOCTOU under READ COMMITTED isolation.
+      // Lock the project row (not the aggregate — Postgres rejects FOR UPDATE
+      // combined with an aggregate function) so concurrent transactions queue
+      // here, preventing TOCTOU under READ COMMITTED isolation.
+      await tx`SELECT id FROM projects WHERE id = ${projectId}::uuid FOR UPDATE`
       const quotaRows = await tx<{ total: string }[]>`
         SELECT COALESCE(SUM(size_bytes), 0)::text AS total
         FROM files
         WHERE project_id = ${projectId}::uuid
-        FOR UPDATE
       `
       const usedBytes = Number(quotaRows[0]?.total ?? 0)
       if (usedBytes + input.sizeBytes > maxBytes) {
@@ -191,7 +193,7 @@ export class FilesService {
 
     // 8. Generate presigned PUT URL
     const command = new PutObjectCommand({
-      Bucket: this.bucket,
+      Bucket: this.stagingBucket,
       Key: key,
       ContentType: input.declaredMime,
       ContentLength: input.sizeBytes,
@@ -293,7 +295,10 @@ export class FilesService {
       throw new ForbiddenException({ code: 'file_not_clean', message: 'File is not clean and cannot be downloaded' })
     }
 
-    const command = new GetObjectCommand({ Bucket: this.bucket, Key: file.storageKey })
+    // Clean files live in the clean bucket; storage_key carries a 'clean/'
+    // prefix (set by the security gate) that isn't part of the object key.
+    const key = file.storageKey.startsWith('clean/') ? file.storageKey.slice(6) : file.storageKey
+    const command = new GetObjectCommand({ Bucket: this.cleanBucket, Key: key })
     const url = await getSignedUrl(this.s3, command, { expiresIn: DOWNLOAD_TTL_SECONDS })
 
     return { url }

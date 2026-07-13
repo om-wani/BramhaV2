@@ -21,21 +21,7 @@ import { LoginDto } from './dto/login.dto.js'
 import { VerifyEmailDto } from './dto/verify-email.dto.js'
 import { ForgotPasswordDto } from './dto/forgot-password.dto.js'
 import { ResetPasswordDto } from './dto/reset-password.dto.js'
-
-/** Parse a raw Cookie header into a key→value map. */
-function parseCookies(cookieHeader?: string | string[]): Record<string, string> {
-  const header = Array.isArray(cookieHeader) ? cookieHeader.join('; ') : cookieHeader
-  if (!header) return {}
-  const result: Record<string, string> = {}
-  for (const part of header.split(';')) {
-    const idx = part.indexOf('=')
-    if (idx < 0) continue
-    const key = part.slice(0, idx).trim()
-    const value = part.slice(idx + 1).trim()
-    if (key) result[key] = value
-  }
-  return result
-}
+import { parseCookies } from '../common/cookies.js'
 
 @Controller('auth')
 export class AuthController {
@@ -82,7 +68,10 @@ export class AuthController {
       return { requiresTwoFactor: true, preAuthToken: result.preAuthToken }
     }
 
-    reply.header('Set-Cookie', this.sessionService.buildRefreshCookieHeader(result.rawRefreshToken))
+    reply.header('Set-Cookie', [
+      this.sessionService.buildRefreshCookieHeader(result.rawRefreshToken),
+      this.sessionService.buildAccessCookieHeader(result.accessToken, result.expiresIn),
+    ])
     return { accessToken: result.accessToken, expiresIn: result.expiresIn }
   }
 
@@ -105,7 +94,10 @@ export class AuthController {
     const { accessToken, expiresIn, rawRefreshToken: newRawToken } =
       await this.authService.refresh(rawRefreshToken, ip, userAgent)
 
-    reply.header('Set-Cookie', this.sessionService.buildRefreshCookieHeader(newRawToken))
+    reply.header('Set-Cookie', [
+      this.sessionService.buildRefreshCookieHeader(newRawToken),
+      this.sessionService.buildAccessCookieHeader(accessToken, expiresIn),
+    ])
     return { accessToken, expiresIn }
   }
 
@@ -121,7 +113,10 @@ export class AuthController {
     const cookies = parseCookies(req.headers['cookie'])
     const rawRefreshToken = cookies['refresh_token'] ?? ''
     await this.authService.logout(rawRefreshToken, user.userId)
-    reply.header('Set-Cookie', this.sessionService.buildClearRefreshCookieHeader())
+    reply.header('Set-Cookie', [
+      this.sessionService.buildClearRefreshCookieHeader(),
+      this.sessionService.buildClearAccessCookieHeader(),
+    ])
   }
 
   /** POST /auth/forgot-password — request a password reset link */

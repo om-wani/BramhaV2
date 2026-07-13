@@ -607,35 +607,49 @@ export class ConversationsService {
       let nodeRows: NodeRow[]
 
       if (opts.branchId) {
-        // Get head's ltree path; filter ancestors using @> ("path is ancestor of headPath")
-        const headRows = await tx<{ path: string }[]>`
-          SELECT cn.path::text AS path
+        const headRows = await tx<{ head_node_id: string }[]>`
+          SELECT b.head_node_id
           FROM branches b
-          JOIN conversation_nodes cn ON cn.id = b.head_node_id
           WHERE b.id = ${opts.branchId} AND b.conversation_id = ${convId}
         `
         if (!headRows[0]) throw new NotFoundException({ code: 'branch_not_found' })
-        const headPath = headRows[0].path
+        const headNodeId = headRows[0].head_node_id
 
+        // Ancestor chain via parent_id walk (not the ltree path column — GiST over
+        // ltree paths hits Postgres's stack-depth limit past ~63-deep conversations).
         if (cursorTs && cursorId) {
           nodeRows = await tx<NodeRow[]>`
-            SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
-                   author_kind, author_user_id, author_persona_id, content, token_usage, created_at
-            FROM conversation_nodes
-            WHERE conversation_id = ${convId}
-              AND path::ltree @> ${headPath}::ltree
-              AND (created_at, id) > (${cursorTs}::timestamptz, ${cursorId}::uuid)
-            ORDER BY created_at ASC, id ASC
+            WITH RECURSIVE ancestors AS (
+              SELECT id, parent_id FROM conversation_nodes WHERE id = ${headNodeId}
+              UNION ALL
+              SELECT cn.id, cn.parent_id
+              FROM conversation_nodes cn
+              JOIN ancestors a ON cn.id = a.parent_id
+            )
+            SELECT cn.id, cn.conversation_id, cn.project_id, cn.parent_id, cn.depth, cn.path::text, cn.type,
+                   cn.author_kind, cn.author_user_id, cn.author_persona_id, cn.content, cn.token_usage, cn.created_at
+            FROM conversation_nodes cn
+            JOIN ancestors a ON a.id = cn.id
+            WHERE cn.conversation_id = ${convId}
+              AND (cn.created_at, cn.id) > (${cursorTs}::timestamptz, ${cursorId}::uuid)
+            ORDER BY cn.created_at ASC, cn.id ASC
             LIMIT ${limit + 1}
           `
         } else {
           nodeRows = await tx<NodeRow[]>`
-            SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
-                   author_kind, author_user_id, author_persona_id, content, token_usage, created_at
-            FROM conversation_nodes
-            WHERE conversation_id = ${convId}
-              AND path::ltree @> ${headPath}::ltree
-            ORDER BY created_at ASC, id ASC
+            WITH RECURSIVE ancestors AS (
+              SELECT id, parent_id FROM conversation_nodes WHERE id = ${headNodeId}
+              UNION ALL
+              SELECT cn.id, cn.parent_id
+              FROM conversation_nodes cn
+              JOIN ancestors a ON cn.id = a.parent_id
+            )
+            SELECT cn.id, cn.conversation_id, cn.project_id, cn.parent_id, cn.depth, cn.path::text, cn.type,
+                   cn.author_kind, cn.author_user_id, cn.author_persona_id, cn.content, cn.token_usage, cn.created_at
+            FROM conversation_nodes cn
+            JOIN ancestors a ON a.id = cn.id
+            WHERE cn.conversation_id = ${convId}
+            ORDER BY cn.created_at ASC, cn.id ASC
             LIMIT ${limit + 1}
           `
         }
@@ -710,24 +724,31 @@ export class ConversationsService {
       await this.assertRoomBelongsToProject(tx, roomId, projectId)
       await this.assertConvBelongsToRoom(tx, convId, roomId, projectId)
 
-      // Get branch head + its ltree path
-      const headRows = await tx<{ head_node_id: string; path: string }[]>`
-        SELECT b.head_node_id, cn.path::text AS path
+      const headRows = await tx<{ head_node_id: string }[]>`
+        SELECT b.head_node_id
         FROM branches b
-        JOIN conversation_nodes cn ON cn.id = b.head_node_id
         WHERE b.id = ${opts.branchId} AND b.conversation_id = ${convId}
       `
       if (!headRows[0]) throw new NotFoundException({ code: 'branch_not_found' })
-      const { path: headPath } = headRows[0]
+      const headNodeId = headRows[0].head_node_id
 
-      // @> means "path is ancestor of headPath" — returns root → head chain, ordered deepest first
+      // Ancestor chain via parent_id walk (not the ltree path column — GiST over
+      // ltree paths hits Postgres's stack-depth limit past ~63-deep conversations).
+      // Returns root → head chain, ordered deepest first.
       const ancestorRows = await tx<NodeRow[]>`
-        SELECT id, conversation_id, project_id, parent_id, depth, path::text, type,
-               author_kind, author_user_id, author_persona_id, content, token_usage, created_at
-        FROM conversation_nodes
-        WHERE conversation_id = ${convId}
-          AND path::ltree @> ${headPath}::ltree
-        ORDER BY depth DESC
+        WITH RECURSIVE ancestors AS (
+          SELECT id, parent_id FROM conversation_nodes WHERE id = ${headNodeId}
+          UNION ALL
+          SELECT cn.id, cn.parent_id
+          FROM conversation_nodes cn
+          JOIN ancestors a ON cn.id = a.parent_id
+        )
+        SELECT cn.id, cn.conversation_id, cn.project_id, cn.parent_id, cn.depth, cn.path::text, cn.type,
+               cn.author_kind, cn.author_user_id, cn.author_persona_id, cn.content, cn.token_usage, cn.created_at
+        FROM conversation_nodes cn
+        JOIN ancestors a ON a.id = cn.id
+        WHERE cn.conversation_id = ${convId}
+        ORDER BY cn.depth DESC
       `
 
       // Walk head → root, accumulate until token budget exhausted

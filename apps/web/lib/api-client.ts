@@ -19,14 +19,34 @@ interface RequestOptions<TBody = unknown> {
   headers?: Record<string, string>
 }
 
-async function request<TResponse>(
-  path: string,
-  schema: z.ZodType<TResponse>,
-  options: RequestOptions = {},
-): Promise<TResponse> {
-  const { method = 'GET', body, headers: extraHeaders = {} } = options
+// access_token cookie is 15-minute TTL (SESSION_ACCESS_TOKEN_TTL_SECONDS). On a 401
+// we attempt exactly one silent refresh (via the refresh_token cookie) and retry the
+// original request once. Concurrent 401s share a single in-flight refresh so a burst
+// of requests hitting expiry at once doesn't race the refresh-token rotation.
+let refreshInFlight: Promise<boolean> | null = null
 
-  const response = await fetch(`${API_BASE}${path}`, {
+async function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null
+      })
+  }
+  return refreshInFlight
+}
+
+async function doFetch(
+  path: string,
+  method: string,
+  body: unknown,
+  extraHeaders: Record<string, string>,
+): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
     method,
     credentials: 'include',
     headers: {
@@ -35,6 +55,25 @@ async function request<TResponse>(
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
+}
+
+const NO_REFRESH_RETRY_PATHS = new Set(['/auth/login', '/auth/refresh', '/auth/register'])
+
+async function request<TResponse>(
+  path: string,
+  schema: z.ZodType<TResponse>,
+  options: RequestOptions = {},
+): Promise<TResponse> {
+  const { method = 'GET', body, headers: extraHeaders = {} } = options
+
+  let response = await doFetch(path, method, body, extraHeaders)
+
+  if (response.status === 401 && !NO_REFRESH_RETRY_PATHS.has(path)) {
+    const refreshed = await refreshSession()
+    if (refreshed) {
+      response = await doFetch(path, method, body, extraHeaders)
+    }
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))

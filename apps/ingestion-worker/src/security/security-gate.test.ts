@@ -98,6 +98,10 @@ function makeProcessor(opts: {
     .fn()
     .mockResolvedValue(undefined) as SecurityGateDeps['updateFileStatus']
 
+  const mockUpdateFileStorageKey = vi
+    .fn()
+    .mockResolvedValue(undefined) as SecurityGateDeps['updateFileStorageKey']
+
   const mockScanWithClamAv = vi.fn().mockImplementation(() => {
     if (scanResult === 'down') {
       return Promise.reject(new ClamAvDownError(new Error('Connection refused')))
@@ -111,6 +115,7 @@ function makeProcessor(opts: {
     promoteFile: mockPromoteFile,
     publisher: { publish: mockPublish },
     updateFileStatus: mockUpdateFileStatus,
+    updateFileStorageKey: mockUpdateFileStorageKey,
     scanWithClamAv: mockScanWithClamAv,
     disarmers,
     maxFileBytes,
@@ -124,6 +129,7 @@ function makeProcessor(opts: {
       mockPromoteFile,
       mockPublish,
       mockUpdateFileStatus,
+      mockUpdateFileStorageKey,
       mockScanWithClamAv,
     },
   }
@@ -190,6 +196,10 @@ describe('SecurityGateProcessor', () => {
     expect(mocks.mockUpdateFileStatus).toHaveBeenCalledWith(
       BASE_FILE_ID, 'clean',
       expect.objectContaining({ verdict: 'clean', disarmed: true }),
+    )
+    expect(mocks.mockUpdateFileStorageKey).toHaveBeenCalledWith(
+      BASE_FILE_ID,
+      `clean/${BASE_PROJECT_ID}/${BASE_FILE_ID}/doc.pdf`,
     )
     expect(mocks.mockPublish).toHaveBeenCalledWith(
       `ingest.file.clean:${BASE_PROJECT_ID}`,

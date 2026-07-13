@@ -40,7 +40,10 @@ import { AdminModule } from './modules/admin/admin.module.js'
           ],
           censor: '[REDACTED]',
         },
-        ...(process.env['NODE_ENV'] !== 'production'
+        // pino-pretty is a devDependency (absent from the production image via
+        // `pnpm deploy --prod`) — gate on the exact dev value, not "not prod",
+        // so any other/unset NODE_ENV falls through to safe structured JSON.
+        ...(process.env['NODE_ENV'] === 'development'
           ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
           : {}),
       },

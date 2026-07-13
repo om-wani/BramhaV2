@@ -68,6 +68,15 @@ export interface SecurityGateDeps {
   ) => Promise<void>
 
   /**
+   * Write the new storage_key after promotion to the clean bucket. Called
+   * once, right before updateFileStatus(fileId, 'clean', ...) — the object no
+   * longer exists at the staging key once promotion succeeds, so the DB row
+   * (the API's only source of truth for downloads) must be updated in the
+   * same step or downloads silently 404 against the old staging location.
+   */
+  updateFileStorageKey: (fileId: string, storageKey: string) => Promise<void>
+
+  /**
    * Run ClamAV scan on the buffer.
    * Must throw ClamAvDownError if the daemon is unreachable.
    */
@@ -334,6 +343,9 @@ export class SecurityGateProcessor {
       const wasDisarmed = !PASSTHROUGH_MIMES.has(declaredMime)
       const scanReport = { verdict: 'clean' as const, disarmed: wasDisarmed }
 
+      // storage_key must move with the object — it now lives in the clean
+      // bucket at cleanKey, not the staging key the row was created with.
+      await this.deps.updateFileStorageKey(fileId, `clean/${cleanKey}`)
       await this.deps.updateFileStatus(fileId, 'clean', scanReport)
 
       const cleanPayload = { fileId, projectId, storageKey: `clean/${cleanKey}`, scanReport }

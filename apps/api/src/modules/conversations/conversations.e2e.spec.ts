@@ -41,43 +41,55 @@ describe.skipIf(!hasEnv)('ConversationsService — concurrent append auto-fork',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     service = new ConversationsService(RlsDbServiceStub as any, redis)
 
-    // Seed: org → user → project → project_member → room
-    const seed = await withTenant(
+    // Seed: user → org (owner_id = self, satisfies the orgs bootstrap RLS
+    // check) → org_member → project (org_id membership satisfies the
+    // projects bootstrap RLS check) → project_member → room.
+    // `users` carries no RLS (see 0019), so the user insert works under any
+    // app.user_id context; every insert after it runs with app.user_id set
+    // to that same user so each row's owner/membership check is satisfiable.
+    const user = await withTenant(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (tx: any) => {
-        const org = await tx<{ id: string }[]>`
-          INSERT INTO orgs (name, slug) VALUES ('e2e-org', ${'e2e-org-' + Date.now()}) RETURNING id
-        `
-        const orgId = org[0].id as string
-
-        const user = await tx<{ id: string }[]>`
+        const rows = await tx<{ id: string }[]>`
           INSERT INTO users (email, password_hash, display_name)
           VALUES (${'e2e-' + Date.now() + '@test.com'}, 'x', 'E2E User')
           RETURNING id
         `
-        const uid = user[0].id as string
+        return rows[0].id as string
+      },
+      { userId: '00000000-0000-0000-0000-000000000000' },
+    )
 
-        await tx`INSERT INTO org_members (org_id, user_id, role) VALUES (${orgId}, ${uid}, 'owner')`
+    const seed = await withTenant(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (tx: any) => {
+        const org = await tx<{ id: string }[]>`
+          INSERT INTO orgs (name, slug, owner_id)
+          VALUES ('e2e-org', ${'e2e-org-' + Date.now()}, ${user}) RETURNING id
+        `
+        const orgId = org[0].id as string
+
+        await tx`INSERT INTO org_members (org_id, user_id, role) VALUES (${orgId}, ${user}, 'owner')`
 
         const project = await tx<{ id: string }[]>`
           INSERT INTO projects (org_id, name) VALUES (${orgId}, 'e2e-project') RETURNING id
         `
         const pid = project[0].id as string
 
-        await tx`INSERT INTO project_members (project_id, user_id, role) VALUES (${pid}, ${uid}, 'owner')`
+        await tx`INSERT INTO project_members (project_id, user_id, role) VALUES (${pid}, ${user}, 'owner')`
 
         const room = await tx<{ id: string }[]>`
           INSERT INTO rooms (project_id, type, name, created_by)
-          VALUES (${pid}, 'meeting', 'e2e-room', ${uid})
+          VALUES (${pid}, 'meeting', 'e2e-room', ${user})
           RETURNING id
         `
 
-        return { userId: uid, projectId: pid, roomId: room[0].id as string }
+        return { projectId: pid, roomId: room[0].id as string }
       },
-      { userId: '00000000-0000-0000-0000-000000000000' },
+      { userId: user },
     )
 
-    userId = seed.userId
+    userId = user
     projectId = seed.projectId
     roomId = seed.roomId
   })

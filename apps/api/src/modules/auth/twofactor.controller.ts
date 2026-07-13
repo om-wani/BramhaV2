@@ -103,7 +103,10 @@ export class TwoFactorController {
       userAgent,
     )
 
-    reply.header('Set-Cookie', this.session.buildRefreshCookieHeader(rawRefreshToken))
+    reply.header('Set-Cookie', [
+      this.session.buildRefreshCookieHeader(rawRefreshToken),
+      this.session.buildAccessCookieHeader(accessToken, expiresIn),
+    ])
     return { accessToken, expiresIn }
   }
 

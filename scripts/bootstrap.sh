@@ -34,8 +34,9 @@ if [ ! -f "$ROOT/apps/api/.env" ]; then
 DATABASE_URL=postgresql://bramha_app:dev_only_app_password@localhost:5432/bramha_dev
 REDIS_URL=redis://:dev_only_redis_password@localhost:6379
 S3_ENDPOINT=http://localhost:9000
-S3_ACCESS_KEY=dev_only_minio_root
-S3_SECRET_KEY=dev_only_minio_password
+S3_REGION=us-east-1
+S3_ACCESS_KEY_ID=dev_only_minio_root
+S3_SECRET_ACCESS_KEY=dev_only_minio_password
 S3_BUCKET_STAGING=bramha-staging
 S3_BUCKET_CLEAN=bramha-clean
 S3_BUCKET_QUARANTINE=bramha-quarantine
@@ -94,10 +95,14 @@ DATABASE_URL="postgresql://bramha_dev:dev_only_postgres_password@localhost:5432/
 
 echo ""
 echo "✓ Dev stack ready!"
-echo "  API:       pnpm --filter @bramha/api build && pnpm --filter @bramha/api start:dev   (http://localhost:4000, docs at /docs)"
-echo "  Web:       pnpm --filter @bramha/web dev                                            (http://localhost:3000)"
-echo "  Postgres:  postgresql://bramha_dev:dev_only_postgres_password@localhost:5432/bramha_dev"
-echo "  Redis:     redis://:dev_only_redis_password@localhost:6379"
-echo "  MinIO:     http://localhost:9000  (console: http://localhost:9001)"
-echo "  ClamAV:    localhost:3310"
-echo "  OTel:      http://localhost:4317 (gRPC), http://localhost:4318 (HTTP)"
+echo "  API:            pnpm --filter @bramha/api build && pnpm --filter @bramha/api start:dev   (http://localhost:4000, docs at /docs)"
+echo "  Web:            pnpm --filter @bramha/web dev                                            (http://localhost:3000)"
+echo "  Agent runtime:  SYSTEM_USER_ID=00000000-0000-0000-0000-000000000099 REDIS_URL=redis://:dev_only_redis_password@localhost:6379 \\"
+echo "                    DATABASE_URL=postgresql://bramha_app:dev_only_app_password@localhost:5432/bramha_dev \\"
+echo "                    pnpm --filter @bramha/agent-runtime build && node apps/agent-runtime/dist/main.js"
+echo "                  (00000000-0000-0000-0000-000000000099 is the reserved system_agent user — see 0026_system_agent.sql)"
+echo "  Postgres:       postgresql://bramha_dev:dev_only_postgres_password@localhost:5432/bramha_dev"
+echo "  Redis:          redis://:dev_only_redis_password@localhost:6379"
+echo "  MinIO:          http://localhost:9000  (console: http://localhost:9001)"
+echo "  ClamAV:         localhost:3310"
+echo "  OTel:           http://localhost:4317 (gRPC), http://localhost:4318 (HTTP)"

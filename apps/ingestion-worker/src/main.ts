@@ -16,7 +16,7 @@ import { Readable } from 'stream'
 import { EventPublisher } from '@bramha/event-bus'
 import { createEmbeddingProvider } from '@bramha/agents'
 import { SecurityGateProcessor, type IngestFileJobData } from './security/security-gate.processor.js'
-import { updateFileStatus } from './security/update-file-status.js'
+import { updateFileStatus, updateFileStorageKey } from './security/update-file-status.js'
 import { quarantineFile } from './security/quarantine.js'
 import { promoteFile, deleteFromStaging } from './security/promote.js'
 import { scanWithClamAv, checkClamAvHealth } from './security/steps/clamav-scan.js'
@@ -164,6 +164,7 @@ const processor = new SecurityGateProcessor({
 
   publisher,
   updateFileStatus,
+  updateFileStorageKey,
   scanWithClamAv: (buf) => scanWithClamAv(buf),
   disarmers,
 

@@ -553,11 +553,13 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   it(
-    'performance: ltree ancestor-slice query over 500-node chain completes in < 10s',
+    'insert accepts a 500-deep linear chain (no GiST-on-ltree stack overflow)',
     async () => {
-      // Build a linear chain of 500 nodes (each child of the previous)
+      // Regression guard for the bug this replaces: a GiST index on the ltree
+      // path column crashed Postgres with "stack depth limit exceeded" once a
+      // linear chain passed ~63 nodes (0024_drop_ltree_gist_index.sql). There
+      // is no longer any index on path, so this must simply succeed.
       let prev = await insertNode({ conversationId: conversationAId, projectId: projectAId })
-      const rootPath = prev.path
 
       for (let i = 1; i < 500; i++) {
         prev = await insertNode({
@@ -567,21 +569,42 @@ describe.skipIf(!runTests)('DAG schema — triggers and RLS', () => {
         })
       }
 
-      // Verify the last node is at depth 499
+      expect(prev.depth).toBe(499)
+    },
+    { timeout: 120_000 },
+  )
+
+  it(
+    'performance: recursive-CTE ancestor walk over 500-node chain completes in < 10s',
+    async () => {
+      // Build a second linear chain of 500 nodes (each child of the previous)
+      let prev = await insertNode({ conversationId: conversationAId, projectId: projectAId })
+      for (let i = 1; i < 500; i++) {
+        prev = await insertNode({
+          conversationId: conversationAId,
+          projectId: projectAId,
+          parentId: prev.id,
+        })
+      }
       expect(prev.depth).toBe(499)
 
-      // Time a single ltree ancestor-slice query (uses GiST index on path)
+      // Time the parent_id-walk recursive CTE conversations.service.ts uses in
+      // place of the ltree GiST query (getGraph / getSlice ancestor listing).
       const start = Date.now()
       const rows = await adminSql`
-        SELECT id FROM conversation_nodes
-        WHERE path <@ ${rootPath}::ltree
+        WITH RECURSIVE ancestors AS (
+          SELECT id, parent_id FROM conversation_nodes WHERE id = ${prev.id}
+          UNION ALL
+          SELECT cn.id, cn.parent_id
+          FROM conversation_nodes cn
+          JOIN ancestors a ON cn.id = a.parent_id
+        )
+        SELECT id FROM ancestors
       `
       const elapsed = Date.now() - start
 
-      // All 500 nodes in the chain are descendants of (or equal to) the root
       expect(rows.length).toBeGreaterThanOrEqual(500)
-      // Assert the index is actually used — query must finish well under 10s
-      expect(elapsed, `ltree query took ${elapsed}ms`).toBeLessThan(10_000)
+      expect(elapsed, `recursive CTE took ${elapsed}ms`).toBeLessThan(10_000)
     },
     { timeout: 120_000 },
   )

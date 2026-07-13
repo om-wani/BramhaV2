@@ -558,4 +558,27 @@ describe.skipIf(!RUN)('Tenant RLS isolation probes (DB level)', () => {
     results.push({ probe: 'sanity: A reads own rooms', table: 'rooms', passed: rows.length > 0 })
   })
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // system_agent — auto-membership from 0026_system_agent.sql
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000099'
+
+  it('system_agent sees exactly the projects it has membership in (both tenant fixtures, nothing else)', async () => {
+    const rows = await appSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.user_id', ${SYSTEM_USER_ID}, true)`
+      return tx<{ id: string }[]>`SELECT id FROM projects WHERE id IN (${tenantA.projectId}, ${tenantB.projectId})`
+    })
+    const ids = rows.map((r) => r.id).sort()
+    const expected = [tenantA.projectId, tenantB.projectId].sort()
+    const passed = JSON.stringify(ids) === JSON.stringify(expected)
+    results.push({
+      probe: 'system_agent project membership',
+      table: 'project_members',
+      passed,
+      ...(passed ? {} : { failReason: `expected [${expected}], got [${ids}]` }),
+    })
+    expect(ids).toEqual(expected)
+  })
+
 })

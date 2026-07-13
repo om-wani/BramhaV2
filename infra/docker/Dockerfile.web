@@ -13,15 +13,31 @@ WORKDIR /build
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace manifests for dependency resolution
+# pnpm v9+ requires ALL workspace package.json files present to resolve the
+# lockfile, even when using --filter. apps/web also depends on @bramha/shared
+# (workspace:*) — it must be built before `next build` can resolve it.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
+COPY apps/agent-runtime/package.json ./apps/agent-runtime/
+COPY apps/ingestion-worker/package.json ./apps/ingestion-worker/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/db/package.json ./packages/db/
+COPY packages/agents/package.json ./packages/agents/
+COPY packages/event-bus/package.json ./packages/event-bus/
+COPY packages/mcp-connectors/package.json ./packages/mcp-connectors/
+COPY infra/sandbox/package.json ./infra/sandbox/
 
-# Install all deps for web app
-RUN pnpm install --filter @bramha/web --frozen-lockfile
+RUN pnpm install --filter @bramha/web --filter @bramha/shared --frozen-lockfile
 
-# Copy source
+# Copy source — tsconfig.base.json is required by both packages' tsconfig
+# "extends" chain (apps/web/tsconfig.json -> ../../tsconfig.base.json).
+COPY tsconfig.base.json ./
+COPY packages/shared/src ./packages/shared/src
+COPY packages/shared/tsconfig.json ./packages/shared/
 COPY apps/web ./apps/web
+
+RUN pnpm --filter @bramha/shared build
 
 # Build — produces .next/standalone
 RUN pnpm --filter @bramha/web build
@@ -38,11 +54,12 @@ RUN addgroup -S web && adduser -S web -G web
 
 WORKDIR /app
 
-# Next.js standalone output already bundles server + node_modules subset
+# Next.js standalone output preserves the monorepo-relative path — server.js
+# ends up at ./apps/web/server.js, not ./server.js. Static assets and public/
+# must sit next to it at the same nested path, or the server 404s on them.
 COPY --from=build /build/apps/web/.next/standalone ./
-# Static assets must be copied alongside standalone server
-COPY --from=build /build/apps/web/.next/static ./.next/static
-COPY --from=build /build/apps/web/public ./public
+COPY --from=build /build/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /build/apps/web/public ./apps/web/public
 
 EXPOSE 3001
 
@@ -51,8 +68,10 @@ ENV HOSTNAME="0.0.0.0"
 
 USER web
 
+# 127.0.0.1, not localhost: Alpine's musl resolver prefers ::1, and the app
+# only binds IPv4 (0.0.0.0) — "localhost" here would always connection-refuse.
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:3001/api/health || exit 1
+    CMD wget -qO- http://127.0.0.1:3001/api/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "server.js"]
+CMD ["node", "apps/web/server.js"]

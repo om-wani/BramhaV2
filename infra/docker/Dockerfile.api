@@ -10,14 +10,19 @@ WORKDIR /build
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy workspace manifests for dependency resolution
+# pnpm v9+ requires ALL workspace package.json files present to resolve the
+# lockfile, even when using --filter. Copy all manifests first for layer caching.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY apps/agent-runtime/package.json ./apps/agent-runtime/
+COPY apps/ingestion-worker/package.json ./apps/ingestion-worker/
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/db/package.json ./packages/db/
 COPY packages/agents/package.json ./packages/agents/
 COPY packages/event-bus/package.json ./packages/event-bus/
 COPY packages/mcp-connectors/package.json ./packages/mcp-connectors/
+COPY infra/sandbox/package.json ./infra/sandbox/
 
 # Install all deps (including dev) for build
 RUN pnpm install \
@@ -52,6 +57,11 @@ RUN pnpm --filter @bramha/shared build && \
     pnpm --filter @bramha/mcp-connectors build && \
     pnpm --filter @bramha/api build
 
+# pnpm deploy resolves workspace:* deps (shared/db/agents/event-bus/mcp-connectors)
+# to real packages, prod only. --legacy: pnpm v10+ otherwise requires
+# inject-workspace-packages=true.
+RUN pnpm --filter @bramha/api deploy --prod --legacy /build/deploy
+
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 
 FROM node:22-alpine AS runtime
@@ -64,31 +74,18 @@ RUN addgroup -S api && adduser -S api -G api
 
 WORKDIR /app
 
-# Copy compiled API output and its node_modules
-COPY --from=build /build/apps/api/dist ./dist
-COPY --from=build /build/apps/api/package.json ./package.json
+# Copy pnpm deploy output: node_modules (workspace:* resolved), package.json, dist
+COPY --from=build /build/deploy ./
 
-# Install production deps only in runtime image
-RUN npm install --omit=dev --ignore-scripts
-
-# Copy compiled shared package deps into node_modules
-COPY --from=build /build/packages/shared/dist ./node_modules/@bramha/shared/dist
-COPY --from=build /build/packages/shared/package.json ./node_modules/@bramha/shared/package.json
-COPY --from=build /build/packages/db/dist ./node_modules/@bramha/db/dist
-COPY --from=build /build/packages/db/package.json ./node_modules/@bramha/db/package.json
-COPY --from=build /build/packages/agents/dist ./node_modules/@bramha/agents/dist
-COPY --from=build /build/packages/agents/package.json ./node_modules/@bramha/agents/package.json
-COPY --from=build /build/packages/event-bus/dist ./node_modules/@bramha/event-bus/dist
-COPY --from=build /build/packages/event-bus/package.json ./node_modules/@bramha/event-bus/package.json
-COPY --from=build /build/packages/mcp-connectors/dist ./node_modules/@bramha/mcp-connectors/dist
-COPY --from=build /build/packages/mcp-connectors/package.json ./node_modules/@bramha/mcp-connectors/package.json
-
-EXPOSE 3000
+ENV PORT=4000
+EXPOSE 4000
 
 USER api
 
+# 127.0.0.1, not localhost: Alpine's musl resolver prefers ::1, and the app
+# only binds IPv4 (0.0.0.0) — "localhost" here would always connection-refuse.
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost:3000/health || exit 1
+    CMD wget -qO- http://127.0.0.1:4000/health/live || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/main.js"]
