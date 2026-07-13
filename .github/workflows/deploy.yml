@@ -29,7 +29,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC — staging role)
         uses: aws-actions/configure-aws-credentials@v4
@@ -166,7 +166,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC — prod role)
         uses: aws-actions/configure-aws-credentials@v4
