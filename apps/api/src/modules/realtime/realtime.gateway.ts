@@ -46,9 +46,22 @@ interface RoomJoinPayload {
   projectId: string
 }
 
+// Cross-origin WS: web (Vercel) connects directly to this api (Render), so
+// Engine.IO's default same-origin policy would reject the handshake before
+// WsAuthGuard runs. Mirror the HTTP CORS allowlist from ALLOWED_ORIGINS. No
+// credentials: auth is the handshake JWT, not cookies.
+const WS_ALLOWED_ORIGINS = (process.env['ALLOWED_ORIGINS'] ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
 @WebSocketGateway({
   maxHttpBufferSize: 64 * 1024,
   transports: ['websocket', 'polling'],
+  cors: {
+    origin: WS_ALLOWED_ORIGINS.length > 0 ? WS_ALLOWED_ORIGINS : true,
+    credentials: false,
+  },
 })
 @Injectable()
 export class RealtimeGateway

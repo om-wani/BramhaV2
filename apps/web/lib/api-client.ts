@@ -1,7 +1,12 @@
 import { z } from 'zod'
 import { redirectToLogin } from './auth'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+// Production (Vercel): default to the same-origin '/backend' proxy (see
+// next.config.mjs rewrites) so auth cookies stay first-party. Local dev talks
+// to the api directly. NEXT_PUBLIC_API_URL overrides both when set.
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production' ? '/backend' : 'http://localhost:3000')
 
 export class ApiError extends Error {
   constructor(

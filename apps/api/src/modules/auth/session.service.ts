@@ -36,68 +36,42 @@ export class SessionService {
     return d
   }
 
+  // Cookies are first-party to the web origin: local dev is same-site (both
+  // localhost), and split production (Vercel web / Render api) proxies the api
+  // under the web origin via /backend (see next.config.mjs). So SameSite=Lax /
+  // Strict apply — NOT SameSite=None, which would make them third-party cookies
+  // the browser drops. Secure is omitted only in development for plain-HTTP local.
+
   /**
-   * Build a Set-Cookie header value for the refresh_token cookie.
-   * Sets Secure only outside of development to allow HTTP local testing.
+   * refresh_token cookie — the long-lived session marker. SameSite=Lax so it is
+   * sent on top-level navigations, letting the web middleware gate protected
+   * routes on its presence (see apps/web/middleware.ts).
    */
-  // buildRefreshCookieHeader(rawToken: string): string {
-  //   const maxAge = SESSION_REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60
-  //   const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-  //   return `refresh_token=${rawToken}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${maxAge}`
-  // }
-
-  // /** Build a Set-Cookie header that immediately expires the refresh_token cookie. */
-  // buildClearRefreshCookieHeader(): string {
-  //   const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-  //   return `refresh_token=; Path=/; HttpOnly${secure}; SameSite=Lax; Max-Age=0`
-  // }
-
-  // /**
-  //  * Build a Set-Cookie header for the access_token cookie — the web client's
-  //  * only auth transport (it never stores the token itself; see JwtAuthGuard's
-  //  * cookie fallback). SameSite=Strict: this cookie is only ever needed for
-  //  * same-origin fetch() calls, never a cross-site top-level navigation.
-  //  */
-  // buildAccessCookieHeader(accessToken: string, expiresInSeconds: number): string {
-  //   const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-  //   return `access_token=${accessToken}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${expiresInSeconds}`
-  // }
-
-  // /** Build a Set-Cookie header that immediately expires the access_token cookie. */
-  // buildClearAccessCookieHeader(): string {
-  //   const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-  //   return `access_token=; Path=/; HttpOnly${secure}; SameSite=Strict; Max-Age=0`
-  // }
-
   buildRefreshCookieHeader(rawToken: string): string {
-  const maxAge = SESSION_REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60
-  const secure =
-    process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    const maxAge = SESSION_REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `refresh_token=${rawToken}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${maxAge}`
+  }
 
-  return `refresh_token=${rawToken}; HttpOnly${secure}; SameSite=None; Path=/; Max-Age=${maxAge}`
-}
+  /** Build a Set-Cookie header that immediately expires the refresh_token cookie. */
+  buildClearRefreshCookieHeader(): string {
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `refresh_token=; Path=/; HttpOnly${secure}; SameSite=Lax; Max-Age=0`
+  }
 
-buildClearRefreshCookieHeader(): string {
-  const secure =
-    process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+  /**
+   * access_token cookie — the web client's auth transport (it never stores the
+   * token; see JwtAuthGuard's cookie fallback). SameSite=Strict: only ever
+   * needed for same-origin fetch() calls, never a cross-site navigation.
+   */
+  buildAccessCookieHeader(accessToken: string, expiresInSeconds: number): string {
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `access_token=${accessToken}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${expiresInSeconds}`
+  }
 
-  return `refresh_token=; Path=/; HttpOnly${secure}; SameSite=None; Max-Age=0`
-}
-
-buildAccessCookieHeader(
-  accessToken: string,
-  expiresInSeconds: number,
-): string {
-  const secure =
-    process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-
-  return `access_token=${accessToken}; HttpOnly${secure}; SameSite=None; Path=/; Max-Age=${expiresInSeconds}`
-}
-
-buildClearAccessCookieHeader(): string {
-  const secure =
-    process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
-
-  return `access_token=; Path=/; HttpOnly${secure}; SameSite=None; Max-Age=0`
-}
+  /** Build a Set-Cookie header that immediately expires the access_token cookie. */
+  buildClearAccessCookieHeader(): string {
+    const secure = process.env['NODE_ENV'] !== 'development' ? '; Secure' : ''
+    return `access_token=; Path=/; HttpOnly${secure}; SameSite=Strict; Max-Age=0`
+  }
 }

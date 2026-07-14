@@ -1,6 +1,14 @@
 import { io, type Socket } from 'socket.io-client'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'
+// Socket.IO opens a persistent WebSocket, which the Vercel /backend rewrite
+// proxy cannot tunnel — so the socket connects directly to the api origin,
+// cross-origin, authenticating via the handshake JWT (not cookies). In split
+// deployments NEXT_PUBLIC_API_URL is the relative '/backend', unusable for a
+// socket, so a separate absolute NEXT_PUBLIC_WS_URL (the Render origin) is used.
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  'http://localhost:3000'
 
 let socket: Socket | null = null
 
@@ -15,7 +23,7 @@ export function createSocket(token: string): Socket {
   }
   destroySocket()
 
-  socket = io(API_BASE, {
+  socket = io(WS_BASE, {
     auth: { token },
     transports: ['websocket', 'polling'],
     reconnection: true,
