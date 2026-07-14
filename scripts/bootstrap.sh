@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ -z "${BASH_VERSION:-}" ]; then
+  echo "ERROR: this script needs bash (run './scripts/bootstrap.sh' or 'bash scripts/bootstrap.sh', not 'sh scripts/bootstrap.sh')" >&2
+  exit 1
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "ERROR: do not run this with sudo/as root." >&2
+  echo "  It breaks pnpm (root's PATH misses your user pnpm, falls back to a broken system corepack shim)" >&2
+  echo "  and docker doesn't need it if you're in the docker group (check: groups \$USER)." >&2
+  echo "  Run: ./scripts/bootstrap.sh" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -11,6 +24,25 @@ command -v node >/dev/null 2>&1 || { echo "ERROR: node not installed"; exit 1; }
 command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not installed. Run: npm i -g pnpm"; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo "ERROR: docker not installed"; exit 1; }
 command -v openssl >/dev/null 2>&1 || { echo "ERROR: openssl not installed"; exit 1; }
+
+# Docker socket access. Common trap: user was just added to the docker group,
+# but existing shell sessions keep the old group list until a fresh login.
+# If getent says we belong, re-exec this whole script under `sg docker` so the
+# group applies without needing a logout.
+if ! docker info >/dev/null 2>&1; then
+  if getent group docker | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un)"; then
+    if [ -z "${BRAMHA_SG_REEXEC:-}" ]; then
+      echo "==> Docker socket not accessible in this shell (stale group session) — re-running under 'sg docker'..."
+      export BRAMHA_SG_REEXEC=1
+      exec sg docker -c "bash '${BASH_SOURCE[0]}'"
+    fi
+    echo "ERROR: still no docker access even under 'sg docker'. Check: ls -l /var/run/docker.sock" >&2
+    exit 1
+  fi
+  echo "ERROR: cannot access the Docker daemon and you're not in the docker group." >&2
+  echo "  Fix: sudo usermod -aG docker \$USER   (then log out and back in, or just rerun this script)" >&2
+  exit 1
+fi
 
 # 2. Install dependencies
 echo "==> Installing dependencies..."
@@ -48,6 +80,7 @@ NODE_ENV=development
 PORT=4000
 JWT_SECRET=$(openssl rand -hex 32)
 MASTER_KEY=$(openssl rand -base64 32)
+CREDENTIAL_ENCRYPTION_KEY=$(openssl rand -base64 32)
 JWT_PRIVATE_KEY_BASE64=$(base64 -w0 "$JWT_PRIV_PEM")
 JWT_PUBLIC_KEY_BASE64=$(base64 -w0 "$JWT_PUB_PEM")
 ALLOWED_ORIGINS=http://localhost:3000
