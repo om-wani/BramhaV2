@@ -1,136 +1,92 @@
-# MVP UI Spec
+# BramhaV2 — MVP UI Spec
 
-## Route structure
-
-```
-(marketing)
-  /                    Landing page
-
-(auth)
-  /register            Sign up
-  /login               Sign in
-  /logout              (action, redirects)
-
-(app)  [auth-gated]
-  /dashboard           Org + project list
-  /orgs/new            Create org
-  /p/[projectSlug]     Project home (rooms list + files)
-  /p/[projectSlug]/r/[roomId]   Room / conversation view
-  /p/[projectSlug]/files        File library
-  /settings            User profile + password
-```
-
-Removed routes (not hidden, deleted): admin panel, source connectors, standup, approvals, diagnostics.
-
-## Design system
-
-- Dark-first. Background: `--bg-base: #0d0d0d`
-- Accent: `--accent: #6366f1` (indigo)
-- Persona accents: CSS variables `--persona-ceo`, `--persona-cto`, etc.
-- Font: Inter (system fallback: ui-sans-serif)
-- Components: hand-written shadcn-style (Button, Input, Card, Badge, Avatar, Tooltip, DropdownMenu, Dialog)
-- Tailwind CSS with `@layer components` for persona chips
-
-## Screen: Landing `/`
-
-Hero: "Your AI C-Suite, always in session." 
-Subheading: "A council of specialized AI executives that debate, delegate, and remember — built for founders who move fast."
-CTA: "Start free" → `/register`
-Three feature cards: Selective council · Branching threads · Org memory
-
-## Screen: Dashboard `/dashboard`
-
-Left sidebar: org switcher + project list.
-Main: recent rooms grid. Empty state: "Create your first project."
-Header: org name + user avatar + settings link.
-
-## Screen: Project home `/p/[projectSlug]`
-
-Two-column:
-- Left: rooms list (name, last active, agent count badge). "New room" button.
-- Right: file library preview (top 5 files, "View all" link).
-
-## Screen: Room `/p/[projectSlug]/r/[roomId]`
+## 1. Routes
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  [← Project]  Room name          [Upload file]  [Branch ▾]  │
-├───────────────────────┬──────────────────────────────────────┤
-│                       │                                      │
-│   DAG tree panel      │      Message thread                  │
-│   (branch switcher)   │      (active branch)                 │
-│                       │                                      │
-│   [main ●]            │  ┌─ User ──────────────────────┐    │
-│   └─ [branch-2]       │  │  What should we prioritize? │    │
-│      └─ [branch-3]    │  └─────────────────────────────┘    │
-│                       │  ┌─ Astra (CEO) ───────────────┐    │
-│                       │  │  Focus on the core loop...  │    │
-│                       │  └─────────────────────────────┘    │
-│                       │  ┌─ Vulcan (CTO) ──────────────┐    │
-│                       │  │  Technically, the bottleneck │    │
-│                       │  │  ↳ delegated to Orion        │    │
-│                       │  └─────────────────────────────┘    │
-│                       │  ┌─ [streaming...] ────────────┐    │
-│                       │  │  Orion (CDAO): Based on the │    │
-│                       │  │  data... ▌                  │    │
-│                       │  └─────────────────────────────┘    │
-│                       │                                      │
-│                       │  [Branch off this node]              │
-│                       ├──────────────────────────────────────┤
-│                       │  [Type a message...]        [Send]   │
-└───────────────────────┴──────────────────────────────────────┘
+(marketing)   /                          landing
+(auth)        /login  /register          split-panel auth screens
+(app — gated) /dashboard                 orgs + projects
+              /orgs/new
+              /p/[org]/[project]         project home (rooms + files)
+              /p/[org]/[project]/files   file library
+              /p/[org]/[project]/r/[roomId]   the room (core screen)
+              /settings                  profile + password
 ```
 
-**Message card anatomy:**
-- Persona chip: colored dot + codename + role (e.g. `● Vulcan · CTO`)
-- Content: markdown-rendered (sanitized)
-- Citations: inline `[Source: filename.pdf, §3]` → hover tooltip with excerpt
-- Delegation badge: `↳ delegated from Astra` on sub-task nodes
-- "Branch off" button on hover (any node)
-- Agent streaming: typewriter cursor `▌`, disabled send button during stream
+Nothing else exists. No admin, connectors, approvals, standup, diagnostics — deleted from the tree, not hidden.
 
-**DAG tree panel:**
-- Branch list (main + forks), active branch highlighted
-- Click branch → switch thread view
-- "New branch from here" button on any selected node
+## 2. Design language
 
-**Relevance sidebar** (collapsed by default, expandable):
-- Shows this-turn agent scores
-- Silent agents: greyed out with score
-- Responding agents: score + why (mention/expertise/lexical)
+- Dark-first. Near-black canvas (`#0B0C0E` range), one indigo accent, generous whitespace, Inter.
+- **Persona color is the identity system**: 8 CSS variables (`--persona-ceo` … `--persona-cdao`), used consistently for avatar rings, name chips, streaming cursors, branch-origin markers, relevance bars. A viewer should learn "amber = Ledger = CFO" within two turns.
+- Components hand-written shadcn-style: Button, Input, Card, Dialog, DropdownMenu, Tooltip, Badge, Avatar, Skeleton.
+- Motion: streaming text is the hero animation; everything else is subtle (150 ms fades). No layout shift when agents start/stop.
 
-## Screen: File library `/p/[projectSlug]/files`
+## 3. Landing `/`
 
-Grid of uploaded files. Status badge: pending / processing / ready / error.
-Upload dropzone (top). Click file → preview panel (text chunks, embedding status).
-Delete button (owner only).
+Hero: **"Your AI C-suite is in session."** Sub: "Eight executive agents that know when to speak, remember what your company knows, and delegate to each other — in one room." Single CTA → `/register`. Below: three static product-shot cards (council selectivity, branching, citations). No pricing, no nav-bloat. This page is the demo's first 30 seconds.
 
-## Screen: Settings `/settings`
+## 4. Dashboard `/dashboard`
 
-- Display name edit
-- Password change (current + new + zxcvbn strength bar)
-- No 2FA, no API keys in MVP
+Sidebar: org switcher (dropdown), project list, settings link, user chip. Main: project cards (name, member count, room count, last activity). Empty state walks straight into org → project creation (two dialogs, prefilled slugs).
 
-## Socket.IO events (client-side handling)
+## 5. Project home `/p/[org]/[project]`
 
-| Event | Payload | Action |
-|-------|---------|--------|
-| `message:created` | `{ node, branchId }` | Append node to thread |
-| `message:delta` | `{ nodeId, delta, branchId }` | Append delta to streaming node |
-| `message:error` | `{ nodeId, error }` | Show error state, discard partial |
-| `branch:created` | `{ branch }` | Add branch to DAG panel |
-| `file:status` | `{ fileId, status }` | Update file badge |
+Two columns. Left: **Rooms** — list with name, kind badge (`Council` / `1:1 · Vulcan`), last-message preview, "New room" (dialog: name + kind + persona picker when 1:1). Right: **Memory** — recent files with status badges, dropzone, "All files →". Uploading here (not buried in the room) makes pillar 3 legible: *this project has a memory*.
 
-## Demo narrative (exit gate)
+## 6. The Room `/p/[org]/[project]/r/[roomId]` — core screen
 
-Non-developer runs this in ≤ 15 min on the deployed URL:
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ ← Q3 Strategy   ● Strategy Session      [branch: main ▾] [Council] │
+├──────────┬─────────────────────────────────────────┬───────────────┤
+│ BRANCHES │  THREAD (active branch)                 │ COUNCIL       │
+│          │                                         │               │
+│ ● main   │  You                                    │ ● Astra   .82 │
+│ ├ pricing│  │ Given the research, what should      │ ● Ledger  .61 │
+│ │  -alt  │  │ we prioritize in Q3?                 │ ● Vulcan  .48 │
+│ └ cto-   │                                         │ ○ Meridian.31 │
+│    deep  │  ◉ Astra · CEO                          │ ○ Iris    .12 │
+│    dive  │  │ Three things matter this quarter…    │ ○ Lyra    .09 │
+│          │  │ ┌───────────────────────────┐        │ ○ Sage    .07 │
+│ [+ from  │  │ │ Source: market-research   │        │ ○ Orion   .05 │
+│  node]   │  │ │ .pdf #4        ↗ preview  │        │               │
+│          │  │ └───────────────────────────┘        │ silent = $0   │
+│          │                                         │               │
+│          │  ◉ Vulcan · CTO            ⑂ branch     ├───────────────┤
+│          │  │ Feasibility-wise, the bottleneck…    │ FILES         │
+│          │  │ ↳ delegated to Orion ▸               │ market-       │
+│          │  │                                      │ research.pdf ✓│
+│          │  ◉ Orion · CDAO  (↳ from Vulcan)        │               │
+│          │  │ Based on the cohort data… ▌          │               │
+│          │                                         │               │
+│          ├─────────────────────────────────────────┤               │
+│          │ [ Message the council…      @  ⏎ Send ] │               │
+└──────────┴─────────────────────────────────────────┴───────────────┘
+```
 
-1. **Register** — create account, create org "AcmeCorp", create project "Q3 Strategy"
-2. **Upload** — drag-drop a PDF (e.g. market research doc). Wait for "ready" badge.
-3. **Ask the council** — open room "Strategy Session". Type: "Based on the market research, what should we prioritize for Q3?" Send.
-4. **Watch council respond** — 3–4 personas respond in sequence, streaming. At least one cites the uploaded doc with `[Source: ...]`.
-5. **Branch** — hover a node from Vulcan, click "Branch off". Type a follow-up technical question. See new branch with only CTO/CDAO responding.
-6. **Delegate** — type "@astra delegate the security review to sage". Astra responds, Sage receives delegation, posts result as child node with delegation chain shown.
-7. **Switch branches** — click back to main branch. Original thread intact.
+**Thread.** Message cards: persona avatar ring + name chip in persona color; sanitized markdown; hover reveals `⑂ Branch from here`. Streaming: colored cursor `▌`, composer stays enabled (queueing next message is fine — turns serialize server-side). Citation chips under the paragraph that used them; hover = chunk excerpt popover. Delegated nodes indent one level under the delegating node with `↳ from {persona}` badge. Artifact nodes render an iframe card (sandboxed, `allow-scripts`, null origin) with an expand dialog.
 
-All 4 essence pillars demonstrated: selective council (step 3–4), branching DAG (step 5), org memory/RAG (step 4 citation), delegation (step 6).
+**Branch rail (left).** Tree of branches, active highlighted, fork points shown as connectors. Switching = instant thread swap (ancestry query is cheap; cache per branch). "＋ from node" mirrors the hover action.
+
+**Council panel (right).** All 8 personas every turn, live from `turn:selection`: filled dot + score bar for speakers, dimmed for silent. Footer literally says **"silent = $0"** — the investor line, in the product. Collapsible; open by default in demo seed.
+
+**Composer.** `@` popover for persona mentions (forces relevance override — demo lever). Enter sends; Shift+Enter newline.
+
+## 7. Files `/p/[org]/[project]/files`
+
+Table: name, size, status (`pending → processing → ready` live via `file:status`), chunk count, uploader, delete (owner/editor). Row click → side panel with first chunks and their text — makes "chunked + embedded" tangible for technical audiences.
+
+## 8. Demo narrative — THE EXIT GATE
+
+Pre-req: deployed URL, seeded demo org (`pnpm seed:demo`: account, org "Northwind", project "Q3 Strategy", `market-research.pdf` already `ready`, one backdated open loop in the Vulcan 1:1 room). A non-developer performs the following in ≤ 15 min:
+
+1. **Log in** with seeded credentials → dashboard → open "Q3 Strategy". *(1 min)*
+2. **Show memory.** Project home: point at `market-research.pdf ✓ ready`. Drag in one extra small .md file; watch status flip to processing → ready live. *(2 min)*
+3. **Selective council.** Open "Strategy Session" (council room). Send: *"Based on the market research, what should we prioritize in Q3?"* → 3–4 personas stream in sequence; council panel shows 8 scores, silent members dimmed at $0. At least one response carries a citation chip; hover it → excerpt from the PDF. **Pillars 1 + 3.** *(4 min)*
+4. **Override with mention.** Send: *"@iris does this plan create hiring risk?"* → Iris (silent before) responds; panel shows mention driving her score. *(1 min)*
+5. **Branch.** Hover Vulcan's reply → `⑂ Branch from here` → name it `cto-deep-dive` → ask a technical follow-up → only Vulcan/Orion respond. Switch back to `main` — untouched. **Pillar 2.** *(3 min)*
+6. **Delegation.** On main, send: *"Vulcan, have Orion size the data work for option two."* → Vulcan replies ending in delegation → Orion's indented result streams in under it with the `↳ from Vulcan` chain badge. **Pillar 4.** *(2 min)*
+7. **Proactive close.** Open the Vulcan 1:1 room: a proactive follow-up on the backdated open loop is waiting (or fires on entry). "It comes back to you." *(1 min)*
+
+Pass = all seven beats land on the deployed URL without developer intervention. This section is the acceptance test for P6 and the golden-path Playwright spec mirrors beats 1–6.
