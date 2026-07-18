@@ -8,43 +8,53 @@ Multi-tenant SaaS AI orchestration platform. C-Suite AI council (CEO/CTO/CMO/CFO
 
 ```
 apps/web          Next.js 14 App Router frontend
-apps/api          NestJS + Fastify backend
-apps/agent-runtime  LangGraph agent execution engine
-apps/ingestion-worker  BullMQ file/source ingestion
+apps/api          NestJS + Fastify backend            ┐ merging into single
+apps/agent-runtime  LangGraph agent execution engine  ├ `apps/server` process
+apps/ingestion-worker  BullMQ file/source ingestion   ┘ in MVP task M1.2
 packages/shared   Zod schemas, events, WS protocol, error catalog
 packages/db       Drizzle ORM schema, migrations, RLS, withTenant()
 packages/agents   ModelRouter, persona compiler, providers
-packages/event-bus  Typed pub/sub wrapper
-packages/mcp-connectors  MCP registry, client pool, policy engine
-infra/            Docker Compose, Terraform
-docs/             Architecture specs (01–08)
+packages/event-bus  Typed pub/sub wrapper (in-process transport for MVP)
+packages/mcp-connectors  MCP registry, client pool, policy engine — PRUNED in M1.1
+infra/            Docker Compose (Terraform pruned in M1.1)
+docs/             00 = governing MVP plan; 01–08 full-vision specs
 ```
 
 ## Active branch
 
 `claude/mvp-plan-simplify-1zfx9b`
 
-## Stage status (governing plan: `docs/00_staged_roadmap.md`)
+## MVP plan (governing doc: `docs/00_staged_roadmap.md`, v2)
 
-The old phase model is retired. Old Phases 1–4 are substantially **built** (migrations through
-0026, ~890 tests green — see `docs/AUDIT_REPORT.md`). Work is now staged MVP-first:
+The old phase model is retired. Old Phases 1–4 are substantially built (migrations through
+0026, ~890 tests green — see `docs/AUDIT_REPORT.md`), **but the platform topology is too
+complex for the current goal** (investor/target-user demo on one box). The MVP plan therefore
+**prunes and consolidates the codebase itself** — hiding features is not enough:
 
-- **Stage 0 — MVP/Prototype ← CURRENT.** Investor/user demo on one box. Deep-platform tracks
-  (MCP, IaC, chaos, admin analytics) are **parked, not deleted** — hidden from UI, zero new
-  investment, code stays green in CI.
-- Stage 1 — Pilot (design partners) · Stage 2 — Productionize (paid beta) · Stage 3 — Scale.
+- **Complexity budget:** 2 Node processes (`web` + `server`), 3 infra containers
+  (pg+pgvector, redis, minio), 4 workspace packages (`shared`, `db`, `agents`, `event-bus`).
+- **Pruned from the tree** (preserved at git tag `v0-full-platform`): mcp-connectors,
+  approvals, sources/connectors, proactive PA, daily standup, backpressure/queue-fairness,
+  admin diagnostics, Terraform, ClamAV/OTel/Grafana/mailpit services, SSE fallback.
+- **Kept as-is** (working + tested; do not rebuild): auth, DAG + branching, RLS + withTenant,
+  hybrid search, ingestion pipeline, artifact sandbox, notes, persona/relevance/turn engine,
+  ModelRouter.
+- Prune rule: only cleanly separable units; never destabilize a keeper to complete a prune.
 
-## Current Stage-0 punch list (full detail: roadmap §5.3)
+## MVP task queue (detail: roadmap §6)
 
-1. **M0.1** — Wire RAG into agent turns (both `searchKnowledge` stubs return `[]` — critical gap)
-2. M0.2 — Demo seed (`pnpm seed:demo`: council of 5, branched conversation, ingested docs, notes)
-3. M0.3 — Golden-path Playwright smoke of the demo narrative (roadmap §5.1)
-4. M0.4 — Artifact pane auto-open on first stream chunk
-5. M0.5 — Demo polish: hide parked nav, empty states, landing copy
-6. M0.6 — Single-box deploy (compose.prod-sim + Caddy + `check-env --strict`)
-7. M0.7 — Hygiene: "(temporary)" commit residue, dead deps
+- **M1 — Collapse the runtime:** M1.1 tag `v0-full-platform` + prune · M1.2 merge
+  api/agent-runtime/ingestion-worker into one `apps/server` process (in-process event bus) ·
+  M1.3 three-container dev stack, auto-verify auth, ClamAV out of the gate
+- **M2 — Golden path:** M2.1 wire RAG into agent turns (stubs return `[]` — critical gap) ·
+  M2.2 delegation simple mode · M2.3 artifact auto-open + citation cards
+- **M3 — Demo surface:** M3.1 route/nav trim (delete, not hide) · M3.2 `pnpm seed:demo` ·
+  M3.3 polish pass
+- **M4 — Ship:** M4.1 single-box deploy (Caddy + `check-env --strict`) · M4.2 golden-path
+  Playwright spec · M4.3 demo script runbook
 
-Nothing outside this list is Stage-0 work unless it blocks the demo narrative.
+Exit gate: the roadmap §7 demo narrative runs end-to-end on the deployed URL, driven by a
+non-developer, ≤ 15 min. Nothing outside M1–M4 is MVP work.
 
 After 2.3.3:
 - T2.4.1 — Notes backend + backlinks
