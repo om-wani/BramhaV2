@@ -2,99 +2,91 @@
 
 ## Project
 
-Multi-tenant SaaS AI orchestration platform. C-Suite AI council (CEO/CTO/CMO/CFO/COO/CHRO/CSO/CDAO personas) collaborate in spatial chat rooms. Non-linear conversation DAG. Secure file ingestion. Vector knowledge layer. MCP tool integration.
+Multi-tenant SaaS AI orchestration platform. C-Suite AI council (CEO/CTO/CMO/CFO/COO/CHRO/CSO/CDAO personas) collaborate in chat rooms. Non-linear conversation DAG. File ingestion + vector knowledge layer. Delegation between agents. Goal: investor/user demo prototype.
+
+**Archive:** full-platform codebase at git branch `v0-full-platform`. Old docs at `docs/old/`.
 
 ## Monorepo structure
 
 ```
-apps/web          Next.js 14 App Router frontend
-apps/api          NestJS + Fastify backend            ┐ merging into single
-apps/agent-runtime  LangGraph agent execution engine  ├ `apps/server` process
-apps/ingestion-worker  BullMQ file/source ingestion   ┘ in MVP task M1.2
-packages/shared   Zod schemas, events, WS protocol, error catalog
-packages/db       Drizzle ORM schema, migrations, RLS, withTenant()
-packages/agents   ModelRouter, persona compiler, providers
-packages/event-bus  Typed pub/sub wrapper (in-process transport for MVP)
-packages/mcp-connectors  MCP registry, client pool, policy engine — PRUNED in M1.1
-infra/            Docker Compose (Terraform pruned in M1.1)
-docs/             00 = governing MVP plan; 01–08 full-vision specs
+apps/web            Next.js 14 App Router frontend
+apps/server         NestJS + Fastify (API + agent runtime + ingestion, one process)
+packages/shared     Zod schemas, WS protocol types, event types, error catalog
+packages/db         Drizzle ORM schema, raw SQL migrations, withTenant()
+packages/agents     ModelRouter, persona configs, relevance engine, prompt builder
+packages/event-bus  InProcessEventEmitter (typed pub/sub, no Redis)
+docs/               MVP docs (00–04); old full-platform docs in docs/old/
+infra/              docker-compose.yml (Postgres+pgvector only, no Redis/MinIO)
 ```
 
-## Active branch
+## MVP plan (governing doc: `docs/00_mvp_plan.md`)
 
-`claude/mvp-plan-simplify-1zfx9b`
+Fresh rewrite from new docs. Old codebase archived. Build P0–P6 sequentially.
 
-## MVP plan (governing doc: `docs/00_staged_roadmap.md`, v2)
+**Complexity budget:** 2 Node processes, 1 infra container (Postgres+pgvector), 4 packages.
 
-The old phase model is retired. Old Phases 1–4 are substantially built (migrations through
-0026, ~890 tests green — see `docs/AUDIT_REPORT.md`), **but the platform topology is too
-complex for the current goal** (investor/target-user demo on one box). The MVP plan therefore
-**prunes and consolidates the codebase itself** — hiding features is not enough:
+**No:** Redis, MinIO, BullMQ, Docker required locally (PGlite for local dev), MCP, source connectors, 2FA, API keys, email verify, RLS machinery, ClamAV, OTel/Grafana, Terraform, checkpoint/resume impl, SSE fallback.
 
-- **Complexity budget:** 2 Node processes (`web` + `server`), 3 infra containers
-  (pg+pgvector, redis, minio), 4 workspace packages (`shared`, `db`, `agents`, `event-bus`).
-- **Pruned from the tree** (preserved at git tag `v0-full-platform`): mcp-connectors,
-  approvals, sources/connectors, proactive PA, daily standup, backpressure/queue-fairness,
-  admin diagnostics, Terraform, ClamAV/OTel/Grafana/mailpit services, SSE fallback.
-- **Kept as-is** (working + tested; do not rebuild): auth, DAG + branching, RLS + withTenant,
-  hybrid search, ingestion pipeline, artifact sandbox, notes, persona/relevance/turn engine,
-  ModelRouter.
-- Prune rule: only cleanly separable units; never destabilize a keeper to complete a prune.
+**Yes:** LangGraph turn loop, orgs layer, proactive PA lite, hybrid search, artifact sandbox, delegation simple mode, Socket.IO in-process.
 
-## MVP task queue (detail: roadmap §6)
+## Phase queue
 
-- **M1 — Collapse the runtime:** M1.1 tag `v0-full-platform` + prune · M1.2 merge
-  api/agent-runtime/ingestion-worker into one `apps/server` process (in-process event bus) ·
-  M1.3 three-container dev stack, auto-verify auth, ClamAV out of the gate
-- **M2 — Golden path:** M2.1 wire RAG into agent turns (stubs return `[]` — critical gap) ·
-  M2.2 delegation simple mode · M2.3 artifact auto-open + citation cards
-- **M3 — Demo surface:** M3.1 route/nav trim (delete, not hide) · M3.2 `pnpm seed:demo` ·
-  M3.3 polish pass
-- **M4 — Ship:** M4.1 single-box deploy (Caddy + `check-env --strict`) · M4.2 golden-path
-  Playwright spec · M4.3 demo script runbook
+| Phase | Name | Days |
+|-------|------|------|
+| P0 | Repo skeleton | 1 |
+| P1 | Auth + orgs | 1 |
+| P2 | Conversation DAG | 2 |
+| P3 | Agent council + relevance | 2 |
+| P4 | Org memory / RAG | 2 |
+| P5 | Delegation | 1 |
+| P6 | Demo surface + ship | 2 |
 
-Exit gate: the roadmap §7 demo narrative runs end-to-end on the deployed URL, driven by a
-non-developer, ≤ 15 min. Nothing outside M1–M4 is MVP work.
-
-After 2.3.3:
-- T2.4.1 — Notes backend + backlinks
-- T2.4.2 — Office UI (TipTap three-pane)
+Exit gate: demo narrative in `docs/04_mvp_ui.md` runs end-to-end, non-developer, ≤ 15 min.
 
 ## Key architectural decisions (locked)
 
 ### Database
 - `packages/db` — Drizzle ORM + raw SQL migrations
 - `withTenant(fn, ctx)` is the ONLY query entry point (exported from index.ts)
-- `sql` postgres.js client is package-private (never exported)
-- All tenant tables: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`
-- RLS policies use `NULLIF(current_setting('app.user_id', TRUE), '')::uuid`
-- Roles: `bramha_app` (DML, RLS-filtered), `bramha_migrator` (DDL+DML, BYPASSRLS)
-- Migration files: `packages/db/src/migrations/00xx_name.sql` (0001–0026 applied)
-- Next migration: `0027_*.sql`
+- Raw `sql` client never exported
+- Local dev: PGlite (embedded, zero-install)
+- Deployed: Neon or Supabase managed Postgres
+- App-level `WHERE project_id` scoping (RLS deferred to productionization)
+- Migration files: `packages/db/src/migrations/00xx_name.sql` starting at `0001`
 
-### API (NestJS + Fastify)
-- `apps/api/src/modules/` — feature modules
-- Guards: `JwtAuthGuard`, `ApiKeyGuard`, `AnyAuthGuard`, `ProjectMemberGuard(role)`, `AdminGuard`
+### Server (NestJS + Fastify)
+- `apps/server/src/modules/` — feature modules
+- Guards: `JwtAuthGuard`, `ProjectMemberGuard(role)`
 - Global: `ZodValidationPipe`, problem+json exception filter (no stack traces)
 - Security headers via Fastify (HSTS, nosniff, frameguard deny, referrer-policy)
 - CORS: exact-origin allowlist from env
-- API keys: `bmv2_<8hex>_<base64url>`, SHA-256 stored, scopes (read/write)
 
 ### Web (Next.js 14)
 - Route groups: `(marketing)`, `(auth)`, `(app)`
-- Middleware: nonce-based CSP, auth gate (protected: `/dashboard`, `/settings`, `/p/`, `/admin`)
+- Middleware: nonce-based CSP, auth gate (protected: `/dashboard`, `/settings`, `/p/`)
 - TanStack Query v5 for data fetching
-- Dark-first Tailwind design system with CSS variables
+- Socket.IO client for realtime
+- Dark-first Tailwind + CSS variables
 - Persona accent palette: 8 colors (ceo/cto/cmo/cfo/coo/chro/cso/cdao)
-- shadcn-style components (written manually, no CLI)
+- shadcn-style components (hand-written, no CLI)
 
 ### Security (non-negotiable)
+- argon2id passwords (m=19456, t=2, p=1)
 - zxcvbn ≥ 3 enforced server-side; dynamic import client-side (avoids 800KB bundle)
 - Open redirect prevention: `startsWith('/') && !startsWith('//')`
-- Email enumeration prevention: generic errors everywhere (register, forgot-pw, not-found)
-- API key raw value shown ONCE; SHA-256 stored
+- Email enumeration prevention: generic errors (register, forgot-pw, not-found)
 - CSP nonce-based; `frame-ancestors 'none'`
-- argon2id passwords (m=19456, t=2, p=1)
+- All RAG/external content wrapped in `<untrusted_context>` in agent prompts
+- Markdown/XSS sanitization on all user content
+- Artifact sandbox: sandboxed iframe, null origin, allow-scripts only
+
+### Agent system
+- LangGraph turn graph (compiled once, invoked per turn)
+- ModelRouter: Anthropic claude-sonnet-4-6 primary, OpenAI gpt-4o-mini fallback
+- Relevance engine: mention (0.4) + expertise cosine (0.3) + BM25 (0.2) + recency fatigue (−0.1); threshold 0.35
+- `searchKnowledge(projectId, query, k=6)` wired into every agent turn
+- Delegation signal: `DELEGATE_TO: {persona} TASK: {description}` at end of response
+- Checkpoint/resume: `MemorySaver` only in MVP; `PostgresSaver` extension point documented
 
 ## Development mode
 
@@ -102,32 +94,28 @@ After 2.3.3:
 - Fresh implementer subagent per task
 - Spec compliance review then code quality review after each task
 - No pausing between tasks (continuous execution)
-- **Caveman mode (full)** active — terse responses, fragments OK, no filler
+- **Caveman mode (full)** active
 
 ## Docs index
 
 | File | Content |
 |------|---------|
-| `docs/00_staged_roadmap.md` | **Governing doc** — MVP-first stages, current punch list, parking rules |
-| `docs/01_architecture_and_stack.md` | System architecture, tech stack, security model |
-| `docs/02_project_structure.md` | Monorepo layout, file structure, dependency rules |
-| `docs/03_implementation_phases.md` | Master task list with security checklists and acceptance criteria |
-| `docs/04_agent_orchestration_spec.md` | PA engine, turn policies, delegation, MCP zero-trust |
-| `docs/05_data_model_and_schemas.md` | Full Postgres schema, RLS, DAG operations, WS contracts |
-| `docs/06_ui_ux_spec.md` | Screen-by-screen UI spec |
-| `docs/07_security_compliance.md` | STRIDE threat model, security stages A–E |
-| `docs/08_agent_personas.md` | C-Suite persona roster, system prompt templates |
+| `docs/00_mvp_plan.md` | **Governing doc** — phases, complexity budget, cut list, exit gate |
+| `docs/01_mvp_architecture.md` | Process topology, module layout, security, env vars |
+| `docs/02_mvp_data_model.md` | Full schema, DAG ops, hybrid search SQL, migration convention |
+| `docs/03_mvp_agents.md` | Personas, relevance engine, LangGraph loop, delegation, RAG, streaming |
+| `docs/04_mvp_ui.md` | Screen-by-screen spec, demo narrative (exit gate) |
+| `docs/old/` | Archived full-platform specs (superseded) |
 
-## Important fixes from Phase 1 (avoid repeating these bugs)
+## Important bugs to never repeat
 
-1. **Keyboard chord order**: `if (gPressed)` check MUST come before `if (e.key === 'g')` check — otherwise g+g chord is unreachable
-2. **useMemo with custom hooks**: Cannot call custom hooks inside useMemo — inline the array directly
-3. **cleanup**: Always `clearTimeout(timer)` before `removeEventListener` in keyboard nav useEffect
-4. **Active state for nested routes**: `pathname === href || pathname.startsWith(href + '/')` (not just `===`)
+1. **Keyboard chord order**: `if (gPressed)` check MUST come before `if (e.key === 'g')` — otherwise g+g chord unreachable
+2. **useMemo with custom hooks**: Cannot call custom hooks inside useMemo — inline array directly
+3. **useEffect cleanup**: Always `clearTimeout(timer)` before `removeEventListener` in keyboard nav
+4. **Active state nested routes**: `pathname === href || pathname.startsWith(href + '/')` not just `===`
 5. **AnyAuthGuard**: Must throw `UnauthorizedException` (not return false) when both JWT and API key fail
-6. **Open redirect**: Block both `https://evil.com` AND `//evil.com` (protocol-relative)
+6. **Open redirect**: Block `https://evil.com` AND `//evil.com` (protocol-relative)
 7. **Enumeration prevention**: Collapse specific error branches (e.g., 409 on register) to single generic catch
-8. **2FA guard**: Early return rendering error + Link, not a disabled button with no feedback
-9. **zxcvbn**: Dynamic import in useEffect only — never static import at module level
-10. **h1→h3 heading skip**: Always include sr-only h2 for landmark sections
-11. **aria-label on bare div**: Add `role="region"` to make it effective
+8. **zxcvbn**: Dynamic import in useEffect only — never static import at module level
+9. **h1→h3 heading skip**: Always include sr-only h2 for landmark sections
+10. **aria-label on bare div**: Add `role="region"` to make it effective
