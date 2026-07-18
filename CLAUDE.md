@@ -22,32 +22,29 @@ docs/             Architecture specs (01–08)
 
 ## Active branch
 
-`claude/multi-agent-ai-orchestration-zt6xvw`
+`claude/mvp-plan-simplify-1zfx9b`
 
-## Phase status
+## Stage status (governing plan: `docs/00_staged_roadmap.md`)
 
-- **Phase 1 COMPLETE** — all 17 tasks (T1.1.1–T1.4.5) committed and pushed
-- **Phase 2 IN PROGRESS** — T2.1.1 DAG schema implementer was dispatched (hit session limit, needs re-dispatch)
+The old phase model is retired. Old Phases 1–4 are substantially **built** (migrations through
+0026, ~890 tests green — see `docs/AUDIT_REPORT.md`). Work is now staged MVP-first:
 
-## Current Phase 2 task queue
+- **Stage 0 — MVP/Prototype ← CURRENT.** Investor/user demo on one box. Deep-platform tracks
+  (MCP, IaC, chaos, admin analytics) are **parked, not deleted** — hidden from UI, zero new
+  investment, code stays green in CI.
+- Stage 1 — Pilot (design partners) · Stage 2 — Productionize (paid beta) · Stage 3 — Scale.
 
-Sequential within epic:
-1. **T2.1.1** — DAG schema + append-only machinery ← NEEDS RE-DISPATCH (implementer hit session limit)
-2. T2.1.2 — Conversation service + REST API
-3. T2.1.3 — Event bus package + realtime gateway
-4. T2.1.4 — Chat room UI (user-only) with branching
-5. T2.1.5 — Graph view
+## Current Stage-0 punch list (full detail: roadmap §5.3)
 
-Parallel with 2.1:
-- T2.3.1 — Upload flow (presigned) + file registry
-- T2.3.2 — Ingestion worker: security gate
-- T2.3.3 — Extraction, chunking, embedding
-- T2.3.4 — Hybrid search API
-- T2.3.5 — Storage Room UI
+1. **M0.1** — Wire RAG into agent turns (both `searchKnowledge` stubs return `[]` — critical gap)
+2. M0.2 — Demo seed (`pnpm seed:demo`: council of 5, branched conversation, ingested docs, notes)
+3. M0.3 — Golden-path Playwright smoke of the demo narrative (roadmap §5.1)
+4. M0.4 — Artifact pane auto-open on first stream chunk
+5. M0.5 — Demo polish: hide parked nav, empty states, landing copy
+6. M0.6 — Single-box deploy (compose.prod-sim + Caddy + `check-env --strict`)
+7. M0.7 — Hygiene: "(temporary)" commit residue, dead deps
 
-After 2.1.3:
-- T2.2.1 — Artifact schema + streaming API
-- T2.2.2 — Sandboxed artifact renderer
+Nothing outside this list is Stage-0 work unless it blocks the demo narrative.
 
 After 2.3.3:
 - T2.4.1 — Notes backend + backlinks
@@ -62,8 +59,8 @@ After 2.3.3:
 - All tenant tables: `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`
 - RLS policies use `NULLIF(current_setting('app.user_id', TRUE), '')::uuid`
 - Roles: `bramha_app` (DML, RLS-filtered), `bramha_migrator` (DDL+DML, BYPASSRLS)
-- Migration files: `packages/db/src/migrations/00xx_name.sql` (0001–0005 done)
-- Next migration: `0006_dag.sql`
+- Migration files: `packages/db/src/migrations/00xx_name.sql` (0001–0026 applied)
+- Next migration: `0027_*.sql`
 
 ### API (NestJS + Fastify)
 - `apps/api/src/modules/` — feature modules
@@ -101,10 +98,11 @@ After 2.3.3:
 
 | File | Content |
 |------|---------|
+| `docs/00_staged_roadmap.md` | **Governing doc** — MVP-first stages, current punch list, parking rules |
 | `docs/01_architecture_and_stack.md` | System architecture, tech stack, security model |
 | `docs/02_project_structure.md` | Monorepo layout, file structure, dependency rules |
 | `docs/03_implementation_phases.md` | Master task list with security checklists and acceptance criteria |
-| `docs/04_agent_orchestration.md` | PA engine, turn policies, delegation, MCP zero-trust |
+| `docs/04_agent_orchestration_spec.md` | PA engine, turn policies, delegation, MCP zero-trust |
 | `docs/05_data_model_and_schemas.md` | Full Postgres schema, RLS, DAG operations, WS contracts |
 | `docs/06_ui_ux_spec.md` | Screen-by-screen UI spec |
 | `docs/07_security_compliance.md` | STRIDE threat model, security stages A–E |
