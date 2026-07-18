@@ -97,6 +97,20 @@ Fresh rewrite from new docs. Old codebase archived — do not reuse it. Build P0
 - No pausing between tasks (continuous execution)
 - **Caveman mode (full)** active
 
+## Task tracking & session log (MANDATORY every session)
+
+Two living files in `docs/`:
+
+- **`docs/TASKS.md`** — full P0–P6 task breakdown with stable IDs (P0.1, P4.3, …).
+  - **Session start:** read it; current phase is marked at top.
+  - **During work:** flip `[ ]`→`[~]` when starting a task, `[~]`→`[x]` when its work lands — in the same commit as the code. `[-]` = dropped, with reason. Never renumber IDs; append new tasks at phase end.
+  - Phase gates in TASKS.md mirror `docs/00_mvp_plan.md` §5; a phase isn't done until its gate task is `[x]`.
+- **`docs/SESSION_LOG.md`** — append-only, newest first.
+  - **Session end (or before context runs out):** prepend one entry using the template at the top of the file — date, branch@commits, done (with task IDs), decisions, next step.
+  - Log decisions + why, not narration. One entry per session, not per commit.
+
+Rule: any commit that completes a task updates TASKS.md in that commit. Last commit of a session includes the SESSION_LOG.md entry.
+
 ## Docs index
 
 | File | Content |
@@ -106,6 +120,8 @@ Fresh rewrite from new docs. Old codebase archived — do not reuse it. Build P0
 | `docs/02_mvp_data_model.md` | Schema, DAG semantics, hybrid search SQL, job claim, withTenant, migrations |
 | `docs/03_mvp_agents.md` | Personas, relevance math, turn graph, prompts, delegation, PA lite, checkpoint slot |
 | `docs/04_mvp_ui.md` | Routes, room screen, WS handling, **demo narrative §8 = exit gate** |
+| `docs/TASKS.md` | **Living** task tracker — statuses, phase gates (update rules above) |
+| `docs/SESSION_LOG.md` | **Living** append-only session log (update rules above) |
 | `docs/old/` | Archived full-platform specs (superseded) |
 
 ## Important bugs to never repeat

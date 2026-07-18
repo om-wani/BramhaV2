@@ -104,4 +104,6 @@ The demo narrative in `docs/04_mvp_ui.md` §8 runs end-to-end **on the deployed 
 | `02_mvp_data_model.md` | Schema, DAG semantics, hybrid search SQL, migrations |
 | `03_mvp_agents.md` | Personas, relevance, LangGraph, RAG, delegation, PA lite |
 | `04_mvp_ui.md` | Routes, screens, WS contract, demo narrative |
+| `TASKS.md` | Living task tracker — per-phase tasks + gates (rules in `CLAUDE.md`) |
+| `SESSION_LOG.md` | Living session log — append-only entry per session (rules in `CLAUDE.md`) |
 | `docs/old/` | Archived full-platform specs (superseded) |
