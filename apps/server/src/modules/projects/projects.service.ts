@@ -43,20 +43,21 @@ export class ProjectsService {
         .replace(/^-|-$/g, '') || 'project';
     const uniqueSlug = `${slug}-${Date.now().toString(36)}`;
 
-    const [project] = await db
-      .insert(projects)
-      .values({ orgId, name, slug: uniqueSlug })
-      .returning({
-        id: projects.id,
-        orgId: projects.orgId,
-        name: projects.name,
-        createdAt: projects.createdAt,
-      });
+    return await db.transaction(async (tx) => {
+      const [project] = await tx
+        .insert(projects)
+        .values({ orgId, name, slug: uniqueSlug })
+        .returning({
+          id: projects.id,
+          orgId: projects.orgId,
+          name: projects.name,
+          createdAt: projects.createdAt,
+        });
 
-    // Add caller as admin
-    await db.insert(projectMembers).values({ projectId: project.id, userId: callerId, role: 'admin' });
+      await tx.insert(projectMembers).values({ projectId: project.id, userId: callerId, role: 'admin' });
 
-    return project;
+      return project;
+    });
   }
 
   async listProjects(
