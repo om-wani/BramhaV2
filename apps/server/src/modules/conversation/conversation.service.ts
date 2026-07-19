@@ -104,19 +104,6 @@ export class ConversationService {
       if (!parentNode) throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
     }
 
-    // Insert conversation node
-    const [node] = await db
-      .insert(conversationNodes)
-      .values({
-        roomId,
-        projectId,
-        parentId: parentNodeId ?? null,
-        authorType: 'user',
-        userId: callerId,
-        content,
-      })
-      .returning({ id: conversationNodes.id });
-
     // Optimistic head advance: UPDATE ... WHERE head_node_id = expected
     const expectedHead = branch.headNodeId ?? null;
     const headCondition =
@@ -124,31 +111,44 @@ export class ConversationService {
         ? isNull(branches.headNodeId)
         : eq(branches.headNodeId, expectedHead);
 
-    const updateResult = await db
-      .update(branches)
-      .set({ headNodeId: node.id })
-      .where(and(eq(branches.id, branchId), eq(branches.roomId, roomId), eq(branches.projectId, projectId), headCondition))
-      .returning({ id: branches.id });
+    return await db.transaction(async (tx) => {
+      const [node] = await tx
+        .insert(conversationNodes)
+        .values({
+          roomId,
+          projectId,
+          parentId: parentNodeId ?? null,
+          authorType: 'user',
+          userId: callerId,
+          content,
+        })
+        .returning({ id: conversationNodes.id });
 
-    if (updateResult.length > 0) {
-      // Head advanced successfully
-      return { nodeId: node.id, branchId, forked: false };
-    }
+      const updateResult = await tx
+        .update(branches)
+        .set({ headNodeId: node.id })
+        .where(and(eq(branches.id, branchId), eq(branches.roomId, roomId), eq(branches.projectId, projectId), headCondition))
+        .returning({ id: branches.id });
 
-    // Concurrent write detected — auto-fork
-    const [newBranch] = await db
-      .insert(branches)
-      .values({
-        roomId,
-        projectId,
-        name: `fork-${Date.now().toString(36)}`,
-        headNodeId: node.id,
-        forkedFromNodeId: parentNodeId ?? null,
-        createdBy: callerId,
-      })
-      .returning({ id: branches.id });
+      if (updateResult.length > 0) {
+        return { nodeId: node.id, branchId, forked: false };
+      }
 
-    return { nodeId: node.id, branchId, forked: true, newBranchId: newBranch.id };
+      // Concurrent write detected — auto-fork into a new branch
+      const [newBranch] = await tx
+        .insert(branches)
+        .values({
+          roomId,
+          projectId,
+          name: `fork-${Date.now().toString(36)}`,
+          headNodeId: node.id,
+          forkedFromNodeId: parentNodeId ?? null,
+          createdBy: callerId,
+        })
+        .returning({ id: branches.id });
+
+      return { nodeId: node.id, branchId, forked: true, newBranchId: newBranch.id };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -165,6 +165,18 @@ export class ConversationService {
     await this.requireRoomMembership(roomId, projectId, callerId);
 
     const db = await getDb();
+
+    const [sourceNode] = await db
+      .select({ id: conversationNodes.id })
+      .from(conversationNodes)
+      .where(
+        and(
+          eq(conversationNodes.id, fromNodeId),
+          eq(conversationNodes.roomId, roomId),
+          eq(conversationNodes.projectId, projectId),
+        ),
+      );
+    if (!sourceNode) throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
 
     const [branch] = await db
       .insert(branches)
