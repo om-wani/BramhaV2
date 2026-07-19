@@ -12,5 +12,4 @@ coverage/
 .DS_Store
 .data/
 uploads/
-.env.local
-.env
+.dev-logs/
