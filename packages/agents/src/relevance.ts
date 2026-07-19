@@ -170,9 +170,10 @@ export function scorePersonas(
 export async function computeDomainEmbeddings(
   personas: PersonaConfig[],
   router: ModelRouter,
+  projectId: string,
 ): Promise<Map<PersonaSlug, number[]>> {
   const texts = personas.map((p) => p.domain);
-  const embeddings = await router.embed(texts);
+  const embeddings = await router.embed({ projectId, inputs: texts });
   const map = new Map<PersonaSlug, number[]>();
   for (let i = 0; i < personas.length; i++) {
     const persona = personas[i];
