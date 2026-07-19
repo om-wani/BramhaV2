@@ -201,19 +201,34 @@ export default function RoomPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [nodes.length]);
 
-  // ---- Socket.IO ----------------------------------------------------------
+  // ---- Socket.IO — lifecycle (connect once per room) ----------------------
 
   useEffect(() => {
     if (!projectId) return;
-
     const socket = getSocket();
     socket.connect();
     socket.emit('room:join', { projectId, roomId });
+    return () => {
+      socket.emit('room:leave', { roomId });
+      socket.disconnect();
+    };
+  }, [projectId, roomId]);
+
+  // ---- Socket.IO — node:created handler -----------------------------------
+  // Reads branch ID from live cache so it never captures a stale closure value.
+
+  useEffect(() => {
+    if (!projectId) return;
+    const socket = getSocket();
 
     const handleNodeCreated = (event: NodeCreatedEvent) => {
       if (event.node.roomId !== roomId) return;
+      const liveBranches = qc.getQueryData<BranchDto[]>(['branches', projectId, roomId]);
+      const liveBranchId =
+        liveBranches?.find((b) => b.name === 'main')?.id ?? liveBranches?.[0]?.id;
+      if (!liveBranchId) return;
       qc.setQueryData<ConversationNodeDto[]>(
-        ['thread', projectId, roomId, mainBranch?.id],
+        ['thread', projectId, roomId, liveBranchId],
         (prev) => {
           if (!prev) return [event.node];
           if (prev.some((n) => n.id === event.node.id)) return prev;
@@ -223,13 +238,10 @@ export default function RoomPage() {
     };
 
     socket.on('node:created', handleNodeCreated);
-
     return () => {
       socket.off('node:created', handleNodeCreated);
-      socket.emit('room:leave', { roomId });
-      socket.disconnect();
     };
-  }, [projectId, roomId, mainBranch?.id, qc]);
+  }, [projectId, roomId, qc]);
 
   // ---- send ---------------------------------------------------------------
 
@@ -332,7 +344,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {!error && nodes.map((node) => (
+        {!error && !loading && nodes.map((node) => (
           <MessageCard key={node.id} node={node} />
         ))}
 
