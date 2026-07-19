@@ -28,7 +28,7 @@
 - [x] P1.3 Orgs module: create org (creator=owner), org members CRUD
 - [x] P1.4 Projects module: create project under org, project members CRUD, `ProjectMemberGuard(role)`
 - [x] P1.5 Web: register/login screens (zxcvbn dynamic import), dashboard (org switcher, project cards, create dialogs), settings (name, password change)
-- [ ] P1.6 Middleware auth gate live on `/dashboard` `/settings` `/p/`
+- [x] P1.6 Middleware auth gate live on `/dashboard` `/settings` `/p/`
 - [ ] P1.7 Gate check: two users / two orgs isolation test (API-level e2e) + logged-out redirect test
 
 ## P2 — Conversation DAG (gate: branch mid-thread, both lineages survive hard refresh)
