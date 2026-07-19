@@ -48,25 +48,30 @@ export class RoomsService {
       const [room] = await tx
         .insert(rooms)
         .values({ projectId, name, kind, persona: persona ?? null })
-        .returning({
-          id: rooms.id,
-          projectId: rooms.projectId,
-          name: rooms.name,
-          kind: rooms.kind,
-          persona: rooms.persona,
-          createdAt: rooms.createdAt,
-        });
+        .returning();
+
+      if (!room) throw new Error('insert failed');
 
       // 2. Insert "main" branch
       const [branch] = await tx
         .insert(branches)
         .values({ roomId: room.id, projectId, name: 'main', createdBy: callerId })
-        .returning({ id: branches.id });
+        .returning();
+
+      if (!branch) throw new Error('insert failed');
 
       // 3. Update room.main_branch_id
       await tx.update(rooms).set({ mainBranchId: branch.id }).where(eq(rooms.id, room.id));
 
-      return { ...room, mainBranchId: branch.id };
+      return {
+        id: room.id,
+        projectId: room.projectId,
+        name: room.name,
+        kind: room.kind,
+        persona: room.persona,
+        mainBranchId: branch.id,
+        createdAt: room.createdAt,
+      };
     });
   }
 

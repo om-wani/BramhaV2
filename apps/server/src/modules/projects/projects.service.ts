@@ -47,16 +47,12 @@ export class ProjectsService {
       const [project] = await tx
         .insert(projects)
         .values({ orgId, name, slug: uniqueSlug })
-        .returning({
-          id: projects.id,
-          orgId: projects.orgId,
-          name: projects.name,
-          createdAt: projects.createdAt,
-        });
+        .returning();
 
+      if (!project) throw new Error('insert failed');
       await tx.insert(projectMembers).values({ projectId: project.id, userId: callerId, role: 'admin' });
 
-      return project;
+      return { id: project.id, orgId: project.orgId, name: project.name, createdAt: project.createdAt };
     });
   }
 

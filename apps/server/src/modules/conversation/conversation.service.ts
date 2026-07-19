@@ -122,13 +122,15 @@ export class ConversationService {
           userId: callerId,
           content,
         })
-        .returning({ id: conversationNodes.id });
+        .returning();
+
+      if (!node) throw new Error('insert failed');
 
       const updateResult = await tx
         .update(branches)
         .set({ headNodeId: node.id })
         .where(and(eq(branches.id, branchId), eq(branches.roomId, roomId), eq(branches.projectId, projectId), headCondition))
-        .returning({ id: branches.id });
+        .returning();
 
       if (updateResult.length > 0) {
         return { nodeId: node.id, branchId, forked: false };
@@ -145,8 +147,9 @@ export class ConversationService {
           forkedFromNodeId: parentNodeId ?? null,
           createdBy: callerId,
         })
-        .returning({ id: branches.id });
+        .returning();
 
+      if (!newBranch) throw new Error('insert failed');
       return { nodeId: node.id, branchId, forked: true, newBranchId: newBranch.id };
     });
   }
@@ -188,15 +191,16 @@ export class ConversationService {
         forkedFromNodeId: fromNodeId,
         createdBy: callerId,
       })
-      .returning({
-        id: branches.id,
-        name: branches.name,
-        headNodeId: branches.headNodeId,
-        forkedFromNodeId: branches.forkedFromNodeId,
-        createdAt: branches.createdAt,
-      });
+      .returning();
 
-    return branch;
+    if (!branch) throw new Error('insert failed');
+    return {
+      id: branch.id,
+      name: branch.name,
+      headNodeId: branch.headNodeId,
+      forkedFromNodeId: branch.forkedFromNodeId,
+      createdAt: branch.createdAt,
+    };
   }
 
   // ---------------------------------------------------------------------------

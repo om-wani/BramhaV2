@@ -20,11 +20,12 @@ export class OrgsService {
     const [org] = await db
       .insert(orgs)
       .values({ name, slug, createdBy: userId })
-      .returning({ id: orgs.id, name: orgs.name, createdAt: orgs.createdAt });
+      .returning();
 
+    if (!org) throw new Error('insert failed');
     await db.insert(orgMembers).values({ orgId: org.id, userId, role: 'owner' });
 
-    return org;
+    return { id: org.id, name: org.name, createdAt: org.createdAt };
   }
 
   async listOrgsForUser(
