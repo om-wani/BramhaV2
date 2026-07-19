@@ -46,9 +46,12 @@ export type ServerToClientEvent =
 // Type map for typed Socket.IO — used by both server gateway and web client
 export type ServerToClientEvents = {
   [E in ServerToClientEvent as E['type']]: (event: E) => void;
+} & {
+  'room:joined': (payload: { roomId: string }) => void;
+  'error:room': (payload: { code: string }) => void;
 };
 
 export type ClientToServerEvents = {
-  'room:join': (payload: { roomId: string; branchId: string }) => void;
+  'room:join': (payload: { projectId: string; roomId: string }) => void;
   'room:leave': (payload: { roomId: string }) => void;
 };

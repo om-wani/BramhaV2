@@ -12,6 +12,7 @@ describe('TypedEventBus', () => {
       projectId: 'p1',
       roomId: 'r1',
       nodeId: 'n1',
+      branchId: 'b1',
     });
 
     expect(handler).toHaveBeenCalledOnce();
@@ -20,6 +21,7 @@ describe('TypedEventBus', () => {
       projectId: 'p1',
       roomId: 'r1',
       nodeId: 'n1',
+      branchId: 'b1',
     });
   });
 
@@ -68,6 +70,7 @@ describe('TypedEventBus', () => {
       projectId: 'p1',
       roomId: 'r1',
       nodeId: 'n1',
+      branchId: 'b1',
     });
 
     expect(nodeCreatedHandler).toHaveBeenCalledOnce();

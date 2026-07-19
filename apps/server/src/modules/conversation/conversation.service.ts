@@ -9,6 +9,7 @@ import {
   getThreadAncestry,
 } from '@bramha/db';
 import type { ConversationNodeRow } from '@bramha/db';
+import { eventBus } from '@bramha/event-bus';
 
 export interface InsertNodeResult {
   nodeId: string;
@@ -111,7 +112,7 @@ export class ConversationService {
         ? isNull(branches.headNodeId)
         : eq(branches.headNodeId, expectedHead);
 
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [node] = await tx
         .insert(conversationNodes)
         .values({
@@ -152,6 +153,13 @@ export class ConversationService {
       if (!newBranch) throw new Error('insert failed');
       return { nodeId: node.id, branchId, forked: true, newBranchId: newBranch.id };
     });
+
+    const effectiveBranchId = result.newBranchId ?? result.branchId;
+    eventBus.emit({ type: 'node.created', projectId, roomId, nodeId: result.nodeId, branchId: effectiveBranchId });
+    if (result.forked && result.newBranchId) {
+      eventBus.emit({ type: 'branch.created', projectId, roomId, branchId: result.newBranchId });
+    }
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -194,6 +202,7 @@ export class ConversationService {
       .returning();
 
     if (!branch) throw new Error('insert failed');
+    eventBus.emit({ type: 'branch.created', projectId, roomId, branchId: branch.id });
     return {
       id: branch.id,
       name: branch.name,

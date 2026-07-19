@@ -18,6 +18,7 @@ import {
   conversationNodes,
   branches,
 } from '@bramha/db';
+import type { NodeCreatedEvent, BranchCreatedEvent } from '@bramha/shared';
 import { AuthService } from '../modules/auth/auth.service.js';
 import { eventBus } from '@bramha/event-bus';
 
@@ -38,7 +39,7 @@ function parseCookieHeader(cookieHeader?: string): Record<string, string> {
 }
 
 // ---------------------------------------------------------------------------
-// UUID guard (prevent injection via raw SQL, even though we use Drizzle)
+// UUID guard
 // ---------------------------------------------------------------------------
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -67,7 +68,7 @@ type AuthSocket = Socket & { data: SocketData };
 // ---------------------------------------------------------------------------
 @WebSocketGateway({
   cors: {
-    origin: process.env['APP_ORIGIN'] ?? true,
+    origin: process.env['APP_ORIGIN'] ?? 'http://localhost:3000',
     credentials: true,
   },
 })
@@ -79,7 +80,6 @@ export class EventsGateway
 
   private readonly logger = new Logger(EventsGateway.name);
 
-  // Unsubscribe callbacks returned by eventBus.on()
   private readonly unsubs: Array<() => void> = [];
 
   constructor(private readonly authService: AuthService) {}
@@ -90,15 +90,16 @@ export class EventsGateway
   afterInit() {
     // --- node.created ---
     const unsubNode = eventBus.on('node.created', async (event) => {
-      const { roomId, nodeId } = event;
+      const { projectId, roomId, nodeId, branchId } = event;
 
-      // Fetch the full node row so clients get content + metadata
       try {
         const db = await getDb();
         const [node] = await db
           .select({
             id: conversationNodes.id,
+            parentId: conversationNodes.parentId,
             authorType: conversationNodes.authorType,
+            userId: conversationNodes.userId,
             persona: conversationNodes.persona,
             content: conversationNodes.content,
             metadata: conversationNodes.metadata,
@@ -107,41 +108,31 @@ export class EventsGateway
           .from(conversationNodes)
           .where(eq(conversationNodes.id, nodeId));
 
-        // Find the branch whose head is this node (or that just had it set)
-        const [branch] = await db
-          .select({ id: branches.id })
-          .from(branches)
-          .where(eq(branches.headNodeId, nodeId));
-
-        const branchId = branch?.id ?? null;
-
-        this.server.to(`room:${roomId}`).emit('node:created', {
-          nodeId: node?.id ?? nodeId,
-          branchId,
-          authorType: node?.authorType ?? 'system',
-          persona: node?.persona ?? null,
-          content: node?.content ?? '',
-          metadata: node?.metadata ?? {},
-          createdAt: node?.createdAt ?? new Date(),
-        });
+        const nodeEvent: NodeCreatedEvent = {
+          type: 'node:created',
+          node: {
+            id: node?.id ?? nodeId,
+            roomId,
+            projectId,
+            parentId: node?.parentId ?? null,
+            authorType: (node?.authorType ?? 'system') as NodeCreatedEvent['node']['authorType'],
+            userId: node?.userId ?? null,
+            persona: node?.persona ?? null,
+            content: node?.content ?? '',
+            metadata: (node?.metadata ?? {}) as Record<string, unknown>,
+            createdAt: node?.createdAt?.toISOString() ?? new Date().toISOString(),
+          },
+        };
+        this.server.to(`room:${roomId}`).emit('node:created', nodeEvent);
+        this.logger.debug(`[node.created] fan-out nodeId=${nodeId} branchId=${branchId} room=${roomId}`);
       } catch (err) {
         this.logger.error(`[node.created] DB lookup failed for nodeId=${nodeId}`, err);
-        // Emit minimal payload so clients know a node exists
-        this.server.to(`room:${roomId}`).emit('node:created', {
-          nodeId,
-          branchId: null,
-          authorType: 'system',
-          persona: null,
-          content: '',
-          metadata: {},
-          createdAt: new Date(),
-        });
       }
     });
 
     // --- branch.created ---
     const unsubBranch = eventBus.on('branch.created', async (event) => {
-      const { roomId, branchId } = event;
+      const { projectId, roomId, branchId } = event;
 
       try {
         const db = await getDb();
@@ -151,24 +142,29 @@ export class EventsGateway
             name: branches.name,
             headNodeId: branches.headNodeId,
             forkedFromNodeId: branches.forkedFromNodeId,
+            createdBy: branches.createdBy,
+            createdAt: branches.createdAt,
           })
           .from(branches)
           .where(eq(branches.id, branchId));
 
-        this.server.to(`room:${roomId}`).emit('branch:created', {
-          branchId: branch?.id ?? branchId,
-          name: branch?.name ?? '',
-          headNodeId: branch?.headNodeId ?? null,
-          forkedFromNodeId: branch?.forkedFromNodeId ?? null,
-        });
+        const branchEvent: BranchCreatedEvent = {
+          type: 'branch:created',
+          branch: {
+            id: branch?.id ?? branchId,
+            roomId,
+            projectId,
+            name: branch?.name ?? '',
+            headNodeId: branch?.headNodeId ?? null,
+            forkedFromNodeId: branch?.forkedFromNodeId ?? null,
+            createdBy: branch?.createdBy ?? '',
+            createdAt: branch?.createdAt?.toISOString() ?? new Date().toISOString(),
+          },
+        };
+        this.server.to(`room:${roomId}`).emit('branch:created', branchEvent);
+        this.logger.debug(`[branch.created] fan-out branchId=${branchId} room=${roomId}`);
       } catch (err) {
         this.logger.error(`[branch.created] DB lookup failed for branchId=${branchId}`, err);
-        this.server.to(`room:${roomId}`).emit('branch:created', {
-          branchId,
-          name: '',
-          headNodeId: null,
-          forkedFromNodeId: null,
-        });
       }
     });
 
@@ -201,7 +197,7 @@ export class EventsGateway
   }
 
   // -------------------------------------------------------------------------
-  // Disconnect: nothing special needed (Socket.IO auto-leaves rooms)
+  // Disconnect
   // -------------------------------------------------------------------------
   handleDisconnect(socket: AuthSocket) {
     const userId = socket.data.user?.id ?? 'unauthenticated';
@@ -209,10 +205,10 @@ export class EventsGateway
   }
 
   // -------------------------------------------------------------------------
-  // join:room — validate membership then add socket to room
+  // room:join — validate membership then add socket to room
   // -------------------------------------------------------------------------
-  @SubscribeMessage('join:room')
-  async handleJoinRoom(
+  @SubscribeMessage('room:join')
+  async handleRoomJoin(
     @ConnectedSocket() socket: AuthSocket,
     @MessageBody() data: unknown,
   ) {
@@ -237,7 +233,6 @@ export class EventsGateway
     try {
       const db = await getDb();
 
-      // Verify caller is a project member
       const [membership] = await db
         .select({ role: projectMembers.role })
         .from(projectMembers)
@@ -253,7 +248,6 @@ export class EventsGateway
         return;
       }
 
-      // Verify room belongs to this project
       const [room] = await db
         .select({ id: rooms.id })
         .from(rooms)
@@ -265,18 +259,16 @@ export class EventsGateway
       }
 
       await socket.join(`room:${roomId}`);
-      socket.emit('joined:room', { roomId });
-      this.logger.debug(
-        `[join:room] userId=${user.id} joined room:${roomId}`,
-      );
+      socket.emit('room:joined', { roomId });
+      this.logger.debug(`[room:join] userId=${user.id} joined room:${roomId}`);
     } catch (err) {
-      this.logger.error(`[join:room] unexpected error`, err);
+      this.logger.error(`[room:join] unexpected error`, err);
       socket.emit('error:room', { code: 'INTERNAL_ERROR' });
     }
   }
 
   // -------------------------------------------------------------------------
-  // Cleanup on module destroy (NestJS lifecycle)
+  // Cleanup on module destroy
   // -------------------------------------------------------------------------
   onModuleDestroy() {
     for (const unsub of this.unsubs) {

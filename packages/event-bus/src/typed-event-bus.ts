@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 
 // Internal server-side events (not WS events)
 export type InternalEvent =
-  | { type: 'node.created'; projectId: string; roomId: string; nodeId: string }
+  | { type: 'node.created'; projectId: string; roomId: string; nodeId: string; branchId: string }
   | {
       type: 'node.streaming';
       projectId: string;
