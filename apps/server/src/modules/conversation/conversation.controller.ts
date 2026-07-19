@@ -7,6 +7,7 @@ import {
   HttpCode,
   UseGuards,
   Req,
+  Logger,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -14,6 +15,9 @@ import { ConversationService } from './conversation.service.js';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard.js';
 import { ProjectMemberGuard } from '../../common/guards/project-member.guard.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
+import { AgentsService } from '../agents/agents.service.js';
+import { RoomsService } from '../rooms/rooms.service.js';
+import type { PersonaSlug } from '@bramha/shared';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; email: string; name: string };
@@ -37,7 +41,13 @@ type CreateBranchInput = z.infer<typeof CreateBranchSchema>;
 @Controller('projects/:projectId/rooms/:roomId')
 @UseGuards(SessionAuthGuard, ProjectMemberGuard('member'))
 export class ConversationController {
-  constructor(private readonly conversationService: ConversationService) {}
+  private readonly logger = new Logger(ConversationController.name);
+
+  constructor(
+    private readonly conversationService: ConversationService,
+    private readonly agentsService: AgentsService,
+    private readonly roomsService: RoomsService,
+  ) {}
 
   // POST /projects/:projectId/rooms/:roomId/nodes
   @Post('nodes')
@@ -48,7 +58,7 @@ export class ConversationController {
     @Body(new ZodValidationPipe(InsertNodeSchema)) body: InsertNodeInput,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.conversationService.insertNode(
+    const result = await this.conversationService.insertNode(
       req.user.id,
       projectId,
       roomId,
@@ -56,6 +66,37 @@ export class ConversationController {
       body.content,
       body.parentNodeId,
     );
+
+    const effectiveBranchId = result.newBranchId ?? result.branchId;
+
+    // Fire-and-forget agent turn
+    void (async () => {
+      try {
+        const room = await this.roomsService.getRoomForProject(roomId, projectId);
+        if (!room) return;
+        const thread = await this.conversationService.getThread(
+          req.user.id,
+          projectId,
+          roomId,
+          effectiveBranchId,
+        );
+        await this.agentsService.triggerAgentTurn({
+          projectId,
+          roomId,
+          branchId: effectiveBranchId,
+          orgName: 'org', // TODO: fetch from project in P3.4 — placeholder for now
+          userNodeId: result.nodeId,
+          userMessage: body.content,
+          roomKind: room.kind as 'council' | 'one_on_one',
+          ...(room.persona !== null ? { boundPersona: room.persona as PersonaSlug } : {}),
+          thread,
+        });
+      } catch (err) {
+        this.logger.error('agent turn failed', err);
+      }
+    })();
+
+    return result;
   }
 
   // POST /projects/:projectId/rooms/:roomId/branches
