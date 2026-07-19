@@ -33,8 +33,8 @@
 
 ## P2 — Conversation DAG (gate: branch mid-thread, both lineages survive hard refresh)
 
-- [ ] P2.1 Rooms module: create room (kind council|one_on_one, persona picker), list, main branch auto-create
-- [ ] P2.2 Conversation module: node insert + optimistic head advance (auto-fork on conflict), branch create from node, thread read (ancestry CTE)
+- [x] P2.1 Rooms module: create room (kind council|one_on_one, persona picker), list, main branch auto-create
+- [x] P2.2 Conversation module: node insert + optimistic head advance (auto-fork on conflict), branch create from node, thread read (ancestry CTE)
 - [ ] P2.3 Socket.IO gateway: cookie-auth handshake, membership-checked room join, `node:created` / `branch:created` fan-out
 - [ ] P2.4 Web room screen v1: thread view, composer, message cards (user/system), TanStack Query + WS cache feed
 - [ ] P2.5 Branch rail: branch tree, switch, hover `⑂ Branch from here`, name dialog

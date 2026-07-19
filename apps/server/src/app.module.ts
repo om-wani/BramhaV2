@@ -3,6 +3,8 @@ import { HealthModule } from './modules/health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { OrgsModule } from './modules/orgs/orgs.module.js';
 import { ProjectsModule } from './modules/projects/projects.module.js';
+import { RoomsModule } from './modules/rooms/rooms.module.js';
+import { ConversationModule } from './modules/conversation/conversation.module.js';
 
-@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule] })
+@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule, RoomsModule, ConversationModule] })
 export class AppModule {}
