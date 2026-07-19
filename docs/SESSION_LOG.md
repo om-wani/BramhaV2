@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-19 — P1 complete: auth + orgs + projects + web screens + gate
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 9cbfed0..34eb69e
+**Done:** P1.1–P1.7. Auth module (argon2id, zxcvbn≥3, SHA-256 session tokens, sliding expiry, enumeration-proof); SessionAuthGuard with NestJS DI fixed via unplugin-swc (esbuild doesn't emit decorator metadata); Orgs CRUD with owner-gated membership; Projects CRUD with ProjectMemberGuard(role) mixin + createProject transaction atomicity; Web register/login (zxcvbn dynamic import only, strength 0-2=weak) + dashboard (org switcher, project cards, create dialogs, a11y-correct modals) + settings stubs; middleware auth gate live; 56 server tests pass, web build clean.
+**Decisions:** unplugin-swc required in vitest.config to emit decorator metadata (esbuild default can't); migrate.ts must reuse PGlite singleton not create second instance (same data dir crashes); DELETE /orgs returns 204 (spec); register always returns 201 (enumeration prevention); strengthScore init to 0 not -1 to prevent zxcvbn race bypassing strength gate; CSP nonce read from x-nonce header in root layout async server component.
+**Next:** P2 — Conversation DAG: rooms module, node insert + head advance + auto-fork, Socket.IO gateway, room screen UI, branch rail, gate.
+
+---
+
 ## 2026-07-19 — P0 complete: full monorepo skeleton built and verified
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ f756451..{latest}
