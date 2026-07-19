@@ -9,16 +9,13 @@ import { getDb, orgs, orgMembers, users } from '@bramha/db';
 
 @Injectable()
 export class OrgsService {
-  // ---------------------------------------------------------------------------
-  // Orgs
-  // ---------------------------------------------------------------------------
-
   async createOrg(
     userId: string,
     name: string,
   ): Promise<{ id: string; name: string; createdAt: Date }> {
     const db = await getDb();
-    const slug = this.toSlug(name) + '-' + Date.now().toString(36);
+    const base = this.toSlug(name) || 'org';
+    const slug = base + '-' + Date.now().toString(36);
 
     const [org] = await db
       .insert(orgs)
@@ -49,28 +46,29 @@ export class OrgsService {
     return rows;
   }
 
-  // ---------------------------------------------------------------------------
-  // Members
-  // ---------------------------------------------------------------------------
-
   async addMember(
     callerId: string,
     orgId: string,
     targetUserId: string,
-    role: string,
+    role: 'owner' | 'member',
   ): Promise<{ orgId: string; userId: string; role: string }> {
     const db = await getDb();
 
-    // Verify org exists
     const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId));
     if (!org) {
       throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
     }
 
-    // Caller must be owner
     await this.requireOwner(callerId, orgId);
 
-    // Check if already a member
+    const [targetUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, targetUserId));
+    if (!targetUser) {
+      throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
+    }
+
     const [existing] = await db
       .select({ userId: orgMembers.userId })
       .from(orgMembers)
@@ -88,7 +86,11 @@ export class OrgsService {
   async removeMember(callerId: string, orgId: string, targetUserId: string): Promise<void> {
     const db = await getDb();
 
-    // Caller must be owner
+    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId));
+    if (!org) {
+      throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
+    }
+
     await this.requireOwner(callerId, orgId);
 
     // Owners cannot remove themselves
@@ -140,10 +142,6 @@ export class OrgsService {
 
     return rows;
   }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
 
   private async requireOwner(callerId: string, orgId: string): Promise<void> {
     const db = await getDb();

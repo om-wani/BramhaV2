@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+// Use an isolated in-memory PGlite instance per test file to avoid data-dir
+// contention between parallel test workers.
+process.env['PGLITE_DATA_DIR'] = `memory://orgs-test-${Date.now()}`;
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
@@ -256,8 +259,8 @@ describe('Orgs endpoints', () => {
       headers: { cookie: ownerCookie },
     });
 
-    expect(removeRes.statusCode).toBe(200);
-    expect(removeRes.json()).toEqual({});
+    expect(removeRes.statusCode).toBe(204);
+    expect(removeRes.body).toBe('');
   });
 
   // 8. DELETE /orgs/:orgId/members/:userId — owner cannot remove self (403)
@@ -370,7 +373,109 @@ describe('Orgs endpoints', () => {
     });
 
     expect(res.statusCode).toBe(404);
+    const body = res.json<{ code: string; title: string }>();
+    expect(body.code).toBe('NOT_FOUND');
+    expect(body.title).toBeDefined();
+  });
+
+  // DELETE with nonexistent org → 404
+  it('DELETE /orgs/:orgId/members/:userId — nonexistent org returns 404', async () => {
+    const { cookie, userId } = await registerAndLogin(app);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/orgs/00000000-0000-0000-0000-000000000000/members/${userId}`,
+      headers: { cookie },
+    });
+
+    expect(res.statusCode).toBe(404);
     const body = res.json<{ code: string }>();
     expect(body.code).toBe('NOT_FOUND');
+  });
+
+  // DELETE non-owner (not self) → 403
+  it('DELETE /orgs/:orgId/members/:userId — non-owner gets 403', async () => {
+    const { cookie: ownerCookie } = await registerAndLogin(app);
+    const { userId: memberId } = await registerAndLogin(app);
+    const { cookie: nonOwnerCookie } = await registerAndLogin(app);
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/orgs',
+      headers: { 'content-type': 'application/json', cookie: ownerCookie },
+      body: JSON.stringify({ name: 'Non-owner Remove Org' }),
+    });
+    const { id: orgId } = createRes.json<{ id: string }>();
+
+    // Add memberId as member
+    await app.inject({
+      method: 'POST',
+      url: `/orgs/${orgId}/members`,
+      headers: { 'content-type': 'application/json', cookie: ownerCookie },
+      body: JSON.stringify({ userId: memberId, role: 'member' }),
+    });
+
+    // Non-owner tries to remove the member
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/orgs/${orgId}/members/${memberId}`,
+      headers: { cookie: nonOwnerCookie },
+    });
+
+    expect(res.statusCode).toBe(403);
+    const body = res.json<{ code: string; title: string }>();
+    expect(body.code).toBe('FORBIDDEN');
+    expect(body.title).toBeDefined();
+  });
+
+  // GET /orgs without auth → 401
+  it('GET /orgs — no auth returns 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orgs',
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ code: string; title: string }>();
+    expect(body.code).toBe('UNAUTHORIZED');
+    expect(body.title).toBeDefined();
+  });
+
+  // POST /orgs/:orgId/members without auth → 401
+  it('POST /orgs/:orgId/members — no auth returns 401', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orgs/00000000-0000-0000-0000-000000000000/members',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: '00000000-0000-0000-0000-000000000001', role: 'member' }),
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ code: string }>();
+    expect(body.code).toBe('UNAUTHORIZED');
+  });
+
+  // DELETE /orgs/:orgId/members/:userId without auth → 401
+  it('DELETE /orgs/:orgId/members/:userId — no auth returns 401', async () => {
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/orgs/00000000-0000-0000-0000-000000000000/members/00000000-0000-0000-0000-000000000001',
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ code: string }>();
+    expect(body.code).toBe('UNAUTHORIZED');
+  });
+
+  // GET /orgs/:orgId/members without auth → 401
+  it('GET /orgs/:orgId/members — no auth returns 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/orgs/00000000-0000-0000-0000-000000000000/members',
+    });
+
+    expect(res.statusCode).toBe(401);
+    const body = res.json<{ code: string }>();
+    expect(body.code).toBe('UNAUTHORIZED');
   });
 });

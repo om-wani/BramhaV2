@@ -61,13 +61,13 @@ export class OrgsController {
   }
 
   @Delete(':orgId/members/:userId')
+  @HttpCode(204)
   async removeMember(
     @Param('orgId') orgId: string,
     @Param('userId') userId: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<Record<string, never>> {
+  ): Promise<void> {
     await this.orgsService.removeMember(req.user.id, orgId, userId);
-    return {};
   }
 
   @Get(':orgId/members')

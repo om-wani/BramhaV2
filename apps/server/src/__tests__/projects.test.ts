@@ -1,4 +1,7 @@
 import 'reflect-metadata';
+// Use an isolated in-memory PGlite instance per test file to avoid data-dir
+// contention between parallel test workers.
+process.env['PGLITE_DATA_DIR'] = `memory://projects-test-${Date.now()}`;
 import { Test } from '@nestjs/testing';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';

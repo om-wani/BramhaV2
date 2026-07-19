@@ -66,14 +66,10 @@ async function buildRunner(): Promise<RawRunnerWithTeardown> {
       async teardown() { await sql.end(); },
     };
   } else {
-    // PGlite
-    const { PGlite } = await import('@electric-sql/pglite');
-    const { vector } = await import('@electric-sql/pglite-pgvector');
-    const { mkdirSync } = await import('node:fs');
-    const dataDir = process.env['PGLITE_DATA_DIR'] ?? '.data/pglite';
-    mkdirSync(dataDir, { recursive: true });
-    const pglite = new PGlite(dataDir, { extensions: { vector } });
-    await pglite.waitReady;
+    // PGlite — reuse the singleton to avoid two instances on the same data dir
+    const { getRawPglite } = await import('./client.js');
+    const pglite = await getRawPglite();
+    if (!pglite) throw new Error('PGlite singleton not available');
 
     return {
       async query(rawSql: string, params?: unknown[]) {
@@ -90,7 +86,7 @@ async function buildRunner(): Promise<RawRunnerWithTeardown> {
       async beginTransaction() { await pglite.exec('BEGIN'); },
       async commitTransaction() { await pglite.exec('COMMIT'); },
       async rollbackTransaction() { await pglite.exec('ROLLBACK'); },
-      async teardown() { /* PGlite: no explicit close needed */ },
+      async teardown() { /* PGlite: singleton lifecycle managed by client.ts */ },
     };
   }
 }
