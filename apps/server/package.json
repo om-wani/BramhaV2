@@ -4,12 +4,39 @@
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src",
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc"
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@bramha/agents": "workspace:*",
+    "@bramha/db": "workspace:*",
+    "@bramha/event-bus": "workspace:*",
+    "@bramha/shared": "workspace:*",
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.0",
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-fastify": "11.1.28",
+    "@nestjs/platform-socket.io": "11.1.28",
+    "@nestjs/websockets": "11.1.28",
+    "fastify": "5.10.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "socket.io": "4.8.3"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "11.1.28",
+    "@types/node": "26.1.1",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.2.2",
+    "tsx": "4.23.1"
   }
 }
