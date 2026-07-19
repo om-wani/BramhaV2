@@ -19,10 +19,15 @@ async function bootstrap() {
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: false, // CSP is handled by the web app's middleware
     crossOriginEmbedderPolicy: false,
+    frameguard: { action: 'deny' },
   });
 
   // CORS: exact-origin allowlist from APP_ORIGIN env
-  const allowedOrigin = process.env['APP_ORIGIN'] ?? 'http://localhost:3000';
+  const appOrigin = process.env['APP_ORIGIN'];
+  if (!appOrigin && process.env['NODE_ENV'] === 'production') {
+    throw new Error('[server] APP_ORIGIN must be set in production');
+  }
+  const allowedOrigin = appOrigin ?? 'http://localhost:3000';
   await app.register(fastifyCors, {
     origin: allowedOrigin,
     credentials: true,

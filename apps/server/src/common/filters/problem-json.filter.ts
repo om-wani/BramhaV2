@@ -14,7 +14,9 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
       status = exception.getStatus();
       const res = exception.getResponse();
       if (typeof res === 'object' && res !== null) {
-        body = { type: 'about:blank', status, ...res as Record<string, unknown> };
+        const safeRes = { ...res as Record<string, unknown> };
+        delete safeRes['stack'];
+        body = { type: 'about:blank', status, ...safeRes };
       } else {
         body = { type: 'about:blank', title: String(res), status };
       }
