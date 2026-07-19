@@ -89,8 +89,8 @@ async function* streamWithRetryAndLog(
 
   let lastErr: unknown;
 
-  // Primary: Anthropic — up to 2 retry attempts
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Primary: Anthropic — 1 initial attempt + 2 retries = 3 total
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) {
       await sleep(RETRY_BACKOFFS_MS[attempt - 1] ?? 500);
     }
@@ -179,8 +179,8 @@ async function chatWithRetryAndLog(
 
   let lastErr: unknown;
 
-  // Primary: Anthropic — up to 2 retry attempts
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Primary: Anthropic — 1 initial attempt + 2 retries = 3 total
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) {
       await sleep(RETRY_BACKOFFS_MS[attempt - 1] ?? 500);
     }

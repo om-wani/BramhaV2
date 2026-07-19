@@ -192,10 +192,11 @@ describe('ModelRouter.chat()', () => {
     expect(record.provider).toBe('anthropic');
   });
 
-  it('primary fails twice, fallback (OpenAI) succeeds and fires openai record', async () => {
+  it('primary fails all 3 attempts, fallback (OpenAI) succeeds and fires openai record', async () => {
     mockGenerateText
       .mockRejectedValueOnce(new Error('fail 1'))
       .mockRejectedValueOnce(new Error('fail 2'))
+      .mockRejectedValueOnce(new Error('fail 3'))
       .mockResolvedValueOnce({
         text: 'Fallback response',
         usage: { inputTokens: 60, outputTokens: 25 },
@@ -209,9 +210,9 @@ describe('ModelRouter.chat()', () => {
     });
 
     expect(text).toBe('Fallback response');
-    expect(mockGenerateText).toHaveBeenCalledTimes(3);
-    // Third call uses openai model
-    expect(mockGenerateText.mock.calls[2]?.[0].model).toBe('openai-model-ref');
+    expect(mockGenerateText).toHaveBeenCalledTimes(4);
+    // Fourth call uses openai model
+    expect(mockGenerateText.mock.calls[3]?.[0].model).toBe('openai-model-ref');
 
     await vi.waitFor(() => expect(onCallComplete).toHaveBeenCalledTimes(1));
     const record: ModelCallRecord = onCallComplete.mock.calls[0]?.[0];
@@ -223,6 +224,7 @@ describe('ModelRouter.chat()', () => {
     mockGenerateText
       .mockRejectedValueOnce(new Error('anthropic fail 1'))
       .mockRejectedValueOnce(new Error('anthropic fail 2'))
+      .mockRejectedValueOnce(new Error('anthropic fail 3'))
       .mockRejectedValueOnce(new Error('openai fail'));
 
     const router = makeRouter();
@@ -287,10 +289,11 @@ describe('ModelRouter.stream()', () => {
     expect(record.outputTokens).toBe(10);
   });
 
-  it('primary stream fails twice, fallback stream succeeds', async () => {
+  it('primary stream fails all 3 attempts, fallback stream succeeds', async () => {
     mockStreamText
       .mockReturnValueOnce(makeFailingStream('stream fail 1'))
       .mockReturnValueOnce(makeFailingStream('stream fail 2'))
+      .mockReturnValueOnce(makeFailingStream('stream fail 3'))
       .mockReturnValueOnce(makeStreamResult(['fallback chunk'], 15, 5));
 
     const onCallComplete = vi.fn();

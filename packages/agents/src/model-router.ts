@@ -125,5 +125,3 @@ export function getModelRouter(): ModelRouter {
   return _modelRouter;
 }
 
-/** Direct singleton export for callers that don't need logging (e.g., tests). */
-export const modelRouter: ModelRouter = createModelRouter();
