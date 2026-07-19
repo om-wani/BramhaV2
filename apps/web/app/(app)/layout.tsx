@@ -45,13 +45,22 @@ function NewOrgDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl">
-        <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-org-dialog-title"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+      >
+        <h3
+          id="new-org-dialog-title"
+          className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-4"
+        >
           New organisation
         </h3>
         <input
           autoFocus
           type="text"
+          aria-label="Organisation name"
           placeholder="Acme Corp"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -107,13 +116,22 @@ function NewProjectDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl">
-        <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-project-dialog-title"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+      >
+        <h3
+          id="new-project-dialog-title"
+          className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-4"
+        >
           New project
         </h3>
         <input
           autoFocus
           type="text"
+          aria-label="Project name"
           placeholder="Q3 Strategy"
           value={name}
           onChange={(e) => setName(e.target.value)}

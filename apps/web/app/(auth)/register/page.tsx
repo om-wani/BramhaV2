@@ -16,14 +16,14 @@ export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [strengthScore, setStrengthScore] = useState(-1);
+  const [strengthScore, setStrengthScore] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   // CORRECT: zxcvbn dynamically imported ONLY in useEffect (CLAUDE.md bug #8)
   useEffect(() => {
     if (password.length === 0) {
-      setStrengthScore(-1);
+      setStrengthScore(0);
       return;
     }
     import('zxcvbn').then((m) => {
@@ -51,10 +51,9 @@ export default function RegisterPage() {
       });
       router.push('/dashboard');
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Registration failed. Please try again.';
-      // Collapse specific errors to generic to prevent enumeration
-      setError(msg === 'Email already in use.' ? 'Unable to register. Please try again.' : msg);
+      // Collapse all errors to generic message to prevent enumeration
+      void err;
+      setError('Unable to register. Please try again.');
     } finally {
       setLoading(false);
     }

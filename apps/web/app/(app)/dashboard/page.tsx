@@ -51,14 +51,25 @@ function CreateProjectDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl">
-        <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-1">New project</h3>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-project-dialog-title"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+      >
+        <h3
+          id="create-project-dialog-title"
+          className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-1"
+        >
+          New project
+        </h3>
         <p className="text-sm text-[hsl(var(--text-muted))] mb-4">
           Give your project a name to get started.
         </p>
         <input
           autoFocus
           type="text"
+          aria-label="Project name"
           placeholder="Q3 Strategy"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -108,8 +119,16 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl">
-        <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-1">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-org-dialog-title"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+      >
+        <h3
+          id="create-org-dialog-title"
+          className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-1"
+        >
           New organisation
         </h3>
         <p className="text-sm text-[hsl(var(--text-muted))] mb-4">
@@ -118,6 +137,7 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
         <input
           autoFocus
           type="text"
+          aria-label="Organisation name"
           placeholder="Acme Corp"
           value={name}
           onChange={(e) => setName(e.target.value)}

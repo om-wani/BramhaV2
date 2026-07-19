@@ -7,5 +7,5 @@ export async function apiFetch(path: string, init?: RequestInit) {
       code: err.code,
     });
   }
-  return res.json();
+  return res.status === 204 ? null : res.json();
 }
