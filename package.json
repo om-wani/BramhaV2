@@ -7,29 +7,23 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "prepare": "husky",
-    "db:migrate": "pnpm --filter @bramha/db db:migrate",
-    "db:seed": "pnpm --filter @bramha/db db:seed"
+    "db:migrate": "pnpm --filter @bramha/db db:migrate"
   },
   "devDependencies": {
-    "@commitlint/cli": "21.2.0",
-    "@commitlint/config-conventional": "21.2.0",
-    "@eslint/js": "10.0.1",
-    "eslint": "10.6.0",
-    "eslint-import-resolver-typescript": "4.4.5",
-    "eslint-plugin-boundaries": "6.0.2",
-    "eslint-plugin-security": "4.0.1",
-    "husky": "9.1.7",
-    "lint-staged": "17.0.8",
-    "tsx": "^4.23.0",
-    "turbo": "2.10.3",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.62.1",
-    "vitest": "2.1.9"
+    "@commitlint/cli": "^21.0.0",
+    "@commitlint/config-conventional": "^21.0.0",
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
   },
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
-  "packageManager": "pnpm@11.5.2"
+  "packageManager": "pnpm@9.15.0"
 }

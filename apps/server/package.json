@@ -1,5 +1,5 @@
 {
-  "name": "@bramha/shared",
+  "name": "@bramha/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
   }
 }

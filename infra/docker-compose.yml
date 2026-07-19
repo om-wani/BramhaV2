@@ -1,0 +1,14 @@
+version: "3.9"
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: bramha
+      POSTGRES_USER: bramha
+      POSTGRES_PASSWORD: bramha
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

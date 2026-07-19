@@ -1,24 +1,10 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "infra/sandbox"
-# Single ioredis in tree — bullmq pins an older one, causing Redis-type
-# incompatibility (Redis !assignable to ConnectionOptions) under strict TS.
-# Single @types/node in tree — no package declares it directly (all
-# transitive), so a tooling dep of any one package (e.g. exceljs's
-# cosmiconfig-typescript-loader chain pulling in @types/node@26) can silently
-# resolve a different major version for an unrelated package and break its
-# fs/promises overload resolution (readFile(..., 'utf8') typed as returning
-# Buffer instead of string). Pin to match the Node runtime this repo targets.
+
 overrides:
-  ioredis: ^5.11.1
-  "@types/node": ^20.19.0
+  "@types/node": "^20.19.0"
+
 allowBuilds:
-  '@scarf/scarf': false
-  esbuild: true
-  unrs-resolver: true
   argon2: true
-  es5-ext: true
-  msgpackr-extract: true
-  sharp: false
-  protobufjs: true
+  esbuild: true
