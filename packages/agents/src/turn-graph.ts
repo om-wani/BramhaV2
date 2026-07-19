@@ -53,7 +53,7 @@ export type EmitSelectionFn = (params: {
   projectId: string;
   roomId: string;
   userNodeId: string;
-  scores: Array<{ persona: PersonaSlug; score: number }>;
+  scores: Array<{ persona: PersonaSlug; score: number; selected: boolean }>;
 }) => void;
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ export function createTurnGraph(
       projectId: state.projectId,
       roomId: state.roomId,
       userNodeId: state.userNodeId,
-      scores: scores.map((s) => ({ persona: s.persona, score: s.score })),
+      scores: scores.map((s) => ({ persona: s.persona, score: s.score, selected: s.selected })),
     });
 
     return { messageEmbedding, selected: scores };
@@ -211,10 +211,11 @@ export function createTurnGraph(
   }
 
   // -------------------------------------------------------------------------
-  // delegate? node: stub — real impl in P5
+  // delegate? node: stub — real impl in P5 (returns {} = no state change)
   // -------------------------------------------------------------------------
-  function delegateNode(state: TurnState): Partial<TurnState> {
-    return state;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function delegateNode(_state: TurnState): Partial<TurnState> {
+    return {};
   }
 
   // -------------------------------------------------------------------------

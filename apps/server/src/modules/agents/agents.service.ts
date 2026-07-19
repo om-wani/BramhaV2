@@ -41,6 +41,12 @@ export class AgentsService implements OnModuleInit {
     boundPersona?: PersonaSlug;
     thread: ConversationNodeRow[];
   }): Promise<AgentResponse[]> {
+    // Warn if domain embeddings were never computed (e.g. no API key in dev).
+    // Scoring will degrade to lexical-only (all expertise scores = 0).
+    if (this.domainEmbeddings.size === 0) {
+      this.logger.warn('Domain embeddings not available — relevance scoring is lexical-only');
+    }
+
     // Extract last 3 agent persona slugs from thread history
     const recentSpeakers: PersonaSlug[] = params.thread
       .filter((n) => n.authorType === 'agent' && n.persona !== null && n.persona !== undefined)
@@ -51,6 +57,7 @@ export class AgentsService implements OnModuleInit {
       const db = await getDb();
       const results: Array<{ persona: string; nodeId: string }> = [];
 
+      // Insert all agent nodes (all are children of userNodeId)
       for (const response of persistParams.responses) {
         const [node] = await db
           .insert(conversationNodes)
@@ -65,28 +72,43 @@ export class AgentsService implements OnModuleInit {
           .returning();
 
         if (!node) throw new Error('agent node insert failed');
+        results.push({ persona: response.persona, nodeId: node.id });
+      }
 
-        // Advance branch head
-        await db
+      // Advance branch head once after all inserts, to the last agent node.
+      // Optimistic: WHERE head_node_id = userNodeId so concurrent turns don't
+      // silently overwrite each other's work. If 0 rows updated, another turn
+      // already moved the head — log a warning but don't throw (nodes are safe).
+      const lastNodeId = results[results.length - 1]?.nodeId;
+      if (lastNodeId !== undefined) {
+        const headUpdated = await db
           .update(branches)
-          .set({ headNodeId: node.id })
+          .set({ headNodeId: lastNodeId })
           .where(
             and(
               eq(branches.id, persistParams.branchId),
               eq(branches.projectId, persistParams.projectId),
+              eq(branches.headNodeId, persistParams.userNodeId),
             ),
-          );
+          )
+          .returning();
 
-        // Emit node.created event
+        if (headUpdated.length === 0) {
+          this.logger.warn(
+            `Branch head advance conflict on branch ${persistParams.branchId} — another turn moved the head concurrently`,
+          );
+        }
+      }
+
+      // Emit node.created for each persisted agent node
+      for (const r of results) {
         eventBus.emit({
           type: 'node.created',
           projectId: persistParams.projectId,
           roomId: persistParams.roomId,
-          nodeId: node.id,
+          nodeId: r.nodeId,
           branchId: persistParams.branchId,
         });
-
-        results.push({ persona: response.persona, nodeId: node.id });
       }
 
       return results;
