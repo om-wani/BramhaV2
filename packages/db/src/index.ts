@@ -1,8 +1,11 @@
 // Public API for @bramha/db
-// Raw db client is intentionally NOT exported — withTenant() is the only entry point.
+// withTenant() is the primary tenant-scoped entry point.
+// getDb() is exported for system-level (non-tenant) use only — auth module.
 
 export { withTenant } from './with-tenant.js';
 export type { TenantContext } from './with-tenant.js';
+
+export { getDb } from './client.js';
 
 export { migrate } from './migrate.js';
 

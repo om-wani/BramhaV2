@@ -1,11 +1,25 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import { AuthService } from '../../modules/auth/auth.service.js';
+
+type AuthenticatedRequest = FastifyRequest & {
+  user: { id: string; email: string; name: string };
+};
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  canActivate(_ctx: ExecutionContext): boolean {
-    // TODO P1.1: validate session cookie against sessions table
-    // Must throw UnauthorizedException (not return false) when auth fails
-    throw new UnauthorizedException({ code: 'UNAUTHORIZED', title: 'Unauthorized' });
+  constructor(private readonly authService: AuthService) {}
+
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<FastifyRequest>();
+    const rawToken = (req.cookies as Record<string, string | undefined>)['bramha_session'];
+
+    if (!rawToken) {
+      throw new UnauthorizedException({ code: 'UNAUTHORIZED', title: 'Unauthorized' });
+    }
+
+    const user = await this.authService.validateSession(rawToken);
+    (req as AuthenticatedRequest).user = user;
+    return true;
   }
 }
