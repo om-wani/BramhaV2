@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-19 — P2 complete: socket gateway, room screen, branch rail, gate
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ e261cbd..{latest}
+**Done:** P2.3–P2.6. Socket.IO gateway (cookie auth, room:join, node:created/branch:created fan-out); aligned gateway with shared types (event shapes, event names, branchId in internal event, event emissions from conversation.service); web room screen (thread, composer, socket WS cache feed); branch rail (switch, hover ⑂, create dialog with focus trap); P2 gate passes.
+**Decisions:** activeBranchIdRef pattern for stale-closure-safe socket handlers; split socket lifecycle / handler effects; .returning() without column selection required for DrizzleDb union type.
+**Next:** P3 — Agent council + relevance: ModelRouter, relevance engine, LangGraph turn graph, prompt builder, streaming.
+
+---
+
 ## 2026-07-19 — P2.4: web room screen — thread view, composer, WS cache feed
 
 **Branch/commits:** `claude/multi-agent-ai-orchestration-zt6xvw` @ current
