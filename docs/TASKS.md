@@ -4,22 +4,22 @@
 >
 > Task IDs are stable — never renumber. Add new tasks at the end of their phase.
 
-**Current phase: P0**
+**Current phase: P1**
 
 ---
 
 ## P0 — Repo skeleton (gate: `pnpm dev` cold-starts on clean machine, zero installs beyond Node+pnpm)
 
-- [ ] P0.1 Wipe working tree to fresh monorepo root: pnpm workspaces + Turborepo, TS strict base config, shared eslint/prettier
-- [ ] P0.2 Scaffold `packages/shared` — zod, persona slugs, error catalog stub, WS event type stubs
-- [ ] P0.3 Scaffold `packages/db` — Drizzle setup, PGlite driver (local) / pg driver (DATABASE_URL set), migration runner + `schema_migrations` table, `withTenant()` skeleton
-- [ ] P0.4 Migration `0001_init.sql` — `CREATE EXTENSION vector`, all tables from `docs/02_mvp_data_model.md` §3, indexes
-- [ ] P0.5 Scaffold `packages/agents` — ModelRouter interface + provider wiring (env-driven), persona config type, 8 persona stubs
-- [ ] P0.6 Scaffold `packages/event-bus` — TypedEventBus over Node EventEmitter, event map from shared
-- [ ] P0.7 Scaffold `apps/server` — NestJS + Fastify adapter, health endpoint, security headers, CORS allowlist, ZodValidationPipe, problem+json filter, Socket.IO attach
-- [ ] P0.8 Scaffold `apps/web` — Next.js 14, route groups, middleware (CSP nonce + auth gate stub), Tailwind dark-first tokens, persona palette CSS vars
-- [ ] P0.9 CI: typecheck + lint + test on push (GitHub Actions)
-- [ ] P0.10 Gate check: clean-machine cold start (`git clone && pnpm i && pnpm dev`), health answers, migration 0001 applies on PGlite
+- [x] P0.1 Wipe working tree to fresh monorepo root: pnpm workspaces + Turborepo, TS strict base config, shared eslint/prettier
+- [x] P0.2 Scaffold `packages/shared` — zod, persona slugs, error catalog stub, WS event type stubs
+- [x] P0.3 Scaffold `packages/db` — Drizzle setup, PGlite driver (local) / pg driver (DATABASE_URL set), migration runner + `schema_migrations` table, `withTenant()` skeleton
+- [x] P0.4 Migration `0001_init.sql` — `CREATE EXTENSION vector`, all tables from `docs/02_mvp_data_model.md` §3, indexes
+- [x] P0.5 Scaffold `packages/agents` — ModelRouter interface + provider wiring (env-driven), persona config type, 8 persona stubs
+- [x] P0.6 Scaffold `packages/event-bus` — TypedEventBus over Node EventEmitter, event map from shared
+- [x] P0.7 Scaffold `apps/server` — NestJS + Fastify adapter, health endpoint, security headers, CORS allowlist, ZodValidationPipe, problem+json filter, Socket.IO attach
+- [x] P0.8 Scaffold `apps/web` — Next.js 14, route groups, middleware (CSP nonce + auth gate stub), Tailwind dark-first tokens, persona palette CSS vars
+- [x] P0.9 CI: typecheck + lint + test on push (GitHub Actions)
+- [x] P0.10 Gate check: clean-machine cold start (`git clone && pnpm i && pnpm dev`), health answers, migration 0001 applies on PGlite
 
 ## P1 — Auth + orgs (gate: cross-org isolation; auth gate on all (app) routes)
 

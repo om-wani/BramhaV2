@@ -13,6 +13,13 @@
 
 ---
 
+## 2026-07-19 — P0 complete: full monorepo skeleton built and verified
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ f756451..{latest}
+**Done:** All P0 tasks (P0.1–P0.10). packages/shared (29 tests), packages/db (12 tests + 0001_init.sql + PGlite migration), packages/agents (18 tests — ModelRouter, relevance scoring, 8 personas), packages/event-bus (6 tests), apps/server (NestJS+Fastify, health endpoint, 4 tests), apps/web (Next.js 14 App Router, route groups, middleware CSP+auth-gate, Tailwind dark-first, 8 persona CSS vars, TanStack Query v5, Socket.IO stub). CI yaml verified (lint/typecheck/test/build all pass). Gate: 45+ tests pass, `pnpm typecheck` clean, `next build` succeeds all 8 routes.
+**Decisions:** next.config.ts → .mjs (Next.js 14.2.29 doesn't support .ts config); postcss.config.js → .cjs (Next.js requires() it, ESM fails with "type":"module"); btoa() instead of Buffer in Edge middleware; Socket.IO path /backend/socket.io so Next.js rewrite proxy catches handshake; frameguard must be explicitly set to {action:'deny'} (helmet default is SAMEORIGIN); APP_ORIGIN asserted present in production at bootstrap.
+**Next:** P1 — auth + orgs: register/login/logout (argon2id, zxcvbn ≥3), session cookie (opaque token, SHA-256), orgs module, projects module, SessionAuthGuard live, web auth screens, gate check.
+
 ## 2026-07-19 — Task tracker + session log created
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ e9ba43a..
