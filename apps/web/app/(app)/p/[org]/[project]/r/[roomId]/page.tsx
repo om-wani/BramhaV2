@@ -148,12 +148,10 @@ function BranchRail({
   branches,
   activeBranchId,
   onSelect,
-  onCreateFromNode,
 }: {
   branches: BranchDto[];
   activeBranchId: string | null;
   onSelect: (id: string) => void;
-  onCreateFromNode: () => void;
 }) {
   const mainBranch = branches.find((b) => b.name === 'main');
   const forks = branches.filter((b) => b.name !== 'main');
@@ -193,12 +191,9 @@ function BranchRail({
       </div>
 
       <div className="p-2 border-t border-[hsl(var(--border))]">
-        <button
-          onClick={onCreateFromNode}
-          className="w-full text-left text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--accent))] px-2 py-1.5 rounded hover:bg-[hsl(var(--canvas))] transition-colors"
-        >
-          ＋ Branch from here
-        </button>
+        <p className="text-[10px] text-[hsl(var(--text-muted))] px-2 py-1">
+          Hover a message to branch from it
+        </p>
       </div>
     </aside>
   );
@@ -259,6 +254,7 @@ function CreateBranchDialog({
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -295,7 +291,25 @@ function CreateBranchDialog({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') {
+      onClose();
+      return;
+    }
+    if (e.key === 'Tab') {
+      const focusable = formRef.current?.querySelectorAll<HTMLElement>(
+        'input:not([disabled]), button:not([disabled])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    }
   };
 
   return (
@@ -314,6 +328,7 @@ function CreateBranchDialog({
       />
 
       <form
+        ref={formRef}
         onSubmit={handleSubmit}
         className="relative z-10 w-full max-w-sm bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 shadow-2xl"
       >
@@ -324,10 +339,11 @@ function CreateBranchDialog({
           Create branch
         </h2>
 
-        <label className="block text-xs text-[hsl(var(--text-muted))] mb-1">
+        <label htmlFor="branch-name" className="block text-xs text-[hsl(var(--text-muted))] mb-1">
           Branch name
         </label>
         <input
+          id="branch-name"
           ref={inputRef}
           type="text"
           value={name}
@@ -383,6 +399,7 @@ export default function RoomPage() {
   const [showDialog, setShowDialog] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const activeBranchIdRef = useRef<string | null>(null);
 
   // ---- slug → id resolution -----------------------------------------------
 
@@ -435,6 +452,10 @@ export default function RoomPage() {
 
   const activeBranch = branches.find((b) => b.id === activeBranchId) ?? null;
 
+  useEffect(() => {
+    activeBranchIdRef.current = activeBranchId;
+  }, [activeBranchId]);
+
   // ---- thread -------------------------------------------------------------
 
   const threadQuery = useQuery<ConversationNodeDto[]>({
@@ -476,12 +497,10 @@ export default function RoomPage() {
 
     const handleNodeCreated = (event: NodeCreatedEvent) => {
       if (event.node.roomId !== roomId) return;
-      const liveBranches = qc.getQueryData<BranchDto[]>(['branches', projectId, roomId]);
-      const liveBranchId =
-        liveBranches?.find((b) => b.name === 'main')?.id ?? liveBranches?.[0]?.id;
-      if (!liveBranchId) return;
+      const targetBranchId = activeBranchIdRef.current;
+      if (!targetBranchId) return;
       qc.setQueryData<ConversationNodeDto[]>(
-        ['thread', projectId, roomId, liveBranchId],
+        ['thread', projectId, roomId, targetBranchId],
         (prev) => {
           if (!prev) return [event.node];
           if (prev.some((n) => n.id === event.node.id)) return prev;
@@ -517,11 +536,6 @@ export default function RoomPage() {
 
   const openDialogFromNode = useCallback((nodeId: string) => {
     setDialogFromNodeId(nodeId);
-    setShowDialog(true);
-  }, []);
-
-  const openDialogNoNode = useCallback(() => {
-    setDialogFromNodeId(null);
     setShowDialog(true);
   }, []);
 
@@ -618,7 +632,6 @@ export default function RoomPage() {
             branches={branches}
             activeBranchId={activeBranchId}
             onSelect={setActiveBranchId}
-            onCreateFromNode={openDialogNoNode}
           />
         )}
 
