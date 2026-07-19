@@ -1,8 +1,11 @@
 /**
  * Named query functions for complex SQL that lives inside packages/db.
  *
- * These are called from apps/server modules. They manage their own db access
- * (not via withTenant, since they may need cross-tenant or system-level ops).
+ * These bypass withTenant intentionally:
+ * - claimIngestionJob: cross-tenant system queue drain
+ * - getThreadAncestry: called only after ProjectMemberGuard has verified access;
+ *   projectId filter applied in the CTE anchor to enforce tenant scoping
+ * - searchKnowledge: same — projectId is always passed and applied
  */
 
 import { sql } from 'drizzle-orm';
@@ -105,7 +108,7 @@ export async function getThreadAncestry(
         p.created_at,
         t.rev + 1
       FROM conversation_nodes p
-      JOIN thread t ON p.id = t.parent_id
+      JOIN thread t ON p.id = t.parent_id AND t.rev < 1000
     )
     SELECT * FROM thread ORDER BY rev DESC
   `);

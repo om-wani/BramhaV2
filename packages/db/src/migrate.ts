@@ -32,7 +32,11 @@ interface RawRunner {
   rollbackTransaction(): Promise<void>;
 }
 
-async function buildRunner(): Promise<RawRunner> {
+interface RawRunnerWithTeardown extends RawRunner {
+  teardown(): Promise<void>;
+}
+
+async function buildRunner(): Promise<RawRunnerWithTeardown> {
   const databaseUrl = process.env['DATABASE_URL'];
 
   if (databaseUrl) {
@@ -43,30 +47,23 @@ async function buildRunner(): Promise<RawRunner> {
     let inTx = false;
 
     return {
-      async query(rawSql: string, params: unknown[] = []) {
-        // postgres-js uses tagged templates; for raw string queries use sql.unsafe
-        const result = await sql.unsafe(rawSql, params as never[]);
-        // postgres-js returns array of rows
+      async query(rawSql: string, params?: unknown[]) {
+        // Use overloaded form to avoid never[] cast
+        const result = params !== undefined && params.length > 0
+          ? await sql.unsafe(rawSql, params as Parameters<typeof sql.unsafe>[1])
+          : await sql.unsafe(rawSql);
         return { rows: result as unknown as Record<string, unknown>[] };
       },
       async beginTransaction() {
-        if (!inTx) {
-          await sql.unsafe('BEGIN');
-          inTx = true;
-        }
+        if (!inTx) { await sql.unsafe('BEGIN'); inTx = true; }
       },
       async commitTransaction() {
-        if (inTx) {
-          await sql.unsafe('COMMIT');
-          inTx = false;
-        }
+        if (inTx) { await sql.unsafe('COMMIT'); inTx = false; }
       },
       async rollbackTransaction() {
-        if (inTx) {
-          await sql.unsafe('ROLLBACK');
-          inTx = false;
-        }
+        if (inTx) { await sql.unsafe('ROLLBACK'); inTx = false; }
       },
+      async teardown() { await sql.end(); },
     };
   } else {
     // PGlite
@@ -77,19 +74,14 @@ async function buildRunner(): Promise<RawRunner> {
     await pglite.waitReady;
 
     return {
-      async query(sql: string, params: unknown[] = []) {
-        const result = await pglite.query<Record<string, unknown>>(sql, params);
+      async query(rawSql: string, params?: unknown[]) {
+        const result = await pglite.query<Record<string, unknown>>(rawSql, params);
         return { rows: result.rows };
       },
-      async beginTransaction() {
-        await pglite.query('BEGIN');
-      },
-      async commitTransaction() {
-        await pglite.query('COMMIT');
-      },
-      async rollbackTransaction() {
-        await pglite.query('ROLLBACK');
-      },
+      async beginTransaction() { await pglite.query('BEGIN'); },
+      async commitTransaction() { await pglite.query('COMMIT'); },
+      async rollbackTransaction() { await pglite.query('ROLLBACK'); },
+      async teardown() { /* PGlite: no explicit close needed */ },
     };
   }
 }
@@ -100,6 +92,14 @@ async function buildRunner(): Promise<RawRunner> {
 
 export async function migrate(): Promise<void> {
   const runner = await buildRunner();
+  try {
+    await runMigrations(runner);
+  } finally {
+    await runner.teardown();
+  }
+}
+
+async function runMigrations(runner: RawRunner): Promise<void> {
 
   // Ensure bookkeeping table exists (outside a transaction — idempotent DDL)
   await runner.query(`
