@@ -6,8 +6,7 @@ import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 
 function strengthLabel(score: number): { label: string; color: string } {
-  if (score <= 1) return { label: 'Weak', color: 'bg-red-500' };
-  if (score === 2) return { label: 'Fair', color: 'bg-orange-400' };
+  if (score <= 2) return { label: 'Weak', color: 'bg-red-500' };
   if (score === 3) return { label: 'Good', color: 'bg-yellow-400' };
   return { label: 'Strong', color: 'bg-green-500' };
 }

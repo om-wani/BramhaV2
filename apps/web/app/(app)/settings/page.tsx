@@ -87,21 +87,6 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Danger zone placeholder */}
-      <section aria-label="Danger zone">
-        <h2 className="text-base font-semibold text-red-400 mb-4 pb-2 border-b border-[hsl(var(--border))]">
-          Danger zone
-        </h2>
-        <p className="text-xs text-[hsl(var(--text-muted))] mb-3">
-          Account deletion is not yet available.
-        </p>
-        <button
-          disabled
-          className="px-4 py-2 text-sm rounded-lg border border-red-900 text-red-900 cursor-not-allowed opacity-50"
-        >
-          Delete account
-        </button>
-      </section>
     </div>
   );
 }
