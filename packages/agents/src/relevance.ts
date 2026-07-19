@@ -20,6 +20,7 @@ export interface PersonaScore {
 
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length === 0 || b.length === 0) return 0;
+  if (a.length !== b.length) return 0; // mismatched dims (e.g. model change) → safe zero
 
   let dot = 0;
   let normA = 0;
@@ -48,12 +49,19 @@ function computeMentionScore(
     `\\b(ask the |the )?${persona.title.toLowerCase()}\\b`,
   );
 
+  // Bare name match (e.g. "talk to Vulcan") scores 0.8 to avoid false positives
+  // on short names; @-mention and title get full 1.0
+  const bareNameMatch = lower.includes(persona.name.toLowerCase());
+
   if (
     lower.includes(slugMention) ||
     lower.includes(nameMention) ||
     titlePattern.test(lower)
   ) {
     return 1.0;
+  }
+  if (bareNameMatch) {
+    return 0.8;
   }
   return 0;
 }

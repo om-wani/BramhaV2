@@ -6,82 +6,56 @@ import type { ChatRequest, TextDelta, ModelRouter } from '../model-router.js';
 type AnthropicProvider = ReturnType<typeof createAnthropic>;
 type OpenAIProvider = ReturnType<typeof createOpenAI>;
 
-function toModelMessages(
+function buildCallOpts(
+  model: Parameters<typeof streamText>[0]['model'],
   req: ChatRequest,
-): { role: 'system' | 'user' | 'assistant'; content: string }[] {
-  return req.messages.map((m) => ({ role: m.role, content: m.content }));
+): Parameters<typeof streamText>[0] {
+  const opts: Parameters<typeof streamText>[0] = { model, messages: req.messages };
+  if (req.maxOutputTokens !== undefined) opts.maxOutputTokens = req.maxOutputTokens;
+  if (req.temperature !== undefined) opts.temperature = req.temperature;
+  return opts;
 }
 
-async function anthropicStream(
-  provider: AnthropicProvider,
-  req: ChatRequest,
-  attempt: number,
-): Promise<AsyncIterable<TextDelta>> {
-  if (attempt > 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 500));
-  }
-  const callOpts: Parameters<typeof streamText>[0] = {
-    model: provider('claude-sonnet-4-6'),
-    messages: toModelMessages(req),
-  };
-  if (req.maxOutputTokens !== undefined) {
-    callOpts.maxOutputTokens = req.maxOutputTokens;
-  }
-  if (req.temperature !== undefined) {
-    callOpts.temperature = req.temperature;
-  }
-  const result = streamText(callOpts);
-  return (async function* (): AsyncIterable<TextDelta> {
-    for await (const chunk of result.textStream) {
-      yield { text: chunk };
-    }
-  })();
-}
-
-async function openaiStream(
-  provider: OpenAIProvider,
-  req: ChatRequest,
-): Promise<AsyncIterable<TextDelta>> {
-  const callOpts: Parameters<typeof streamText>[0] = {
-    model: provider('gpt-4o-mini'),
-    messages: toModelMessages(req),
-  };
-  if (req.maxOutputTokens !== undefined) {
-    callOpts.maxOutputTokens = req.maxOutputTokens;
-  }
-  if (req.temperature !== undefined) {
-    callOpts.temperature = req.temperature;
-  }
-  const result = streamText(callOpts);
-  return (async function* (): AsyncIterable<TextDelta> {
-    for await (const chunk of result.textStream) {
-      yield { text: chunk };
-    }
-  })();
-}
-
-async function resolveStream(
-  anthropicProvider: AnthropicProvider | null,
+// Stream from a provider, retrying at the iteration level so real API errors
+// (auth, rate-limit, network) are caught — streamText() is lazy; errors surface
+// during `for await`, not at call time.
+async function* streamWithRetry(
+  anthropicProvider: AnthropicProvider,
   openaiProvider: OpenAIProvider | null,
   req: ChatRequest,
-): Promise<AsyncIterable<TextDelta>> {
-  if (anthropicProvider !== null) {
+): AsyncIterable<TextDelta> {
+  let lastErr: unknown;
+
+  // Primary: Anthropic, up to 2 attempts with 500ms backoff
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) await new Promise<void>((r) => setTimeout(r, 500));
     try {
-      return await anthropicStream(anthropicProvider, req, 1);
-    } catch {
-      try {
-        return await anthropicStream(anthropicProvider, req, 2);
-      } catch {
-        if (openaiProvider === null) {
-          throw new Error('Anthropic stream failed (both attempts) and no OpenAI fallback configured.');
-        }
+      const result = streamText(buildCallOpts(anthropicProvider('claude-sonnet-4-6'), req));
+      for await (const chunk of result.textStream) {
+        yield { text: chunk };
       }
+      return; // success
+    } catch (err) {
+      lastErr = err;
     }
   }
+
+  // Fallback: OpenAI
   if (openaiProvider !== null) {
-    return openaiStream(openaiProvider, req);
+    try {
+      const result = streamText(buildCallOpts(openaiProvider('gpt-4o-mini'), req));
+      for await (const chunk of result.textStream) {
+        yield { text: chunk };
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+    }
   }
-  throw new Error('ModelRouter: no provider available for streaming.');
+
+  throw new Error(
+    `ModelRouter: all stream attempts failed. Last error: ${String(lastErr)}`,
+  );
 }
 
 export function createLiveRouter(
@@ -97,34 +71,19 @@ export function createLiveRouter(
 
   return {
     stream(req: ChatRequest): AsyncIterable<TextDelta> {
-      return {
-        [Symbol.asyncIterator](): AsyncIterator<TextDelta> {
-          let inner: AsyncIterator<TextDelta> | null = null;
-          let pending: Promise<AsyncIterable<TextDelta>> | null = null;
-
-          const ensureInner = async (): Promise<AsyncIterator<TextDelta>> => {
-            if (inner !== null) return inner;
-            if (pending === null) {
-              pending = resolveStream(anthropicProvider, openaiProvider, req);
-            }
-            const iterable = await pending;
-            inner = iterable[Symbol.asyncIterator]();
-            return inner;
-          };
-
-          return {
-            async next(): Promise<IteratorResult<TextDelta>> {
-              return (await ensureInner()).next();
-            },
-            async return(value?: unknown): Promise<IteratorResult<TextDelta>> {
-              if (inner?.return !== undefined) {
-                return inner.return(value) as Promise<IteratorResult<TextDelta>>;
-              }
-              return { done: true, value: undefined as unknown as TextDelta };
-            },
-          };
-        },
-      };
+      if (anthropicProvider !== null) {
+        return streamWithRetry(anthropicProvider, openaiProvider, req);
+      }
+      if (openaiProvider !== null) {
+        // OpenAI-only mode (no Anthropic key)
+        return (async function* () {
+          const result = streamText(buildCallOpts(openaiProvider('gpt-4o-mini'), req));
+          for await (const chunk of result.textStream) {
+            yield { text: chunk };
+          }
+        })();
+      }
+      throw new Error('ModelRouter: no provider available for streaming.');
     },
 
     async embed(texts: string[]): Promise<number[][]> {
