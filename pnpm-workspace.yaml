@@ -4,6 +4,7 @@ packages:
 
 overrides:
   "@types/node": "^20.19.0"
+  "eslint-visitor-keys": "^4.2.0"
 
 allowBuilds:
   argon2: true
