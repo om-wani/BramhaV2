@@ -88,18 +88,19 @@ describe('scorePersonas', () => {
     }
   });
 
-  it('fatigue penalty applied for recent speakers', () => {
+  it('fatigue penalty applied for recent speakers (≥2 of last 3 turns)', () => {
+    // ceo spoke twice in last 3, cto spoke once → only ceo is fatigued
     const input: RelevanceInput = {
       messageText: 'Next steps?',
       messageEmbedding: ZERO_VEC,
-      recentSpeakers: ['ceo', 'cto'],
+      recentSpeakers: ['ceo', 'cto', 'ceo'],
     };
     const scores = scorePersonas(input, zeroDomainEmbeddings(), ALL_PERSONAS);
     const ceoScore = scores.find((s) => s.persona === 'ceo');
     const ctoScore = scores.find((s) => s.persona === 'cto');
     const cooScore = scores.find((s) => s.persona === 'coo');
     expect(ceoScore?.fatigueScore).toBe(1.0);
-    expect(ctoScore?.fatigueScore).toBe(1.0);
+    expect(ctoScore?.fatigueScore).toBe(0);
     expect(cooScore?.fatigueScore).toBe(0);
   });
 
@@ -162,5 +163,72 @@ describe('scorePersonas', () => {
     });
     const selected = scores.filter((s) => s.selected);
     expect(selected.length).toBeLessThanOrEqual(3);
+  });
+
+  it('bare name without @ → mentionScore 0 (not 0.8)', () => {
+    // "Vulcan" is the CTO's name. Without @, should NOT score 0.8 — spec says 0.
+    const input: RelevanceInput = {
+      messageText: 'talk to Vulcan about the architecture',
+      messageEmbedding: ZERO_VEC,
+      recentSpeakers: [],
+    };
+    const scores = scorePersonas(input, zeroDomainEmbeddings(), ALL_PERSONAS);
+    const ctoScore = scores.find((s) => s.persona === 'cto');
+    expect(ctoScore?.mentionScore).toBe(0);
+  });
+
+  it('fatigue: once in last 3 → 0; twice in last 3 → 1.0', () => {
+    // ceo spoke once in last 3 → fatigueScore 0
+    const inputOnce: RelevanceInput = {
+      messageText: 'next steps?',
+      messageEmbedding: ZERO_VEC,
+      recentSpeakers: ['cto', 'cfo', 'ceo'],
+    };
+    const scoresOnce = scorePersonas(
+      inputOnce,
+      zeroDomainEmbeddings(),
+      ALL_PERSONAS,
+    );
+    expect(scoresOnce.find((s) => s.persona === 'ceo')?.fatigueScore).toBe(0);
+
+    // ceo spoke twice in last 3 → fatigueScore 1.0
+    const inputTwice: RelevanceInput = {
+      messageText: 'next steps?',
+      messageEmbedding: ZERO_VEC,
+      recentSpeakers: ['ceo', 'cfo', 'ceo'],
+    };
+    const scoresTwice = scorePersonas(
+      inputTwice,
+      zeroDomainEmbeddings(),
+      ALL_PERSONAS,
+    );
+    expect(scoresTwice.find((s) => s.persona === 'ceo')?.fatigueScore).toBe(
+      1.0,
+    );
+  });
+
+  it('expertise clamp: negative cosine → expertiseScore clamped to 0', () => {
+    // cto domain embedding points in one direction; message embedding points opposite → cosine < 0
+    // After clamping, expertiseScore must be 0, not negative.
+    const ctoPersona = ALL_PERSONAS.find((p) => p.slug === 'cto');
+    expect(ctoPersona).toBeDefined();
+
+    const positiveVec = [1, 0, 0, 0, 0, 0, 0, 0];
+    const oppositeVec = [-1, 0, 0, 0, 0, 0, 0, 0];
+
+    const domainEmbeddings = zeroDomainEmbeddings();
+    // Set cto domain to positive direction
+    domainEmbeddings.set('cto', positiveVec);
+
+    const input: RelevanceInput = {
+      // message embedding points opposite → cosine similarity = -1
+      messageText: 'unrelated',
+      messageEmbedding: oppositeVec,
+      recentSpeakers: [],
+    };
+    const scores = scorePersonas(input, domainEmbeddings, ALL_PERSONAS);
+    const ctoScore = scores.find((s) => s.persona === 'cto');
+    expect(ctoScore?.expertiseScore).toBeGreaterThanOrEqual(0);
+    expect(ctoScore?.expertiseScore).toBe(0);
   });
 });

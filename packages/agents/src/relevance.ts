@@ -49,19 +49,12 @@ function computeMentionScore(
     `\\b(ask the |the )?${persona.title.toLowerCase()}\\b`,
   );
 
-  // Bare name match (e.g. "talk to Vulcan") scores 0.8 to avoid false positives
-  // on short names; @-mention and title get full 1.0
-  const bareNameMatch = lower.includes(persona.name.toLowerCase());
-
   if (
     lower.includes(slugMention) ||
     lower.includes(nameMention) ||
     titlePattern.test(lower)
   ) {
     return 1.0;
-  }
-  if (bareNameMatch) {
-    return 0.8;
   }
   return 0;
 }
@@ -85,8 +78,8 @@ function computeFatigueScore(
   persona: PersonaSlug,
   recentSpeakers: PersonaSlug[],
 ): number {
-  const lastTwo = recentSpeakers.slice(-2);
-  return lastTwo.includes(persona) ? 1.0 : 0;
+  const lastThree = recentSpeakers.slice(-3);
+  return lastThree.filter((s) => s === persona).length >= 2 ? 1.0 : 0;
 }
 
 export function scorePersonas(
@@ -108,9 +101,9 @@ export function scorePersonas(
   const scores: PersonaScore[] = personas.map((persona) => {
     const mentionScore = computeMentionScore(input.messageText, persona);
     const domainEmbedding = domainEmbeddings.get(persona.slug) ?? [];
-    const expertiseScore = cosineSimilarity(
-      input.messageEmbedding,
-      domainEmbedding,
+    const expertiseScore = Math.max(
+      0,
+      cosineSimilarity(input.messageEmbedding, domainEmbedding),
     );
     const lexicalScore = computeLexicalScore(
       input.messageText,
