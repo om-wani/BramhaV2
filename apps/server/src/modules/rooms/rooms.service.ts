@@ -76,26 +76,7 @@ export class RoomsService {
   ): Promise<RoomRow[]> {
     const db = await getDb();
 
-    // Verify project exists
-    const [project] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(eq(projects.id, projectId));
-
-    if (!project) {
-      throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
-    }
-
-    // Verify caller is project member
-    const [membership] = await db
-      .select({ role: projectMembers.role })
-      .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, callerId)));
-
-    if (!membership) {
-      throw new ForbiddenException({ code: 'FORBIDDEN', title: 'Forbidden' });
-    }
-
+    // ProjectMemberGuard already verified project existence and membership — query directly.
     return db
       .select({
         id: rooms.id,

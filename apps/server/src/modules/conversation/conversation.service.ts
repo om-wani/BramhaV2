@@ -89,6 +89,21 @@ export class ConversationService {
       throw new NotFoundException({ code: 'NOT_FOUND', title: 'Branch not found' });
     }
 
+    // Verify parentNodeId belongs to this room/project
+    if (parentNodeId) {
+      const [parentNode] = await db
+        .select({ id: conversationNodes.id })
+        .from(conversationNodes)
+        .where(
+          and(
+            eq(conversationNodes.id, parentNodeId),
+            eq(conversationNodes.roomId, roomId),
+            eq(conversationNodes.projectId, projectId),
+          ),
+        );
+      if (!parentNode) throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
+    }
+
     // Insert conversation node
     const [node] = await db
       .insert(conversationNodes)
@@ -112,7 +127,7 @@ export class ConversationService {
     const updateResult = await db
       .update(branches)
       .set({ headNodeId: node.id })
-      .where(and(eq(branches.id, branchId), eq(branches.projectId, projectId), headCondition))
+      .where(and(eq(branches.id, branchId), eq(branches.roomId, roomId), eq(branches.projectId, projectId), headCondition))
       .returning({ id: branches.id });
 
     if (updateResult.length > 0) {

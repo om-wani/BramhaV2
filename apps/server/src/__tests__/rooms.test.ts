@@ -11,10 +11,16 @@ import { OrgsModule } from '../modules/orgs/orgs.module.js';
 import { ProjectsModule } from '../modules/projects/projects.module.js';
 import { RoomsModule } from '../modules/rooms/rooms.module.js';
 import { ConversationModule } from '../modules/conversation/conversation.module.js';
+import { ConversationService } from '../modules/conversation/conversation.service.js';
 import { ProblemJsonExceptionFilter } from '../common/filters/problem-json.filter.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 
-async function buildApp(): Promise<NestFastifyApplication> {
+interface AppAndService {
+  app: NestFastifyApplication;
+  conversationService: ConversationService;
+}
+
+async function buildApp(): Promise<AppAndService> {
   await migrate();
 
   const module = await Test.createTestingModule({
@@ -27,7 +33,8 @@ async function buildApp(): Promise<NestFastifyApplication> {
   await app.register(fastifyCookie);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
-  return app;
+  const conversationService = module.get(ConversationService);
+  return { app, conversationService };
 }
 
 let counter = 0;
@@ -125,7 +132,7 @@ describe('Rooms (P2.1)', () => {
   let app: NestFastifyApplication;
 
   beforeAll(async () => {
-    app = await buildApp();
+    ({ app } = await buildApp());
   });
 
   afterAll(async () => {
@@ -267,9 +274,10 @@ describe('Rooms (P2.1)', () => {
 
 describe('Conversation (P2.2)', () => {
   let app: NestFastifyApplication;
+  let conversationService: ConversationService;
 
   beforeAll(async () => {
-    app = await buildApp();
+    ({ app, conversationService } = await buildApp());
   });
 
   afterAll(async () => {
@@ -442,6 +450,40 @@ describe('Conversation (P2.2)', () => {
     expect(nodes[2]?.content).toBe('Msg 3');
   });
 
+  // 11a. POST .../nodes — concurrent conflict auto-forks to new branch
+  it('POST .../nodes — concurrent conflict auto-forks to new branch', async () => {
+    const { cookie, userId } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, cookie);
+    const { projectId } = await createProject(app, cookie, orgId);
+    const { id: roomId, mainBranchId: branchId } = await createRoom(app, cookie, projectId, {
+      name: 'Fork Test Room',
+      kind: 'council',
+    });
+
+    // Insert first node normally via HTTP → head = node1
+    const firstRes = await app.inject({
+      method: 'POST',
+      url: `/projects/${projectId}/rooms/${roomId}/nodes`,
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ branchId, content: 'first' }),
+    });
+    expect(firstRes.statusCode).toBe(201);
+    const { nodeId: firstNodeId } = firstRes.json<{ nodeId: string }>();
+
+    // Call insertNode twice concurrently via the service (same JS event loop, interleaved awaits).
+    // Both reads see head = node1; only the first UPDATE succeeds; the second triggers auto-fork.
+    const [aResult, bResult] = await Promise.all([
+      conversationService.insertNode(userId, projectId, roomId, branchId, 'concurrent A', firstNodeId),
+      conversationService.insertNode(userId, projectId, roomId, branchId, 'concurrent B', firstNodeId),
+    ]);
+
+    // At least one must have forked
+    const forkCount = [aResult.forked, bResult.forked].filter(Boolean).length;
+    expect(forkCount).toBeGreaterThanOrEqual(1);
+    const forkedResult = aResult.forked ? aResult : bResult;
+    expect(forkedResult.newBranchId).toBeDefined();
+  });
+
   // 11. GET .../branches — lists branches
   it('GET .../branches — lists branches for room', async () => {
     const { cookie } = await registerAndLogin(app);
@@ -479,5 +521,87 @@ describe('Conversation (P2.2)', () => {
     const names = branchesList.map((b) => b.name);
     expect(names).toContain('main');
     expect(names).toContain('feature-branch');
+  });
+
+  // 13. GET /projects/:projectId/rooms — 403 for non-member
+  it('GET /projects/:projectId/rooms — non-member gets 403', async () => {
+    const { cookie: ownerCookie } = await registerAndLogin(app);
+    const { cookie: otherCookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, ownerCookie);
+    const { projectId } = await createProject(app, ownerCookie, orgId);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/projects/${projectId}/rooms`,
+      headers: { cookie: otherCookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ code: string }>().code).toBe('FORBIDDEN');
+  });
+
+  // 14. Unauthenticated requests → 401
+  it('POST /projects/:id/rooms — unauthenticated returns 401', async () => {
+    const { cookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, cookie);
+    const { projectId } = await createProject(app, cookie, orgId);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/projects/${projectId}/rooms`,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Unauth Room', kind: 'council' }),
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json<{ code: string }>().code).toBe('UNAUTHORIZED');
+  });
+
+  it('GET .../branches — unauthenticated returns 401', async () => {
+    const { cookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, cookie);
+    const { projectId } = await createProject(app, cookie, orgId);
+    const { id: roomId } = await createRoom(app, cookie, projectId, { name: 'Room', kind: 'council' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/projects/${projectId}/rooms/${roomId}/branches`,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json<{ code: string }>().code).toBe('UNAUTHORIZED');
+  });
+
+  // 15. GET .../thread — empty branch returns []
+  it('GET .../thread — empty branch (head_node_id = NULL) returns []', async () => {
+    const { cookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, cookie);
+    const { projectId } = await createProject(app, cookie, orgId);
+    const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
+      name: 'Empty Thread Room',
+      kind: 'council',
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/projects/${projectId}/rooms/${roomId}/branches/${mainBranchId}/thread`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<unknown[]>()).toEqual([]);
+  });
+
+  // 16. GET .../branches — 403 for non-member
+  it('GET .../branches — non-member gets 403', async () => {
+    const { cookie: ownerCookie } = await registerAndLogin(app);
+    const { cookie: otherCookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, ownerCookie);
+    const { projectId } = await createProject(app, ownerCookie, orgId);
+    const { id: roomId } = await createRoom(app, ownerCookie, projectId, { name: 'Room', kind: 'council' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/projects/${projectId}/rooms/${roomId}/branches`,
+      headers: { cookie: otherCookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ code: string }>().code).toBe('FORBIDDEN');
   });
 });
