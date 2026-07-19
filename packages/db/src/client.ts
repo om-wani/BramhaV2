@@ -7,6 +7,7 @@
  * Singleton per process.
  */
 
+import { mkdirSync } from 'node:fs';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js';
 import { PGlite } from '@electric-sql/pglite';
@@ -32,6 +33,7 @@ export async function getDb(): Promise<DrizzleDb> {
     _db = drizzlePg(sql, { schema }) as DrizzleDb;
   } else {
     const dataDir = process.env['PGLITE_DATA_DIR'] ?? '.data/pglite';
+    mkdirSync(dataDir, { recursive: true });
     _pglite = new PGlite(dataDir, { extensions: { vector } });
     await _pglite.waitReady;
     _db = drizzlePglite(_pglite, { schema }) as DrizzleDb;

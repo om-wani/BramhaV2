@@ -69,7 +69,9 @@ async function buildRunner(): Promise<RawRunnerWithTeardown> {
     // PGlite
     const { PGlite } = await import('@electric-sql/pglite');
     const { vector } = await import('@electric-sql/pglite-pgvector');
+    const { mkdirSync } = await import('node:fs');
     const dataDir = process.env['PGLITE_DATA_DIR'] ?? '.data/pglite';
+    mkdirSync(dataDir, { recursive: true });
     const pglite = new PGlite(dataDir, { extensions: { vector } });
     await pglite.waitReady;
 
