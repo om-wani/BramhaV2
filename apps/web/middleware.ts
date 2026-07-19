@@ -18,7 +18,8 @@ function safeRedirect(next: string | null): string {
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+  // btoa + crypto.randomUUID are Edge runtime globals; Buffer is not
+  const nonce = btoa(crypto.randomUUID());
 
   const csp = [
     `default-src 'self'`,
@@ -53,7 +54,11 @@ export function middleware(request: NextRequest): NextResponse {
     }
   }
 
-  const response = NextResponse.next();
+  // Forward nonce to root layout via request header so server components can read it
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('X-Frame-Options', 'DENY');
