@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-19 — P2.4: web room screen — thread view, composer, WS cache feed
+
+**Branch/commits:** `claude/multi-agent-ai-orchestration-zt6xvw` @ current
+**Done:** P2.4. Room screen at `/p/[org]/[project]/r/[roomId]` — slug→ID resolution via two-step org/project lookup; branch list (first branch named 'main'); thread load via TanStack Query; message cards with persona avatar (CSS var colors), display names, pre-rendered content, relative timestamps; composer (Enter=send, Shift+Enter=newline, disabled during inflight); Socket.IO connect on mount with `room:join`, `node:created` updates query cache, `room:leave` + disconnect on unmount; skeleton cards while loading; error states. Also created project page at `/p/[org]/[project]` with room list + create-room dialog as navigation hub.
+**Decisions:** No `marked`/`dompurify` in package.json so content rendered as `<pre>` with whitespace-pre-wrap — spec permits this fallback. `fieldSizing: content` cast as `React.CSSProperties` to satisfy strict TS (non-standard CSS prop). Socket singleton from `getSocket()` used as-is — disconnect on unmount; reconnects on remount.
+**Next:** P2.5 — branch rail UI (branch tree, switch, hover ⑂ Branch from here, name dialog).
+
+---
+
 ## 2026-07-19 — P1 complete: auth + orgs + projects + web screens + gate
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 9cbfed0..34eb69e
