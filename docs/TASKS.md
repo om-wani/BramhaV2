@@ -25,7 +25,7 @@
 
 - [x] P1.1 Auth module: register (argon2id, zxcvbn ≥3 server-side, auto-verify), login, logout, sliding session (opaque token, SHA-256 in sessions table, HttpOnly Secure Lax cookie)
 - [x] P1.2 `SessionAuthGuard` + open-redirect-safe `next` handling + enumeration-proof generic errors
-- [ ] P1.3 Orgs module: create org (creator=owner), org members CRUD
+- [x] P1.3 Orgs module: create org (creator=owner), org members CRUD
 - [ ] P1.4 Projects module: create project under org, project members CRUD, `ProjectMemberGuard(role)`
 - [ ] P1.5 Web: register/login screens (zxcvbn dynamic import), dashboard (org switcher, project cards, create dialogs), settings (name, password change)
 - [ ] P1.6 Middleware auth gate live on `/dashboard` `/settings` `/p/`
