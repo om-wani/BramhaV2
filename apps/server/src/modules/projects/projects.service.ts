@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { eq, and } from 'drizzle-orm';
-import { getDb, projects, projectMembers, orgs, orgMembers } from '@bramha/db';
+import { getDb, projects, projectMembers, orgs, orgMembers, users } from '@bramha/db';
 
 @Injectable()
 export class ProjectsService {
@@ -65,6 +65,12 @@ export class ProjectsService {
   ): Promise<Array<{ id: string; name: string; createdAt: Date }>> {
     const db = await getDb();
 
+    // Verify org exists
+    const [org] = await db.select({ id: orgs.id }).from(orgs).where(eq(orgs.id, orgId));
+    if (!org) {
+      throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
+    }
+
     // Caller must be org member
     const [membership] = await db
       .select({ role: orgMembers.role })
@@ -120,7 +126,7 @@ export class ProjectsService {
     callerId: string,
     projectId: string,
     targetUserId: string,
-    role: string,
+    role: 'admin' | 'member',
   ): Promise<{ projectId: string; userId: string; role: string }> {
     const db = await getDb();
 
@@ -136,6 +142,16 @@ export class ProjectsService {
 
     // Caller must be admin
     await this.requireAdmin(callerId, projectId);
+
+    // Verify target user exists
+    const [targetUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, targetUserId));
+
+    if (!targetUser) {
+      throw new NotFoundException({ code: 'NOT_FOUND', title: 'Not found' });
+    }
 
     // Check if already a member
     const [existing] = await db

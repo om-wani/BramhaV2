@@ -26,7 +26,7 @@ const CreateProjectSchema = z.object({
 });
 
 const AddMemberSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().uuid(),
   role: z.enum(['admin', 'member']),
 });
 
