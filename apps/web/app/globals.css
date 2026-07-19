@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --canvas: 220 14% 5%;
+    --surface: 220 12% 9%;
+    --border: 220 10% 16%;
+    --text-primary: 220 10% 92%;
+    --text-muted: 220 8% 55%;
+    --accent: 239 84% 67%;
+
+    --persona-ceo: 38 92% 60%;
+    --persona-cto: 199 89% 48%;
+    --persona-cmo: 286 73% 64%;
+    --persona-cfo: 142 71% 45%;
+    --persona-coo: 218 80% 56%;
+    --persona-chro: 350 89% 60%;
+    --persona-cso: 24 95% 53%;
+    --persona-cdao: 172 66% 50%;
+  }
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: hsl(var(--canvas));
+  color: hsl(var(--text-primary));
+  font-family: Inter, system-ui, sans-serif;
+}
