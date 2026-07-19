@@ -77,12 +77,19 @@ async function buildRunner(): Promise<RawRunnerWithTeardown> {
 
     return {
       async query(rawSql: string, params?: unknown[]) {
-        const result = await pglite.query<Record<string, unknown>>(rawSql, params);
-        return { rows: result.rows };
+        if (params !== undefined && params.length > 0) {
+          // Single parameterized statement
+          const result = await pglite.query<Record<string, unknown>>(rawSql, params);
+          return { rows: result.rows };
+        }
+        // exec() handles multiple statements (e.g. migration files)
+        const results = await pglite.exec(rawSql);
+        const last = results[results.length - 1];
+        return { rows: (last?.rows ?? []) as Record<string, unknown>[] };
       },
-      async beginTransaction() { await pglite.query('BEGIN'); },
-      async commitTransaction() { await pglite.query('COMMIT'); },
-      async rollbackTransaction() { await pglite.query('ROLLBACK'); },
+      async beginTransaction() { await pglite.exec('BEGIN'); },
+      async commitTransaction() { await pglite.exec('COMMIT'); },
+      async rollbackTransaction() { await pglite.exec('ROLLBACK'); },
       async teardown() { /* PGlite: no explicit close needed */ },
     };
   }
