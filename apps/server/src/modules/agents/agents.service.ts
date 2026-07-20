@@ -8,16 +8,34 @@ import {
   type PersistResponseFn,
   type PendingDelegation,
 } from '@bramha/agents';
-import { getDb, conversationNodes, branches, delegationTasks, searchKnowledge } from '@bramha/db';
+import { getDb, conversationNodes, branches, delegationTasks, projects, searchKnowledge } from '@bramha/db';
 import { eq, and } from 'drizzle-orm';
 import { eventBus } from '@bramha/event-bus';
 import type { ConversationNodeRow } from '@bramha/db';
 import type { PersonaSlug } from '@bramha/shared';
 
+// PA lite types
+export interface OpenLoop {
+  roomId: string;
+  persona: string;
+  text: string;
+  nodeId: string;
+  createdAt: string;
+}
+
+export interface ProjectWorkingMemory {
+  open_loops: OpenLoop[];
+  lastProactiveAt?: string;
+}
+
 @Injectable()
 export class AgentsService implements OnModuleInit {
   private readonly logger = new Logger(AgentsService.name);
   private domainEmbeddings: Map<string, number[]> = new Map();
+
+  get publicDomainEmbeddings(): Map<string, number[]> {
+    return this.domainEmbeddings;
+  }
 
   async onModuleInit(): Promise<void> {
     try {
@@ -315,6 +333,37 @@ export class AgentsService implements OnModuleInit {
             .set({ status: 'failed' })
             .where(eq(delegationTasks.id, taskId));
         }
+      }
+    }
+
+    // PA lite capture — only in 1:1 rooms
+    if (params.roomKind === 'one_on_one' && responses.length > 0) {
+      const OPEN_LOOP_RE = /\?$|I'll follow up|next step|let me know/im;
+      for (const response of responses) {
+        const lines = response.content.split('\n');
+        const matchedLine = lines.find((l) => OPEN_LOOP_RE.test(l));
+        if (!matchedLine) continue;
+
+        const db2 = await getDb();
+        const [projectRow] = await db2
+          .select({ workingMemory: projects.workingMemory })
+          .from(projects)
+          .where(eq(projects.id, params.projectId));
+
+        const wm = (projectRow?.workingMemory as ProjectWorkingMemory | null) ?? { open_loops: [] };
+        const newLoop: OpenLoop = {
+          roomId: params.roomId,
+          persona: response.persona,
+          text: matchedLine.trim(),
+          nodeId: response.nodeId,
+          createdAt: new Date().toISOString(),
+        };
+        // FIFO — keep most recent 10
+        wm.open_loops = [...wm.open_loops.slice(-9), newLoop];
+
+        await db2.update(projects).set({ workingMemory: wm }).where(eq(projects.id, params.projectId));
+        this.logger.debug(`[pa-lite] captured open loop in room ${params.roomId} from ${response.persona}`);
+        break; // one capture per turn
       }
     }
 

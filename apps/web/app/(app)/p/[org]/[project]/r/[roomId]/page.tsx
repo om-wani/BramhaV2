@@ -215,6 +215,8 @@ function MessageCard({
       ? node.metadata.delegatedFrom
       : null;
 
+  const isProactive = node.authorType === 'agent' && node.metadata?.proactive === true;
+
   return (
     <article className={`relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors${delegatedFrom ? ' ml-8 border-l-2 border-[hsl(var(--accent)/0.25)]' : ''}`}>
       <button
@@ -245,6 +247,11 @@ function MessageCard({
           {delegatedFrom && (
             <span className="text-[10px] text-[hsl(var(--text-muted))] bg-[hsl(var(--surface-raised))] px-1.5 py-0.5 rounded border border-[hsl(var(--border))]">
               ↳ from {getPersonaName(delegatedFrom)}
+            </span>
+          )}
+          {isProactive && (
+            <span className="text-[10px] text-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.1)] px-1.5 py-0.5 rounded border border-[hsl(var(--accent)/0.3)]">
+              ✦ Proactive
             </span>
           )}
         </div>

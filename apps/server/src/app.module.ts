@@ -8,6 +8,8 @@ import { ConversationModule } from './modules/conversation/conversation.module.j
 import { GatewayModule } from './gateway/gateway.module.js';
 import { AgentsModule } from './modules/agents/agents.module.js';
 import { FilesModule } from './modules/files/files.module.js';
+import { IngestionModule } from './modules/ingestion/ingestion.module.js';
+import { ProactiveModule } from './modules/proactive/proactive.module.js';
 
-@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule, RoomsModule, ConversationModule, GatewayModule, AgentsModule, FilesModule] })
+@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule, RoomsModule, ConversationModule, GatewayModule, AgentsModule, FilesModule, IngestionModule, ProactiveModule] })
 export class AppModule {}
