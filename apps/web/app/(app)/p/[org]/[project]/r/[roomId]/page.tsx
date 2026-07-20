@@ -552,6 +552,16 @@ export default function RoomPage() {
   const [mentionIndex, setMentionIndex] = useState(0);
   // citation excerpt popover
   const [activeCitation, setActiveCitation] = useState<ValidatedCitation | null>(null);
+
+  useEffect(() => {
+    if (activeCitation === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveCitation(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeCitation]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeBranchIdRef = useRef<string | null>(null);
