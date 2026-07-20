@@ -202,6 +202,27 @@ export async function searchKnowledge(
   // Serialize embedding as a PostgreSQL vector literal e.g. '[0.1,0.2,...]'
   const embeddingLiteral = `[${queryEmbedding.join(',')}]`;
 
+  // websearch_to_tsquery throws on empty string — fall back to vector-only search.
+  if (!queryText.trim()) {
+    const vectorOnly: unknown = await db.execute(sql`
+      SELECT fc.id, fc.file_id, fc.chunk_index, fc.content, fc.token_count, f.filename,
+        (1.0 / (60 + ROW_NUMBER() OVER (ORDER BY fc.embedding <=> ${sql.raw(`'${embeddingLiteral}'::vector`)}))) AS rrf_score
+      FROM file_chunks fc
+      JOIN files f ON f.id = fc.file_id
+      WHERE fc.project_id = ${projectId} AND fc.embedding IS NOT NULL
+      ORDER BY fc.embedding <=> ${sql.raw(`'${embeddingLiteral}'::vector`)}
+      LIMIT ${k}
+    `);
+    return extractRows(vectorOnly).map((row) => ({
+      id: row['id'] as string,
+      fileId: row['file_id'] as string,
+      chunkIndex: row['chunk_index'] as number,
+      content: row['content'] as string,
+      filename: row['filename'] as string,
+      score: row['rrf_score'] as number,
+    }));
+  }
+
   const result: unknown = await db.execute(sql`
     WITH
       vector_ranked AS (
