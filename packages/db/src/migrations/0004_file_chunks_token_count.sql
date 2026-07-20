@@ -1,0 +1,1 @@
+ALTER TABLE file_chunks ADD COLUMN IF NOT EXISTS token_count INTEGER;

@@ -215,6 +215,7 @@ export const fileChunks = pgTable(
     projectId: uuid('project_id').notNull(),
     chunkIndex: integer('chunk_index').notNull(),
     content: text('content').notNull(),
+    tokenCount: integer('token_count'),
     // embedding vector(1536) — in SQL migration only
     // tsv tsvector GENERATED — in SQL migration only
     createdAt: timestamptz('created_at').notNull().defaultNow(),
@@ -232,12 +233,14 @@ export const ingestionJobs = pgTable('ingestion_jobs', {
   fileId: uuid('file_id')
     .notNull()
     .references(() => files.id, { onDelete: 'cascade' }),
-  status: text('status').notNull(), // queued | running | done | failed — CHECK in SQL
+  projectId: uuid('project_id').notNull(),
+  status: text('status').notNull(), // pending | running | done | failed — CHECK in SQL
   attempt: integer('attempt').notNull().default(0),
   errorMsg: text('error_msg'),
   queuedAt: timestamptz('queued_at').notNull().defaultNow(),
   startedAt: timestamptz('started_at'),
   finishedAt: timestamptz('finished_at'),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
 });
 
 // ---------------------------------------------------------------------------

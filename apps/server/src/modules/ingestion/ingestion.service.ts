@@ -150,7 +150,11 @@ export class IngestionService implements OnModuleInit, OnModuleDestroy {
 
       // 2. Read file bytes
       const uploadsDir = path.resolve(process.env['UPLOADS_DIR'] ?? './uploads');
-      const fullPath = path.join(uploadsDir, fileRow.storagePath);
+      const resolvedUploadsDir = path.resolve(uploadsDir);
+      const fullPath = path.resolve(resolvedUploadsDir, fileRow.storagePath);
+      if (!fullPath.startsWith(resolvedUploadsDir + path.sep)) {
+        throw new Error('INVALID_STORAGE_PATH');
+      }
       const buffer = await fs.readFile(fullPath);
 
       // 3. Extract text
@@ -166,13 +170,18 @@ export class IngestionService implements OnModuleInit, OnModuleDestroy {
         inputs: chunks,
       });
 
+      if (embeddings.length !== chunks.length) {
+        throw new Error(`Embedding count mismatch: expected ${chunks.length}, got ${embeddings.length}`);
+      }
+
       // 6. Insert file_chunks (raw SQL for ::vector cast)
       for (let i = 0; i < chunks.length; i++) {
         const embedding = embeddings[i];
         if (!embedding) continue;
+        const tokenCount = Math.ceil(chunks[i]!.length / 4);
         await db.execute(sql`
-          INSERT INTO file_chunks (id, file_id, project_id, chunk_index, content, embedding)
-          VALUES (gen_random_uuid(), ${job.fileId}, ${job.projectId}, ${i}, ${chunks[i]}, ${JSON.stringify(embedding)}::vector)
+          INSERT INTO file_chunks (id, file_id, project_id, chunk_index, content, token_count, embedding)
+          VALUES (gen_random_uuid(), ${job.fileId}, ${job.projectId}, ${i}, ${chunks[i]}, ${tokenCount}, ${JSON.stringify(embedding)}::vector)
         `);
       }
 
@@ -200,10 +209,10 @@ export class IngestionService implements OnModuleInit, OnModuleDestroy {
       const db = await getDb();
       // job.attempt is already the incremented value (set by claimNextJob)
       if (job.attempt < 3) {
-        // Retry: set back to pending
+        // Retry: set back to pending, clear started_at
         await db.execute(sql`
           UPDATE ingestion_jobs
-          SET status = 'pending', updated_at = NOW()
+          SET status = 'pending', updated_at = NOW(), started_at = NULL
           WHERE id = ${job.id}
         `);
         this.logger.warn(`Job ${job.id} attempt ${job.attempt} failed, will retry: ${err.message}`);
