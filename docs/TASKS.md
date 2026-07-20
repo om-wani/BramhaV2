@@ -4,7 +4,7 @@
 >
 > Task IDs are stable — never renumber. Add new tasks at the end of their phase.
 
-**Current phase: P3**
+**Current phase: P4**
 
 ---
 
@@ -48,7 +48,7 @@
 - [x] P3.4 Prompt builder: persona system prompt, council context, `<untrusted_context>` wrapper + tag-strip, citation instruction
 - [x] P3.5 Streaming pipeline: `node:delta` seq events → gateway → web typewriter render; `node:error` discard path
 - [x] P3.6 Council panel UI: 8 live scores from `turn:selection`, dimmed silent, "silent = $0" footer; `@` mention popover in composer
-- [~] P3.7 Gate check: finance-question test — CFO+CEO respond, others zero rows in model_calls; @mention override test
+- [x] P3.7 Gate check: finance-question test — CFO+CEO respond, others zero rows in model_calls; @mention override test
 
 ## P4 — Org memory / RAG (gate: uploaded PDF answered with correct citation card)
 
