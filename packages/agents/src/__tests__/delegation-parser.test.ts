@@ -98,6 +98,11 @@ describe('parseDelegationSignal', () => {
     const result = parseDelegationSignal(content);
     expect(result).toBeNull();
   });
+
+  it('does not match DELEGATE_TO mid-response (must be final line)', () => {
+    const content = 'DELEGATE_TO: cfo TASK: Analyse budget.\n\nHowever, here is additional context.';
+    expect(parseDelegationSignal(content)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

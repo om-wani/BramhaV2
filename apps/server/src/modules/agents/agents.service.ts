@@ -152,6 +152,11 @@ export class AgentsService implements OnModuleInit {
           scores: selectionParams.scores,
         });
       },
+      emitDelegationFn: (roomId, info) => {
+        this.logger.debug(
+          `[delegation] room=${roomId} from=${info.fromPersona} to=${info.toPersona} task="${info.task}"`,
+        );
+      },
     });
 
     // Insert delegation_tasks rows for each detected signal (P5.1 lifecycle).

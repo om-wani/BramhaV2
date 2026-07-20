@@ -36,9 +36,10 @@ export interface ParsedDelegation {
 // Regex
 // ---------------------------------------------------------------------------
 
-// Matches anywhere in the content (agents may put it on its own line anywhere).
+// Matches on the final line only — DELEGATE_TO must appear at position 0 or
+// immediately after a newline, and $ anchors to end-of-string (no /m flag).
 // Case-insensitive flag so "DELEGATE_TO: CFO" → "cfo".
-const DELEGATION_RE = /^DELEGATE_TO:\s*(\w+)\s+TASK:\s*(.+)$/im;
+const DELEGATION_RE = /(?:^|\n)DELEGATE_TO:\s*(\w+)\s+TASK:\s*(.+)$/i;
 
 // ---------------------------------------------------------------------------
 // Public API
