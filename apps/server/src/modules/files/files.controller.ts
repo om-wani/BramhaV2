@@ -28,7 +28,7 @@ export class FilesController {
   // POST /projects/:projectId/files — multipart upload
   @Post()
   @HttpCode(201)
-  @UseGuards(ProjectMemberGuard('member'))
+  @UseGuards(ProjectMemberGuard('admin'))
   async uploadFile(
     @Param('projectId') projectId: string,
     @Req() req: AuthenticatedRequest,
@@ -81,7 +81,7 @@ export class FilesController {
 
   // DELETE /projects/:projectId/files/:fileId
   @Delete(':fileId')
-  @UseGuards(ProjectMemberGuard('member'))
+  @UseGuards(ProjectMemberGuard('admin'))
   async deleteFile(
     @Param('projectId') projectId: string,
     @Param('fileId') fileId: string,
