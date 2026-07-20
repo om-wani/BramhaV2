@@ -60,6 +60,8 @@ export type EmitSelectionFn = (params: {
 // State annotation
 // ---------------------------------------------------------------------------
 
+// NB: all channels use replace-semantics (last-write-wins). This is correct for
+// a linear graph with no fan-out — each node replaces the channel wholesale.
 const TurnStateAnnotation = Annotation.Root({
   projectId: Annotation<string>(),
   roomId: Annotation<string>(),
@@ -229,6 +231,13 @@ export function createTurnGraph(
       userNodeId: state.userNodeId,
       responses: state.responses.map((r) => ({ persona: r.persona, content: r.content })),
     });
+
+    // Guard: persistFn must return one result per response
+    if (persistResults.length !== state.responses.length) {
+      throw new Error(
+        `finalize: persistFn returned ${persistResults.length} results for ${state.responses.length} responses — partial persist detected, aborting`,
+      );
+    }
 
     // Map persisted nodeIds back into responses
     const updatedResponses: AgentResponse[] = state.responses.map((r) => {

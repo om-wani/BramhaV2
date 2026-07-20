@@ -29,10 +29,11 @@ describe('invokeTurnGraph', () => {
   });
 
   it('returns responses for selected personas and calls persistFn', async () => {
-    const persistFn: PersistResponseFn = vi.fn().mockResolvedValue([
-      { persona: 'ceo', nodeId: 'node-ceo-1' },
-      { persona: 'cto', nodeId: 'node-cto-1' },
-    ]);
+    // Dynamic mock: returns one nodeId per response received (so length always matches)
+    const persistFn: PersistResponseFn = vi.fn().mockImplementation(
+      async (p: { responses: Array<{ persona: string; content: string }> }) =>
+        p.responses.map((r, i) => ({ persona: r.persona, nodeId: `node-${r.persona}-${i}` })),
+    );
     const emitStreamingFn: EmitStreamingFn = vi.fn();
     const emitSelectionFn: EmitSelectionFn = vi.fn();
 
@@ -65,13 +66,28 @@ describe('invokeTurnGraph', () => {
 
     // Should have responses (at least 1)
     expect(result.length).toBeGreaterThan(0);
-    // persistFn called exactly once
+    // persistFn called exactly once with correct payload shape
     expect(persistFn).toHaveBeenCalledTimes(1);
+    const persistCall = (persistFn as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      projectId: string;
+      userNodeId: string;
+      responses: Array<{ persona: string; content: string }>;
+    };
+    expect(persistCall.projectId).toBe('proj-1');
+    expect(persistCall.userNodeId).toBe('user-node-1');
+    expect(persistCall.responses.length).toBe(result.length);
+    for (const r of persistCall.responses) {
+      expect(r.content).toBe('Hello world');
+    }
     // streaming events emitted
     expect(emitStreamingFn).toHaveBeenCalled();
-    // selection event emitted
+    // selection event emitted with all 8 scores
     expect(emitSelectionFn).toHaveBeenCalledOnce();
-    // All responses have content
+    const selectionCall = (emitSelectionFn as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+      scores: Array<{ persona: string; score: number; selected: boolean }>;
+    };
+    expect(selectionCall.scores).toHaveLength(8);
+    // All responses have content and real nodeIds
     for (const r of result) {
       expect(r.content).toBe('Hello world');
       expect(r.nodeId).not.toBe('pending');

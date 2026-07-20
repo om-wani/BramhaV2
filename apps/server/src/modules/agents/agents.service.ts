@@ -47,7 +47,8 @@ export class AgentsService implements OnModuleInit {
       this.logger.warn('Domain embeddings not available — relevance scoring is lexical-only');
     }
 
-    // Extract last 3 agent persona slugs from thread history
+    // Extract last 3 agent persona slugs from thread history.
+    // getThreadAncestry() returns nodes oldest-to-newest; slice(-3) gives the 3 most recent.
     const recentSpeakers: PersonaSlug[] = params.thread
       .filter((n) => n.authorType === 'agent' && n.persona !== null && n.persona !== undefined)
       .slice(-3)
@@ -76,6 +77,9 @@ export class AgentsService implements OnModuleInit {
       }
 
       // Advance branch head once after all inserts, to the last agent node.
+      // Multi-persona turns produce sibling nodes (all children of userNodeId).
+      // The head pointer moves to the last inserted sibling — this is an MVP
+      // simplification; P5 delegation will need to handle the sibling case explicitly.
       // Optimistic: WHERE head_node_id = userNodeId so concurrent turns don't
       // silently overwrite each other's work. If 0 rows updated, another turn
       // already moved the head — log a warning but don't throw (nodes are safe).
