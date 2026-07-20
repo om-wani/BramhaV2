@@ -4,7 +4,7 @@
 >
 > Task IDs are stable — never renumber. Add new tasks at the end of their phase.
 
-**Current phase: P5**
+**Current phase: P6**
 
 ---
 
@@ -65,7 +65,7 @@
 - [x] P5.1 Signal parse (`DELEGATE_TO:` regex, strip line, single-hop enforcement) + delegation_tasks lifecycle
 - [x] P5.2 Delegation sub-graph: target persona respond with task + 10-node context + own retrieval; result as child of delegating node; failure path (`delegation_failed` flag, thread continues)
 - [x] P5.3 UI: indented delegated node, `↳ from {persona}` chain badge, streaming
-- [ ] P5.4 Gate check: e2e delegation beat (demo narrative beat 6)
+- [x] P5.4 Gate check: e2e delegation beat (demo narrative beat 6)
 
 ## P6 — Demo surface + ship (gate: FULL EXIT GATE — demo narrative §8 on deployed URL, non-dev, ≤15 min)
 
