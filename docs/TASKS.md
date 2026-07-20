@@ -53,8 +53,8 @@
 ## P4 — Org memory / RAG (gate: uploaded PDF answered with correct citation card)
 
 - [x] P4.1 Files module: multipart upload → UPLOADS_DIR, magic-byte MIME check, 25MB cap, list/delete, `file:status` events
-- [~] P4.2 Ingestion worker: SKIP LOCKED poller, markdown-aware chunker (~800 tok, 15% overlap), pdf/docx/txt/md/csv extractors, batch embed, chunk insert, 3-attempt failure path
-- [ ] P4.3 `searchKnowledge`: hybrid RRF query in packages/db, wired into retrieve node (replace stub), reuse turn embedding
+- [x] P4.2 Ingestion worker: SKIP LOCKED poller, markdown-aware chunker (~800 tok, 15% overlap), pdf/docx/txt/md/csv extractors, batch embed, chunk insert, 3-attempt failure path
+- [~] P4.3 `searchKnowledge`: hybrid RRF query in packages/db, wired into retrieve node (replace stub), reuse turn embedding
 - [ ] P4.4 Citation flow: inline `[Source: f #n]` parse → validate against real chunk set → metadata.citations → citation chips + excerpt popover
 - [ ] P4.5 Files UI: dropzone on project home, files page with live status + chunk side panel
 - [ ] P4.6 Artifact sandbox: detect html artifact in response → `metadata.artifact` → sandboxed iframe card (allow-scripts, null origin) + expand dialog
