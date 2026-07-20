@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
-import type { ConversationNodeDto, BranchDto } from '@bramha/shared';
-import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent } from '@bramha/shared';
+import type { ConversationNodeDto, BranchDto, PersonaScore } from '@bramha/shared';
+import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent } from '@bramha/shared';
+import { PERSONA_SLUGS } from '@bramha/shared';
 import type { PersonaSlug } from '@bramha/shared';
 
 // ---- types ----------------------------------------------------------------
@@ -50,6 +51,17 @@ const PERSONA_NAMES: Record<string, string> = {
   cso: 'Sage',
   cdao: 'Orion',
 };
+
+const PERSONA_MENTION_LIST = [
+  { slug: 'ceo', name: 'Astra', title: 'CEO' },
+  { slug: 'cto', name: 'Vulcan', title: 'CTO' },
+  { slug: 'cmo', name: 'Meridian', title: 'CMO' },
+  { slug: 'cfo', name: 'Ledger', title: 'CFO' },
+  { slug: 'coo', name: 'Lyra', title: 'COO' },
+  { slug: 'chro', name: 'Iris', title: 'CHRO' },
+  { slug: 'cso', name: 'Sage', title: 'CSO' },
+  { slug: 'cdao', name: 'Orion', title: 'CDAO' },
+] as const;
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -272,6 +284,64 @@ function StreamingCard({ slug, content }: { slug: PersonaSlug; content: string }
   );
 }
 
+// ---- council panel --------------------------------------------------------
+
+function CouncilPanel({ scores }: { scores: PersonaScore[] }) {
+  const sorted = [...scores].sort((a, b) => b.score - a.score);
+  const hasSilent = sorted.some((s) => !s.selected);
+
+  return (
+    <aside
+      aria-label="Council scores"
+      className="w-48 shrink-0 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--surface))] overflow-hidden"
+    >
+      <div className="px-3 py-2 border-b border-[hsl(var(--border))]">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--text-muted))]">
+          Council
+        </span>
+        <p className="text-[9px] text-[hsl(var(--text-muted))] mt-0.5">Last turn scores</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-1 px-1">
+        {sorted.map(({ persona, score, selected }) => {
+          const name = PERSONA_NAMES[persona] ?? persona;
+          const pct = Math.round(score * 100);
+          return (
+            <div
+              key={persona}
+              className={`flex items-center gap-2 py-1.5 rounded px-2 ${selected ? 'bg-[hsl(var(--accent)/0.1)]' : 'opacity-40'}`}
+            >
+              <div
+                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold uppercase text-[hsl(var(--canvas))] shrink-0"
+                style={{ backgroundColor: `hsl(var(--persona-${persona}))` }}
+                aria-hidden="true"
+              >
+                {persona.slice(0, 2)}
+              </div>
+              <span className="text-xs flex-1 min-w-0 truncate text-[hsl(var(--text-primary))]">
+                {name}
+              </span>
+              {selected ? (
+                <span className="text-[10px] font-medium text-[hsl(var(--accent))]">{pct}%</span>
+              ) : (
+                <span className="text-[10px] text-[hsl(var(--text-muted))]">$0</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {hasSilent && (
+        <div className="p-2 border-t border-[hsl(var(--border))]">
+          <p className="text-[9px] text-[hsl(var(--text-muted))] px-2 py-1">
+            Silent agents cost nothing
+          </p>
+        </div>
+      )}
+    </aside>
+  );
+}
+
 // ---- create branch dialog -------------------------------------------------
 
 function CreateBranchDialog({
@@ -435,6 +505,11 @@ export default function RoomPage() {
   const [showDialog, setShowDialog] = useState(false);
   // Map from pending nodeId ('pending-ceo') to accumulated text
   const [streamingNodes, setStreamingNodes] = useState<Map<string, string>>(new Map());
+  // Council panel scores from turn:selection
+  const [personaScores, setPersonaScores] = useState<PersonaScore[]>([]);
+  // @mention popover state
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeBranchIdRef = useRef<string | null>(null);
@@ -571,13 +646,19 @@ export default function RoomPage() {
       });
     };
 
+    const handleTurnSelection = (event: TurnSelectionEvent) => {
+      setPersonaScores(event.scores);
+    };
+
     socket.on('node:created', handleNodeCreated);
     socket.on('node:delta', handleNodeDelta);
     socket.on('node:error', handleNodeError);
+    socket.on('turn:selection', handleTurnSelection);
     return () => {
       socket.off('node:created', handleNodeCreated);
       socket.off('node:delta', handleNodeDelta);
       socket.off('node:error', handleNodeError);
+      socket.off('turn:selection', handleTurnSelection);
     };
   }, [projectId, roomId, qc]);
 
@@ -620,6 +701,23 @@ export default function RoomPage() {
     [qc, projectId, roomId],
   );
 
+  // ---- @mention popover ---------------------------------------------------
+
+  const filteredMentions = mentionQuery !== null
+    ? PERSONA_MENTION_LIST.filter(
+        (p) =>
+          p.name.toLowerCase().startsWith(mentionQuery.toLowerCase()) ||
+          p.slug.toLowerCase().startsWith(mentionQuery.toLowerCase()) ||
+          p.title.toLowerCase().startsWith(mentionQuery.toLowerCase()),
+      )
+    : [];
+
+  const insertMention = useCallback((slug: string) => {
+    setDraft((prev) => prev.replace(/@\w*$/, `@${slug} `));
+    setMentionQuery(null);
+    textareaRef.current?.focus();
+  }, []);
+
   // ---- send ---------------------------------------------------------------
 
   const handleSend = useCallback(async () => {
@@ -644,6 +742,31 @@ export default function RoomPage() {
   }, [draft, projectId, roomId, activeBranch]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Escape always closes the mention popover, even when there are no matches
+    if (e.key === 'Escape' && mentionQuery !== null) {
+      setMentionQuery(null);
+      return;
+    }
+    if (mentionQuery !== null && filteredMentions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((i) => Math.min(i + 1, filteredMentions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const p = filteredMentions[mentionIndex];
+        if (p) {
+          e.preventDefault();
+          insertMention(p.slug);
+          return;
+        }
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void handleSend();
@@ -696,8 +819,13 @@ export default function RoomPage() {
         )}
       </header>
 
-      {/* Body: branch rail + thread */}
+      {/* Body: council panel + thread + branch rail */}
       <div className="flex flex-1 min-h-0">
+        {/* Council panel — left sidebar, council rooms only */}
+        {room?.kind === 'council' && personaScores.length > 0 && (
+          <CouncilPanel scores={personaScores} />
+        )}
+
         {/* Branch rail */}
         {!resolving && branches.length > 0 && (
           <BranchRail
@@ -744,7 +872,9 @@ export default function RoomPage() {
 
             {/* Streaming agent responses — appear before finalize persists them */}
             {Array.from(streamingNodes.entries()).map(([pendingId, content]) => {
-              const slug = pendingId.replace('pending-', '') as PersonaSlug;
+              const extracted = pendingId.startsWith('pending-') ? pendingId.slice('pending-'.length) : null;
+              const slug = (PERSONA_SLUGS as readonly string[]).includes(extracted ?? '') ? (extracted as PersonaSlug) : null;
+              if (!slug) return null;
               return (
                 <StreamingCard key={pendingId} slug={slug} content={content} />
               );
@@ -758,13 +888,40 @@ export default function RoomPage() {
             {sendError && (
               <p className="text-red-400 text-xs mb-2">{sendError}</p>
             )}
-            <div className="flex gap-3 items-end">
+            <div className="relative flex gap-3 items-end">
+              {/* @mention popover */}
+              {mentionQuery !== null && filteredMentions.length > 0 && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto z-10">
+                  {filteredMentions.map((p, i) => (
+                    <button
+                      key={p.slug}
+                      type="button"
+                      onClick={() => insertMention(p.slug)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-[hsl(var(--canvas))] ${i === mentionIndex ? 'bg-[hsl(var(--canvas))]' : ''}`}
+                    >
+                      <span className="text-xs font-bold uppercase text-[hsl(var(--text-muted))] w-10">{p.slug}</span>
+                      <span className="text-sm text-[hsl(var(--text-primary))]">{p.name}</span>
+                      <span className="text-xs text-[hsl(var(--text-muted))] ml-auto">{p.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={textareaRef}
                 aria-label="Message"
-                placeholder="Message the council… (Enter to send, Shift+Enter for newline)"
+                placeholder="Message the council… (Enter to send, Shift+Enter for newline, @ to mention)"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  const newText = e.target.value;
+                  setDraft(newText);
+                  const match = newText.match(/@(\w*)$/);
+                  if (match) {
+                    setMentionQuery(match[1] ?? '');
+                    setMentionIndex(0);
+                  } else {
+                    setMentionQuery(null);
+                  }
+                }}
                 onKeyDown={handleKeyDown}
                 disabled={sending || !projectId || !activeBranch}
                 rows={1}
