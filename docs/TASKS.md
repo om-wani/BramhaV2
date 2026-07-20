@@ -71,7 +71,7 @@
 
 - [x] P6.1 PA lite: open-loop capture in finalize, 30-min scanner, 24h stale + 4h rate cap + 1:1-only conditions, `metadata.proactive` badge
 - [x] P6.2 `pnpm seed:demo`: account, org Northwind, project Q3 Strategy, ready market-research.pdf, backdated open loop in Vulcan 1:1
-- [ ] P6.3 Landing page + polish pass (motion, empty states, skeletons, no-layout-shift streaming)
+- [x] P6.3 Landing page + polish pass (motion, empty states, skeletons, no-layout-shift streaming)
 - [ ] P6.4 `check-env --strict` + prod hardening pass (headers verified, CSP report-only spot check)
 - [ ] P6.5 Deploy: VPS + Caddy + managed Postgres (pgvector), systemd units, deploy runbook in docs/
 - [ ] P6.6 Golden-path Playwright spec (demo beats 1–6)

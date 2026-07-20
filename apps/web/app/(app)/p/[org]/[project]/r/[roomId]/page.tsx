@@ -218,7 +218,7 @@ function MessageCard({
   const isProactive = node.authorType === 'agent' && node.metadata?.proactive === true;
 
   return (
-    <article className={`relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors${delegatedFrom ? ' ml-8 border-l-2 border-[hsl(var(--accent)/0.25)]' : ''}`}>
+    <article className={`relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors transition-opacity duration-150${delegatedFrom ? ' ml-8 border-l-2 border-[hsl(var(--accent)/0.25)]' : ''}`}>
       <button
         onClick={() => onBranchFrom(node.id)}
         className="absolute top-3 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--accent))] bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded px-2 py-0.5 whitespace-nowrap"
@@ -380,7 +380,7 @@ function StreamingCard({ slug, content }: { slug: PersonaSlug; content: string }
   const avatarColor = `hsl(var(--persona-${slug}))`;
 
   return (
-    <article className="flex gap-3 px-6 py-4 opacity-90">
+    <article className="flex gap-3 px-6 py-4 opacity-90 transition-opacity duration-150">
       <div
         aria-hidden="true"
         className="w-8 h-8 rounded-full shrink-0 mt-0.5 flex items-center justify-center text-xs font-bold text-[hsl(var(--canvas))]"
@@ -993,11 +993,10 @@ export default function RoomPage() {
               </div>
             )}
 
-            {!error && !loading && nodes.length === 0 && (
-              <div className="px-6 py-16 text-center">
-                <p className="text-[hsl(var(--text-muted))] text-sm">
-                  No messages yet. Start the conversation below.
-                </p>
+            {nodes.length === 0 && streamingNodes.size === 0 && !loading && !error && (
+              <div className="flex flex-col items-center justify-center flex-1 gap-3 text-[hsl(var(--text-muted))]">
+                <span className="text-4xl" aria-hidden="true">💬</span>
+                <p className="text-sm">Start the conversation — your C-suite is listening.</p>
               </div>
             )}
 
