@@ -46,7 +46,7 @@
 - [x] P3.2 Relevance engine: mention/expertise/lexical/fatigue scoring, threshold .35, cap 4, top-1 fallback, 1:1 skip; domain embeddings cached at bootstrap; ONE embed per turn
 - [x] P3.3 LangGraph turn graph: select → retrieve(stub []) → respond (sequential, peers-see-peers) → delegate?(stub) → finalize; MemorySaver; persist-only-in-finalize
 - [x] P3.4 Prompt builder: persona system prompt, council context, `<untrusted_context>` wrapper + tag-strip, citation instruction
-- [ ] P3.5 Streaming pipeline: `node:delta` seq events → gateway → web typewriter render; `node:error` discard path
+- [x] P3.5 Streaming pipeline: `node:delta` seq events → gateway → web typewriter render; `node:error` discard path
 - [ ] P3.6 Council panel UI: 8 live scores from `turn:selection`, dimmed silent, "silent = $0" footer; `@` mention popover in composer
 - [ ] P3.7 Gate check: finance-question test — CFO+CEO respond, others zero rows in model_calls; @mention override test
 
