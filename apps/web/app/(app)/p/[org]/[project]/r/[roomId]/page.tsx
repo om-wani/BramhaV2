@@ -210,8 +210,13 @@ function MessageCard({
       ? (node.metadata.citations as ValidatedCitation[])
       : [];
 
+  const delegatedFrom =
+    node.authorType === 'agent' && typeof node.metadata?.delegatedFrom === 'string'
+      ? node.metadata.delegatedFrom
+      : null;
+
   return (
-    <article className="relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors">
+    <article className={`relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors${delegatedFrom ? ' ml-8 border-l-2 border-[hsl(var(--accent)/0.25)]' : ''}`}>
       <button
         onClick={() => onBranchFrom(node.id)}
         className="absolute top-3 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--accent))] bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded px-2 py-0.5 whitespace-nowrap"
@@ -237,6 +242,11 @@ function MessageCard({
           >
             {relativeTime(node.createdAt)}
           </time>
+          {delegatedFrom && (
+            <span className="text-[10px] text-[hsl(var(--text-muted))] bg-[hsl(var(--surface-raised))] px-1.5 py-0.5 rounded border border-[hsl(var(--border))]">
+              ↳ from {getPersonaName(delegatedFrom)}
+            </span>
+          )}
         </div>
         <pre className="text-sm text-[hsl(var(--text-primary))] whitespace-pre-wrap break-words font-sans leading-relaxed">
           {node.content}
