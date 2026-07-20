@@ -16,6 +16,7 @@ import type { PersonaConfig } from './personas/index.js';
 import { buildSystemPrompt } from './prompt-builder.js';
 import { parseCitations, validateCitations } from './citation-parser.js';
 import { detectArtifact } from './artifact-detector.js';
+import { parseDelegationSignal, type PendingDelegation } from './delegation-parser.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -63,6 +64,12 @@ export type SearchFn = (
   k?: number,
 ) => Promise<KnowledgeChunk[]>;
 
+/** Injected callback for notifying the caller about delegation signals detected in responses. */
+export type EmitDelegationFn = (
+  roomId: string,
+  info: { fromPersona: PersonaSlug; toPersona: PersonaSlug; task: string },
+) => void;
+
 // ---------------------------------------------------------------------------
 // State annotation
 // ---------------------------------------------------------------------------
@@ -88,6 +95,10 @@ const TurnStateAnnotation = Annotation.Root({
   isDelegated: Annotation<boolean>(),
   // Injected RAG search callback — avoids @bramha/db import in this package
   searchFn: Annotation<SearchFn>(),
+  // P5: delegation signals found in responses; consumed by AgentsService to insert delegation_tasks rows
+  pendingDelegations: Annotation<PendingDelegation[]>(),
+  // P5: optional callback injected by AgentsService to react to delegation signals during delegateNode
+  emitDelegationFn: Annotation<EmitDelegationFn | undefined>(),
 });
 
 type TurnState = typeof TurnStateAnnotation.State;
@@ -239,11 +250,67 @@ export function createTurnGraph(
   }
 
   // -------------------------------------------------------------------------
-  // delegate? node: stub — real impl in P5 (returns {} = no state change)
+  // delegate? node: detect DELEGATE_TO signals, strip from content, emit
+  // Single-hop enforcement: if state.isDelegated === true, skip (already in
+  // a delegated sub-graph, so further delegation is suppressed).
   // -------------------------------------------------------------------------
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function delegateNode(_state: TurnState): Partial<TurnState> {
-    return {};
+  function delegateNode(state: TurnState): Partial<TurnState> {
+    // Single-hop guard: delegated prompts cannot themselves delegate
+    if (state.isDelegated) return {};
+
+    const found: Array<{
+      responseIndex: number;
+      fromSlug: PersonaSlug;
+      toSlug: PersonaSlug;
+      task: string;
+      strippedContent: string;
+    }> = [];
+
+    for (let i = 0; i < state.responses.length; i++) {
+      const response = state.responses[i];
+      if (!response) continue;
+      const result = parseDelegationSignal(response.content);
+      if (result) {
+        found.push({
+          responseIndex: i,
+          fromSlug: response.persona,
+          toSlug: result.signal.toSlug,
+          task: result.signal.task,
+          strippedContent: result.strippedContent,
+        });
+      }
+    }
+
+    if (found.length === 0) return {};
+
+    // Strip delegation signal lines from response content
+    const updatedResponses = state.responses.map((r, i) => {
+      const d = found.find((f) => f.responseIndex === i);
+      if (!d) return r;
+      return { ...r, content: d.strippedContent };
+    });
+
+    // Notify via injected callback (if provided)
+    if (state.emitDelegationFn !== undefined) {
+      for (const d of found) {
+        state.emitDelegationFn(state.roomId, {
+          fromPersona: d.fromSlug,
+          toPersona: d.toSlug,
+          task: d.task,
+        });
+      }
+    }
+
+    const pendingDelegations: PendingDelegation[] = found.map((d) => ({
+      fromSlug: d.fromSlug,
+      toSlug: d.toSlug,
+      task: d.task,
+    }));
+
+    return {
+      responses: updatedResponses,
+      pendingDelegations,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -324,13 +391,20 @@ export interface TurnGraphParams {
   boundPersona?: PersonaSlug;
   recentSpeakers: PersonaSlug[];
   domainEmbeddings: Map<string, number[]>;
+  isDelegated?: boolean;
   persistFn: PersistResponseFn;
   emitStreamingFn: EmitStreamingFn;
   emitSelectionFn: EmitSelectionFn;
+  emitDelegationFn?: EmitDelegationFn;
   searchFn: SearchFn;
 }
 
-export async function invokeTurnGraph(params: TurnGraphParams): Promise<AgentResponse[]> {
+export interface TurnGraphResult {
+  responses: AgentResponse[];
+  pendingDelegations: PendingDelegation[];
+}
+
+export async function invokeTurnGraph(params: TurnGraphParams): Promise<TurnGraphResult> {
   const graph = createTurnGraph(params.persistFn, params.emitStreamingFn, params.emitSelectionFn);
   const threadId = `${params.roomId}:${params.branchId}`;
 
@@ -348,17 +422,24 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<AgentRes
     domainEmbeddings: params.domainEmbeddings,
     recentSpeakers: params.recentSpeakers,
     roomKind: params.roomKind,
-    isDelegated: false, // P5 sub-graph will pass true for delegated prompts
+    isDelegated: params.isDelegated ?? false,
     searchFn: params.searchFn,
+    pendingDelegations: [],
   };
 
   if (params.boundPersona !== undefined) {
     initialState['boundPersona'] = params.boundPersona;
   }
 
-   
+  if (params.emitDelegationFn !== undefined) {
+    initialState['emitDelegationFn'] = params.emitDelegationFn;
+  }
+
+
   const result = await graph.invoke(initialState, { configurable: { thread_id: threadId } });
 
-   
-  return result.responses as AgentResponse[];
+  return {
+    responses: result.responses as AgentResponse[],
+    pendingDelegations: (result.pendingDelegations ?? []) as PendingDelegation[],
+  };
 }

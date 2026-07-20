@@ -7,7 +7,7 @@ import {
   type AgentResponse,
   type PersistResponseFn,
 } from '@bramha/agents';
-import { getDb, conversationNodes, branches, searchKnowledge } from '@bramha/db';
+import { getDb, conversationNodes, branches, delegationTasks, searchKnowledge } from '@bramha/db';
 import { eq, and } from 'drizzle-orm';
 import { eventBus } from '@bramha/event-bus';
 import type { ConversationNodeRow } from '@bramha/db';
@@ -119,7 +119,7 @@ export class AgentsService implements OnModuleInit {
       return results;
     };
 
-    return invokeTurnGraph({
+    const { responses, pendingDelegations } = await invokeTurnGraph({
       projectId: params.projectId,
       roomId: params.roomId,
       branchId: params.branchId,
@@ -153,5 +153,27 @@ export class AgentsService implements OnModuleInit {
         });
       },
     });
+
+    // Insert delegation_tasks rows for each detected signal (P5.1 lifecycle).
+    // P5.2 will pick these up and execute the sub-graph.
+    if (pendingDelegations.length > 0) {
+      const db = await getDb();
+      for (const delegation of pendingDelegations) {
+        await db.insert(delegationTasks).values({
+          roomId: params.roomId,
+          projectId: params.projectId,
+          sourceNodeId: params.userNodeId,
+          fromPersona: delegation.fromSlug,
+          toPersona: delegation.toSlug,
+          task: delegation.task,
+          status: 'pending',
+        });
+      }
+      this.logger.log(
+        `Inserted ${pendingDelegations.length} delegation_tasks row(s) for room ${params.roomId}`,
+      );
+    }
+
+    return responses;
   }
 }

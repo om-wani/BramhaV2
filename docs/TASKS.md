@@ -62,7 +62,7 @@
 
 ## P5 — Delegation (gate: delegation demo beat end-to-end)
 
-- [ ] P5.1 Signal parse (`DELEGATE_TO:` regex, strip line, single-hop enforcement) + delegation_tasks lifecycle
+- [x] P5.1 Signal parse (`DELEGATE_TO:` regex, strip line, single-hop enforcement) + delegation_tasks lifecycle
 - [ ] P5.2 Delegation sub-graph: target persona respond with task + 10-node context + own retrieval; result as child of delegating node; failure path (`delegation_failed` flag, thread continues)
 - [ ] P5.3 UI: indented delegated node, `↳ from {persona}` chain badge, streaming
 - [ ] P5.4 Gate check: e2e delegation beat (demo narrative beat 6)

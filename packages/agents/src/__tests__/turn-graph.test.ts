@@ -65,8 +65,10 @@ describe('invokeTurnGraph', () => {
       searchFn: vi.fn().mockResolvedValue([]),
     });
 
+    const { responses } = result;
+
     // Should have responses (at least 1)
-    expect(result.length).toBeGreaterThan(0);
+    expect(responses.length).toBeGreaterThan(0);
     // persistFn called exactly once with correct payload shape
     expect(persistFn).toHaveBeenCalledTimes(1);
     const persistCall = (persistFn as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
@@ -76,7 +78,7 @@ describe('invokeTurnGraph', () => {
     };
     expect(persistCall.projectId).toBe('proj-1');
     expect(persistCall.userNodeId).toBe('user-node-1');
-    expect(persistCall.responses.length).toBe(result.length);
+    expect(persistCall.responses.length).toBe(responses.length);
     for (const r of persistCall.responses) {
       expect(r.content).toBe('Hello world');
     }
@@ -89,7 +91,7 @@ describe('invokeTurnGraph', () => {
     };
     expect(selectionCall.scores).toHaveLength(8);
     // All responses have content and real nodeIds
-    for (const r of result) {
+    for (const r of responses) {
       expect(r.content).toBe('Hello world');
       expect(r.nodeId).not.toBe('pending');
     }
@@ -140,7 +142,7 @@ describe('invokeTurnGraph', () => {
     });
 
     // Top-1 fallback: exactly 1 response
-    expect(result.length).toBe(1);
+    expect(result.responses.length).toBe(1);
     expect(persistFn).toHaveBeenCalledTimes(1);
   });
 });
