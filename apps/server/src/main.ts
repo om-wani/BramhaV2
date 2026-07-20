@@ -5,6 +5,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyCors from '@fastify/cors';
 import fastifyCookie from '@fastify/cookie';
+import fastifyMultipart from '@fastify/multipart';
 import { AppModule } from './app.module.js';
 import { ZodValidationPipe } from './common/pipes/zod-validation.pipe.js';
 import { ProblemJsonExceptionFilter } from './common/filters/problem-json.filter.js';
@@ -25,6 +26,9 @@ async function bootstrap() {
 
   // Cookie parsing (no secret — using SHA-256 token hash, not signed cookies)
   await app.register(fastifyCookie);
+
+  // Multipart file upload support (26 MB hard limit — service enforces 25 MB)
+  await app.register(fastifyMultipart, { limits: { fileSize: 26 * 1024 * 1024 } });
 
   // CORS: exact-origin allowlist from APP_ORIGIN env
   const appOrigin = process.env['APP_ORIGIN'];

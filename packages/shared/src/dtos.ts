@@ -43,6 +43,20 @@ export interface BranchDto {
   createdAt: string;
 }
 
+// File DTO — used by files module list/upload responses
+export interface FileDto {
+  id: string;
+  projectId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: FileStatus;
+  chunkCount: number | null;
+  errorMsg: string | null;
+  createdAt: string; // ISO
+  createdBy: string;
+}
+
 // Persona relevance score (emitted in turn:selection)
 // WS-level summary score — web client only needs these 3 fields for the council panel
 export interface PersonaScore {
