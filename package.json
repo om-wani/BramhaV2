@@ -7,7 +7,8 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "db:migrate": "pnpm --filter @bramha/db db:migrate"
+    "db:migrate": "pnpm --filter @bramha/db db:migrate",
+    "seed:demo": "pnpm --filter @bramha/server seed:demo"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
