@@ -161,16 +161,24 @@ export class ProactiveService implements OnModuleInit, OnModuleDestroy {
           if (!node) throw new Error('proactive node insert failed');
           results.push({ persona: response.persona, nodeId: node.id });
 
-          // Advance branch head
-          await db2
+          // Advance branch head (optimistic CAS: only if head hasn't moved)
+          const headUpdated = await db2
             .update(branches)
             .set({ headNodeId: node.id })
             .where(
               and(
                 eq(branches.id, persistParams.branchId),
                 eq(branches.projectId, persistParams.projectId),
+                eq(branches.headNodeId, persistParams.userNodeId), // CAS
               ),
+            )
+            .returning();
+
+          if (headUpdated.length === 0) {
+            this.logger.warn(
+              `[pa-lite] Branch head conflict on branch ${persistParams.branchId} — concurrent turn moved head`,
             );
+          }
 
           eventBus.emit({
             type: 'node.created',

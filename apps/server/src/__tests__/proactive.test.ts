@@ -191,18 +191,44 @@ describe('ProactiveService.scan()', () => {
       // branch query
       .mockReturnValueOnce(buildSelectChain([{ id: 'branch-1', headNodeId: 'head-node-1' }]));
 
-    // invokeTurnGraph resolves (persist callback not exercised in this test)
-    mockInvokeTurnGraph.mockResolvedValueOnce({ responses: [], pendingDelegations: [] });
+    // invokeTurnGraph — exercise persistFn so proactivePersistFn is covered
+    const capturedInserts: Array<Record<string, unknown>> = [];
+    mockDb.insert.mockReturnValue({
+      values: (vals: Record<string, unknown>) => {
+        capturedInserts.push(vals);
+        return {
+          returning: () =>
+            Promise.resolve([{ id: 'proactive-node-001', roomId: 'room-1', persona: 'cto' }]),
+        };
+      },
+    });
 
-    // update call (workingMemory update)
+    // update call — first calls come from branch head advance (with .returning()), last from workingMemory update
     const capturedSets: Array<Record<string, unknown>> = [];
     mockDb.update.mockReturnValue({
       set: (vals: Record<string, unknown>) => ({
         where: () => {
           capturedSets.push(vals);
-          return Promise.resolve([]);
+          // Return a thenable AND expose .returning() for the CAS branch-head update
+          const result = Promise.resolve([{ id: 'branch-1' }]);
+          return Object.assign(result, {
+            returning: () => Promise.resolve([{ id: 'branch-1' }]),
+          });
         },
       }),
+    });
+
+    mockInvokeTurnGraph.mockImplementationOnce(async (params: Record<string, unknown>) => {
+      // Call the injected persistFn so proactivePersistFn is exercised
+      const persistFn = params['persistFn'] as (p: Record<string, unknown>) => Promise<unknown>;
+      await persistFn({
+        projectId: params['projectId'],
+        roomId: params['roomId'],
+        branchId: params['branchId'],
+        userNodeId: params['userNodeId'],
+        responses: [{ persona: 'cto', content: 'Follow-up content.', metadata: {} }],
+      });
+      return { responses: [{ persona: 'cto', nodeId: 'proactive-node-001', content: 'Follow-up content.' }], pendingDelegations: [] };
     });
 
     await service.scan();
@@ -213,9 +239,15 @@ describe('ProactiveService.scan()', () => {
     expect(callArg?.['roomKind']).toBe('one_on_one');
     expect((callArg?.['userMessage'] as string)).toContain('Next step is to review the budget');
 
+    // Assert that the inserted node had metadata.proactive === true
+    expect(capturedInserts).toHaveLength(1);
+    const insertedNode = capturedInserts[0] as { metadata: Record<string, unknown> };
+    expect(insertedNode?.metadata).toEqual(expect.objectContaining({ proactive: true }));
+
     // The working_memory update should have the loop removed and lastProactiveAt set
-    expect(capturedSets).toHaveLength(1);
-    const updatedWm = capturedSets[0]?.['workingMemory'] as {
+    const wmSet = capturedSets.find((s) => s['workingMemory'] !== undefined);
+    expect(wmSet).toBeDefined();
+    const updatedWm = wmSet?.['workingMemory'] as {
       open_loops: unknown[];
       lastProactiveAt?: string;
     };
