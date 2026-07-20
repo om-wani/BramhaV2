@@ -7,7 +7,7 @@ import {
   type AgentResponse,
   type PersistResponseFn,
 } from '@bramha/agents';
-import { getDb, conversationNodes, branches } from '@bramha/db';
+import { getDb, conversationNodes, branches, searchKnowledge } from '@bramha/db';
 import { eq, and } from 'drizzle-orm';
 import { eventBus } from '@bramha/event-bus';
 import type { ConversationNodeRow } from '@bramha/db';
@@ -130,6 +130,8 @@ export class AgentsService implements OnModuleInit {
       recentSpeakers,
       domainEmbeddings: this.domainEmbeddings,
       persistFn,
+      searchFn: (projectId, embedding, query, k) =>
+        searchKnowledge(projectId, embedding, query, k),
       emitStreamingFn: (streamParams) => {
         eventBus.emit({
           type: 'node.streaming',

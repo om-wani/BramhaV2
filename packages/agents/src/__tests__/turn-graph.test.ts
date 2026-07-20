@@ -62,6 +62,7 @@ describe('invokeTurnGraph', () => {
       persistFn,
       emitStreamingFn,
       emitSelectionFn,
+      searchFn: vi.fn().mockResolvedValue([]),
     });
 
     // Should have responses (at least 1)
@@ -135,6 +136,7 @@ describe('invokeTurnGraph', () => {
       persistFn,
       emitStreamingFn,
       emitSelectionFn,
+      searchFn: vi.fn().mockResolvedValue([]),
     });
 
     // Top-1 fallback: exactly 1 response

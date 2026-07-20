@@ -1,5 +1,5 @@
 import type { PersonaConfig } from './personas/index.js';
-import type { KnowledgeChunk } from './turn-graph.js';
+import type { KnowledgeChunk } from '@bramha/shared';
 
 export interface PromptBuilderInput {
   persona: PersonaConfig;

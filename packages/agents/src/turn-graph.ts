@@ -8,7 +8,7 @@
  */
 
 import { Annotation, StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
-import type { PersonaSlug } from '@bramha/shared';
+import type { PersonaSlug, KnowledgeChunk } from '@bramha/shared';
 import { PERSONAS, scorePersonas } from './index.js';
 import { getModelRouter } from './model-router.js';
 import type { PersonaScore } from './relevance.js';
@@ -19,12 +19,7 @@ import { buildSystemPrompt } from './prompt-builder.js';
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface KnowledgeChunk {
-  chunkId: string;
-  filename: string;
-  chunkIndex: number;
-  content: string;
-}
+export type { KnowledgeChunk } from '@bramha/shared';
 
 export interface AgentResponse {
   persona: PersonaSlug;
@@ -58,6 +53,14 @@ export type EmitSelectionFn = (params: {
   scores: Array<{ persona: PersonaSlug; score: number; selected: boolean }>;
 }) => void;
 
+/** Injected callback for hybrid RAG search — avoids @bramha/db import in this package. */
+export type SearchFn = (
+  projectId: string,
+  embedding: number[],
+  query: string,
+  k?: number,
+) => Promise<KnowledgeChunk[]>;
+
 // ---------------------------------------------------------------------------
 // State annotation
 // ---------------------------------------------------------------------------
@@ -81,6 +84,8 @@ const TurnStateAnnotation = Annotation.Root({
   boundPersona: Annotation<PersonaSlug | undefined>(),
   // P5 delegation sets this to true so respondNode omits the DELEGATE_TO instruction
   isDelegated: Annotation<boolean>(),
+  // Injected RAG search callback — avoids @bramha/db import in this package
+  searchFn: Annotation<SearchFn>(),
 });
 
 type TurnState = typeof TurnStateAnnotation.State;
@@ -147,10 +152,17 @@ export function createTurnGraph(
   }
 
   // -------------------------------------------------------------------------
-  // retrieve node: stub — real impl in P4
+  // retrieve node: hybrid RRF knowledge retrieval (P4.3)
+  // Reuses messageEmbedding computed in selectNode — no extra embed call.
   // -------------------------------------------------------------------------
-  function retrieveNode(): Partial<TurnState> {
-    return { chunks: [] };
+  async function retrieveNode(state: TurnState): Promise<Partial<TurnState>> {
+    const chunks = await state.searchFn(
+      state.projectId,
+      state.messageEmbedding,
+      state.userMessage,
+      6,
+    );
+    return { chunks };
   }
 
   // -------------------------------------------------------------------------
@@ -301,6 +313,7 @@ export interface TurnGraphParams {
   persistFn: PersistResponseFn;
   emitStreamingFn: EmitStreamingFn;
   emitSelectionFn: EmitSelectionFn;
+  searchFn: SearchFn;
 }
 
 export async function invokeTurnGraph(params: TurnGraphParams): Promise<AgentResponse[]> {
@@ -322,6 +335,7 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<AgentRes
     recentSpeakers: params.recentSpeakers,
     roomKind: params.roomKind,
     isDelegated: false, // P5 sub-graph will pass true for delegated prompts
+    searchFn: params.searchFn,
   };
 
   if (params.boundPersona !== undefined) {

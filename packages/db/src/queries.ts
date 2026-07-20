@@ -10,6 +10,7 @@
 
 import { sql } from 'drizzle-orm';
 import { getDb } from './client.js';
+import type { KnowledgeChunk } from '@bramha/shared';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +33,7 @@ export interface ConversationNodeRow {
 export interface IngestionJobRow {
   id: string;
   fileId: string;
+  projectId: string;
   status: string;
   attempt: number;
   errorMsg: string | null;
@@ -40,13 +42,7 @@ export interface IngestionJobRow {
   finishedAt: Date | null;
 }
 
-export interface KnowledgeChunk {
-  id: string;
-  content: string;
-  chunkIndex: number;
-  filename: string;
-  score: number;
-}
+export type { KnowledgeChunk } from '@bramha/shared';
 
 // ---------------------------------------------------------------------------
 // Helper: extract rows from a drizzle execute result.
@@ -140,11 +136,12 @@ export async function claimIngestionJob(): Promise<IngestionJobRow | null> {
     UPDATE ingestion_jobs
     SET status = 'running',
         started_at = now(),
+        updated_at = now(),
         attempt = attempt + 1
     WHERE id = (
       SELECT id
       FROM ingestion_jobs
-      WHERE status = 'queued'
+      WHERE status = 'pending' AND attempt < 3
       ORDER BY queued_at
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -152,6 +149,7 @@ export async function claimIngestionJob(): Promise<IngestionJobRow | null> {
     RETURNING
       id,
       file_id,
+      project_id,
       status,
       attempt,
       error_msg,
@@ -169,6 +167,7 @@ export async function claimIngestionJob(): Promise<IngestionJobRow | null> {
   return {
     id: row['id'] as string,
     fileId: row['file_id'] as string,
+    projectId: row['project_id'] as string,
     status: row['status'] as string,
     attempt: row['attempt'] as number,
     errorMsg: (row['error_msg'] as string | null | undefined) ?? null,
@@ -180,20 +179,92 @@ export async function claimIngestionJob(): Promise<IngestionJobRow | null> {
 
 // ---------------------------------------------------------------------------
 // searchKnowledge
-// Hybrid RRF search (stub until P4.3).
+// Hybrid RRF (Reciprocal Rank Fusion) search over file_chunks.
+// Combines pgvector cosine similarity (HNSW index) with tsvector full-text
+// search (GIN index) via RRF k=60 fusion formula.
+//
+// Signature: (projectId, queryEmbedding, queryText, k)
+// - queryEmbedding: already computed embedding for the user message (reused from select node)
+// - queryText: raw user message text (for websearch_to_tsquery)
 // ---------------------------------------------------------------------------
 
 export async function searchKnowledge(
   projectId: string,
-  queryText: string,
   queryEmbedding: number[],
+  queryText: string,
   k = 6,
 ): Promise<KnowledgeChunk[]> {
-  // Stubbed — implemented in P4.3 (RAG phase).
-  // The full query is documented in docs/02_mvp_data_model.md §4.
-  void projectId;
-  void queryText;
-  void queryEmbedding;
-  void k;
-  return [];
+  // If no embedding provided, return empty (nothing to search against).
+  if (queryEmbedding.length === 0) return [];
+
+  const db = await getDb();
+
+  // Serialize embedding as a PostgreSQL vector literal e.g. '[0.1,0.2,...]'
+  const embeddingLiteral = `[${queryEmbedding.join(',')}]`;
+
+  const result: unknown = await db.execute(sql`
+    WITH
+      vector_ranked AS (
+        SELECT
+          fc.id,
+          fc.file_id,
+          fc.chunk_index,
+          fc.content,
+          fc.token_count,
+          f.filename,
+          ROW_NUMBER() OVER (
+            ORDER BY fc.embedding <=> ${sql.raw(`'${embeddingLiteral}'::vector`)}
+          ) AS rank
+        FROM file_chunks fc
+        JOIN files f ON f.id = fc.file_id
+        WHERE fc.project_id = ${projectId}
+          AND fc.embedding IS NOT NULL
+        ORDER BY fc.embedding <=> ${sql.raw(`'${embeddingLiteral}'::vector`)}
+        LIMIT 20
+      ),
+      text_ranked AS (
+        SELECT
+          fc.id,
+          fc.file_id,
+          fc.chunk_index,
+          fc.content,
+          fc.token_count,
+          f.filename,
+          ROW_NUMBER() OVER (
+            ORDER BY ts_rank(fc.tsv, websearch_to_tsquery('english', ${queryText})) DESC
+          ) AS rank
+        FROM file_chunks fc
+        JOIN files f ON f.id = fc.file_id
+        WHERE fc.project_id = ${projectId}
+          AND fc.tsv @@ websearch_to_tsquery('english', ${queryText})
+        LIMIT 20
+      ),
+      combined AS (
+        SELECT
+          COALESCE(v.id, t.id) AS id,
+          COALESCE(v.file_id, t.file_id) AS file_id,
+          COALESCE(v.chunk_index, t.chunk_index) AS chunk_index,
+          COALESCE(v.content, t.content) AS content,
+          COALESCE(v.token_count, t.token_count) AS token_count,
+          COALESCE(v.filename, t.filename) AS filename,
+          (
+            COALESCE(1.0 / (60 + v.rank), 0.0) +
+            COALESCE(1.0 / (60 + t.rank), 0.0)
+          ) AS rrf_score
+        FROM vector_ranked v
+        FULL OUTER JOIN text_ranked t ON v.id = t.id
+      )
+    SELECT * FROM combined
+    ORDER BY rrf_score DESC
+    LIMIT ${k}
+  `);
+
+  return extractRows(result).map((row) => ({
+    id: row['id'] as string,
+    fileId: row['file_id'] as string,
+    chunkIndex: row['chunk_index'] as number,
+    content: row['content'] as string,
+    filename: row['filename'] as string,
+    score: row['rrf_score'] as number,
+  }));
 }

@@ -64,3 +64,13 @@ export interface PersonaScore {
   score: number;
   selected: boolean;
 }
+
+// Knowledge chunk returned by hybrid RRF search (P4.3)
+export interface KnowledgeChunk {
+  id: string;
+  fileId: string;
+  chunkIndex: number;
+  content: string;
+  filename: string;
+  score: number; // RRF fused score
+}

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt } from '../prompt-builder.js';
 import type { PromptBuilderInput } from '../prompt-builder.js';
 import type { PersonaConfig } from '../personas/index.js';
-import type { KnowledgeChunk } from '../turn-graph.js';
+import type { KnowledgeChunk } from '@bramha/shared';
 
 // Minimal persona fixtures
 const personaAstra: PersonaConfig = {
@@ -37,10 +37,12 @@ const personaLyra: PersonaConfig = {
 
 function makeChunk(overrides?: Partial<KnowledgeChunk>): KnowledgeChunk {
   return {
-    chunkId: 'chunk-1',
+    id: 'chunk-1',
+    fileId: 'file-1',
     filename: 'report.pdf',
     chunkIndex: 0,
     content: 'Some retrieved content.',
+    score: 0.5,
     ...overrides,
   };
 }

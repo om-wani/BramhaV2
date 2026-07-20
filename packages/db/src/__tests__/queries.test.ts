@@ -13,6 +13,9 @@ import { sql } from 'drizzle-orm';
 import * as schema from '../schema.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Read the queries source once for SQL pattern assertions (no DB needed).
+const searchKnowledgeSource = await readFile(join(__dirname, '../queries.ts'), 'utf8');
 const MIGRATIONS_DIR = join(__dirname, '../migrations');
 
 // ---------------------------------------------------------------------------
@@ -109,9 +112,34 @@ describe('claimIngestionJob', () => {
 });
 
 describe('searchKnowledge', () => {
-  it('returns empty array (stub)', async () => {
+  it('returns empty array when no embedding provided', async () => {
     const { searchKnowledge } = await import('../queries.js');
-    const result = await searchKnowledge('project-1', 'some query', [], 6);
+    // Empty embedding → early exit before DB call
+    const result = await searchKnowledge('project-1', [], 'some query', 6);
     expect(result).toEqual([]);
+  });
+
+  it('SQL uses websearch_to_tsquery (not to_tsquery)', () => {
+    // Verify the implementation source contains the correct function name.
+    // This guards against regression to the less-safe to_tsquery form.
+    const src = searchKnowledgeSource;
+    expect(src).toContain('websearch_to_tsquery');
+    expect(src).not.toMatch(/\bto_tsquery\b(?!.*websearch)/);
+  });
+
+  it('SQL uses RRF k=60 fusion formula', () => {
+    expect(searchKnowledgeSource).toContain('1.0 / (60 +');
+  });
+
+  it('SQL uses cosine distance operator <=> for vector arm', () => {
+    expect(searchKnowledgeSource).toContain('<=>');
+  });
+
+  it('SQL uses tsv column for full-text arm', () => {
+    expect(searchKnowledgeSource).toContain('fc.tsv');
+  });
+
+  it('SQL performs FULL OUTER JOIN to merge vector and text arms', () => {
+    expect(searchKnowledgeSource).toContain('FULL OUTER JOIN');
   });
 });
