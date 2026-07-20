@@ -30,7 +30,7 @@ export type InternalEvent =
       projectId: string;
       roomId: string;
       userNodeId: string;
-      scores: unknown[];
+      scores: Array<{ persona: string; score: number; selected: boolean }>;
     };
 
 export type AnyBusEvent = InternalEvent;

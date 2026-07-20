@@ -44,12 +44,9 @@ export interface BranchDto {
 }
 
 // Persona relevance score (emitted in turn:selection)
+// WS-level summary score — web client only needs these 3 fields for the council panel
 export interface PersonaScore {
   persona: PersonaSlug;
   score: number;
   selected: boolean;
-  mentionScore: number;
-  expertiseScore: number;
-  lexicalScore: number;
-  fatigueScore: number;
 }

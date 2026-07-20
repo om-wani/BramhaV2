@@ -131,7 +131,7 @@ describe('TypedEventBus', () => {
       projectId: 'p1',
       roomId: 'r1',
       userNodeId: 'u1',
-      scores: [{ persona: 'cto', score: 0.8 }],
+      scores: [{ persona: 'cto', score: 0.8, selected: true }],
     });
 
     expect(handler).toHaveBeenCalledOnce();

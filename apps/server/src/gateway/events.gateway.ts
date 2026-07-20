@@ -18,7 +18,12 @@ import {
   conversationNodes,
   branches,
 } from '@bramha/db';
-import type { NodeCreatedEvent, BranchCreatedEvent } from '@bramha/shared';
+import type {
+  NodeCreatedEvent,
+  BranchCreatedEvent,
+  TurnSelectionEvent,
+  PersonaScore,
+} from '@bramha/shared';
 import { AuthService } from '../modules/auth/auth.service.js';
 import { eventBus } from '@bramha/event-bus';
 
@@ -168,7 +173,35 @@ export class EventsGateway
       }
     });
 
-    this.unsubs.push(unsubNode, unsubBranch);
+    // --- node.streaming → node:delta ---
+    const unsubStreaming = eventBus.on('node.streaming', (event) => {
+      this.server.to(`room:${event.roomId}`).emit('node:delta', {
+        type: 'node:delta',
+        nodeId: event.nodeId,
+        seq: event.seq,
+        text: event.text,
+      });
+    });
+
+    // --- node.error → node:error ---
+    const unsubError = eventBus.on('node.error', (event) => {
+      this.server.to(`room:${event.roomId}`).emit('node:error', {
+        type: 'node:error',
+        nodeId: event.nodeId,
+        code: event.code,
+      });
+    });
+
+    // --- turn.selection → turn:selection ---
+    const unsubSelection = eventBus.on('turn.selection', (event) => {
+      this.server.to(`room:${event.roomId}`).emit('turn:selection', {
+        type: 'turn:selection',
+        userNodeId: event.userNodeId,
+        scores: event.scores as PersonaScore[],
+      } satisfies TurnSelectionEvent);
+    });
+
+    this.unsubs.push(unsubNode, unsubBranch, unsubStreaming, unsubError, unsubSelection);
     this.logger.log('EventsGateway initialized — event-bus subscriptions active');
   }
 

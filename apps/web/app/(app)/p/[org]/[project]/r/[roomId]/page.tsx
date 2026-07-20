@@ -7,7 +7,8 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import type { ConversationNodeDto, BranchDto } from '@bramha/shared';
-import type { NodeCreatedEvent, BranchCreatedEvent } from '@bramha/shared';
+import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent } from '@bramha/shared';
+import type { PersonaSlug } from '@bramha/shared';
 
 // ---- types ----------------------------------------------------------------
 
@@ -236,6 +237,41 @@ function BranchItem({
   );
 }
 
+// ---- streaming card -------------------------------------------------------
+
+function StreamingCard({ slug, content }: { slug: PersonaSlug; content: string }) {
+  const displayName = getPersonaName(slug);
+  const initial = slug[0]?.toUpperCase() ?? 'A';
+  const avatarColor = `hsl(var(--persona-${slug}))`;
+
+  return (
+    <article className="flex gap-3 px-6 py-4 opacity-90">
+      <div
+        aria-hidden="true"
+        className="w-8 h-8 rounded-full shrink-0 mt-0.5 flex items-center justify-center text-xs font-bold text-[hsl(var(--canvas))]"
+        style={{ backgroundColor: avatarColor }}
+      >
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="text-sm font-semibold text-[hsl(var(--text-primary))]">
+            {displayName}
+          </span>
+          <span className="text-xs text-[hsl(var(--text-muted))]">streaming…</span>
+        </div>
+        <pre className="text-sm text-[hsl(var(--text-primary))] whitespace-pre-wrap break-words font-sans leading-relaxed">
+          {content}
+          <span
+            aria-hidden="true"
+            className="inline-block w-0.5 h-4 bg-[hsl(var(--text-primary))] animate-caret ml-0.5 align-text-bottom"
+          />
+        </pre>
+      </div>
+    </article>
+  );
+}
+
 // ---- create branch dialog -------------------------------------------------
 
 function CreateBranchDialog({
@@ -397,6 +433,8 @@ export default function RoomPage() {
   const [activeBranchId, setActiveBranchId] = useState<string | null>(null);
   const [dialogFromNodeId, setDialogFromNodeId] = useState<string | null>(null);
   const [showDialog, setShowDialog] = useState(false);
+  // Map from pending nodeId ('pending-ceo') to accumulated text
+  const [streamingNodes, setStreamingNodes] = useState<Map<string, string>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeBranchIdRef = useRef<string | null>(null);
@@ -469,11 +507,11 @@ export default function RoomPage() {
 
   const nodes = threadQuery.data ?? [];
 
-  // ---- scroll to bottom on new messages -----------------------------------
+  // ---- scroll to bottom on new messages or streaming updates --------------
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [nodes.length]);
+  }, [nodes.length, streamingNodes]);
 
   // ---- Socket.IO — lifecycle (connect once per room) ----------------------
 
@@ -507,11 +545,39 @@ export default function RoomPage() {
           return [...prev, event.node];
         },
       );
+      // Remove the pending streaming card now that the real node is persisted
+      if (event.node.authorType === 'agent' && event.node.persona) {
+        setStreamingNodes((prev) => {
+          const next = new Map(prev);
+          next.delete(`pending-${event.node.persona}`);
+          return next;
+        });
+      }
+    };
+
+    const handleNodeDelta = (event: NodeDeltaEvent) => {
+      setStreamingNodes((prev) => {
+        const next = new Map(prev);
+        next.set(event.nodeId, (next.get(event.nodeId) ?? '') + event.text);
+        return next;
+      });
+    };
+
+    const handleNodeError = (event: NodeErrorEvent) => {
+      setStreamingNodes((prev) => {
+        const next = new Map(prev);
+        next.delete(event.nodeId);
+        return next;
+      });
     };
 
     socket.on('node:created', handleNodeCreated);
+    socket.on('node:delta', handleNodeDelta);
+    socket.on('node:error', handleNodeError);
     return () => {
       socket.off('node:created', handleNodeCreated);
+      socket.off('node:delta', handleNodeDelta);
+      socket.off('node:error', handleNodeError);
     };
   }, [projectId, roomId, qc]);
 
@@ -531,6 +597,12 @@ export default function RoomPage() {
       socket.off('branch:created', handleBranchCreated);
     };
   }, [projectId, roomId, qc]);
+
+  // ---- Clear streaming nodes on room/branch switch -------------------------
+
+  useEffect(() => {
+    setStreamingNodes(new Map());
+  }, [roomId, activeBranchId]);
 
   // ---- branch dialog callbacks --------------------------------------------
 
@@ -669,6 +741,14 @@ export default function RoomPage() {
             {!error && !loading && nodes.map((node) => (
               <MessageCard key={node.id} node={node} onBranchFrom={openDialogFromNode} />
             ))}
+
+            {/* Streaming agent responses — appear before finalize persists them */}
+            {Array.from(streamingNodes.entries()).map(([pendingId, content]) => {
+              const slug = pendingId.replace('pending-', '') as PersonaSlug;
+              return (
+                <StreamingCard key={pendingId} slug={slug} content={content} />
+              );
+            })}
 
             <div ref={bottomRef} />
           </section>
