@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -75,25 +75,15 @@ export class FilesService {
     // 2. Magic-byte MIME detection (lazy import — ESM-only package)
     const { fileTypeFromBuffer } = await import('file-type');
     const detected = await fileTypeFromBuffer(buffer);
-    const mimeType = detected?.mime ?? 'text/plain';
 
     // For plain text / markdown / csv, file-type may return undefined (no magic bytes)
     // Allow them only if no magic bytes are detected (detected === undefined)
-    if (detected !== undefined && !ALLOWED_MIMES.has(mimeType)) {
-      throw new BadRequestException({ code: 'UNSUPPORTED_FILE_TYPE', title: 'Unsupported file type' });
-    }
-
-    if (detected === undefined && !ALLOWED_MIMES.has('text/plain')) {
-      // text/plain is always allowed for undetected files
+    if (detected !== undefined && !ALLOWED_MIMES.has(detected.mime)) {
       throw new BadRequestException({ code: 'UNSUPPORTED_FILE_TYPE', title: 'Unsupported file type' });
     }
 
     // Resolve detected MIME: if magic bytes found, use it; else default to text/plain
     const resolvedMime = detected?.mime ?? 'text/plain';
-
-    if (detected !== undefined && !ALLOWED_MIMES.has(resolvedMime)) {
-      throw new BadRequestException({ code: 'UNSUPPORTED_FILE_TYPE', title: 'Unsupported file type' });
-    }
 
     // 3. Sanitize filename
     const safeFilename = sanitizeFilename(filename);
@@ -101,14 +91,15 @@ export class FilesService {
     // 4. Generate storage path
     const storagePath = `${projectId}/${randomUUID()}_${safeFilename}`;
 
-    // 5. Write file to disk
-    const uploadsDir = getUploadsDir();
-    const fullDir = path.join(uploadsDir, projectId);
-    const fullPath = path.join(uploadsDir, storagePath);
-    await fs.mkdir(fullDir, { recursive: true });
-    await fs.writeFile(fullPath, buffer);
+    // 5. Resolve uploads dir to absolute and validate path (Bug 3: path traversal)
+    const resolvedUploadsDir = path.resolve(getUploadsDir());
+    const fullDir = path.join(resolvedUploadsDir, projectId);
+    const fullPath = path.join(resolvedUploadsDir, storagePath);
+    if (!fullPath.startsWith(resolvedUploadsDir + path.sep) && fullPath !== resolvedUploadsDir) {
+      throw new BadRequestException({ code: 'INVALID_PATH', title: 'Invalid path' });
+    }
 
-    // 6. Insert DB row via withTenant
+    // 6. Insert DB row FIRST (Bug 1: write-after-insert order)
     const [row] = await withTenant({ projectId, userId }, async (db) => {
       return db
         .insert(files)
@@ -126,7 +117,21 @@ export class FilesService {
 
     if (!row) throw new Error('insert failed');
 
-    // 7. Emit file:status event
+    // 7. Write file to disk; compensate by deleting DB row if write fails
+    try {
+      await fs.mkdir(fullDir, { recursive: true });
+      await fs.writeFile(fullPath, buffer);
+    } catch {
+      // Compensating delete: remove the DB row we just inserted
+      await withTenant({ projectId, userId }, async (db) => {
+        return db
+          .delete(files)
+          .where(and(eq(files.id, row.id), eq(files.projectId, projectId)));
+      });
+      throw new InternalServerErrorException({ code: 'FILE_WRITE_FAILED', title: 'File write failed' });
+    }
+
+    // 8. Emit file:status event
     eventBus.emit({ type: 'file.status', projectId, fileId: row.id, status: 'pending' });
 
     return rowToDto(row);
@@ -156,14 +161,19 @@ export class FilesService {
       throw new NotFoundException({ code: 'NOT_FOUND', title: 'File not found' });
     }
 
-    // 2. Delete from disk (swallow ENOENT)
-    const uploadsDir = getUploadsDir();
-    const fullPath = path.join(uploadsDir, row.storagePath);
+    // 2. Resolve uploads dir to absolute and validate path (Bug 3: path traversal)
+    const resolvedUploadsDir = path.resolve(getUploadsDir());
+    const fullPath = path.join(resolvedUploadsDir, row.storagePath);
+    if (!fullPath.startsWith(resolvedUploadsDir + path.sep) && fullPath !== resolvedUploadsDir) {
+      throw new BadRequestException({ code: 'INVALID_PATH', title: 'Invalid path' });
+    }
+
+    // 3. Delete from disk (swallow ENOENT)
     await fs.unlink(fullPath).catch((err: NodeJS.ErrnoException) => {
       if (err.code !== 'ENOENT') throw err;
     });
 
-    // 3. Delete DB row
+    // 4. Delete DB row
     await withTenant({ projectId, userId }, async (db) => {
       return db
         .delete(files)

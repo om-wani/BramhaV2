@@ -38,26 +38,37 @@ export class FilesController {
     const fastifyReq = req as FastifyRequest & {
       file?: () => Promise<{
         filename: string;
-        file: import('stream').Readable;
+        file: import('stream').Readable & { truncated?: boolean };
         mimetype: string;
       }>;
     };
 
-    if (!fastifyReq.file) {
-      throw new BadRequestException({ code: 'NO_FILE', title: 'No file uploaded' });
-    }
-
-    const part = await fastifyReq.file();
+    // Bug 4 fix: fastifyReq.file is always a function reference, never falsy — removed guard.
+    // The `if (!part)` check after await is the correct guard.
+    const part = await fastifyReq.file?.();
 
     if (!part) {
       throw new BadRequestException({ code: 'NO_FILE', title: 'No file uploaded' });
     }
 
-    // Read stream into buffer
+    // Read stream into buffer with per-chunk size guard (Bug 2)
     const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    const MAX = 25 * 1024 * 1024;
     for await (const chunk of part.file) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+      totalBytes += buf.length;
+      if (totalBytes > MAX) {
+        throw new BadRequestException({ code: 'FILE_TOO_LARGE', title: 'File too large' });
+      }
+      chunks.push(buf);
     }
+
+    // Also check if @fastify/multipart truncated the stream
+    if (part.file.truncated) {
+      throw new BadRequestException({ code: 'FILE_TOO_LARGE', title: 'File too large' });
+    }
+
     const buffer = Buffer.concat(chunks);
 
     return this.filesService.uploadFile({
