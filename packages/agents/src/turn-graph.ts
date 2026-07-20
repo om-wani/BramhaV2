@@ -12,6 +12,8 @@ import type { PersonaSlug } from '@bramha/shared';
 import { PERSONAS, scorePersonas } from './index.js';
 import { getModelRouter } from './model-router.js';
 import type { PersonaScore } from './relevance.js';
+import type { PersonaConfig } from './personas/index.js';
+import { buildSystemPrompt } from './prompt-builder.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -77,6 +79,8 @@ const TurnStateAnnotation = Annotation.Root({
   recentSpeakers: Annotation<PersonaSlug[]>(),
   roomKind: Annotation<'council' | 'one_on_one'>(),
   boundPersona: Annotation<PersonaSlug | undefined>(),
+  // P5 delegation sets this to true so respondNode omits the DELEGATE_TO instruction
+  isDelegated: Annotation<boolean>(),
 });
 
 type TurnState = typeof TurnStateAnnotation.State;
@@ -162,7 +166,15 @@ export function createTurnGraph(
       const personaConfig = PERSONAS[slug];
       if (personaConfig === undefined) continue;
 
-      const system = `You are ${personaConfig.name}, ${personaConfig.title}. ${personaConfig.domain}.`;
+      const system = buildSystemPrompt({
+        persona: personaConfig,
+        orgName: state.orgName,
+        peers: responses
+          .map((r) => PERSONAS[r.persona])
+          .filter((p): p is PersonaConfig => p !== undefined),
+        chunks: state.chunks,
+        isDelegated: state.isDelegated,
+      });
 
       // Build messages: earlier peer responses this turn as assistant messages + user message
       const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -309,6 +321,7 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<AgentRes
     domainEmbeddings: params.domainEmbeddings,
     recentSpeakers: params.recentSpeakers,
     roomKind: params.roomKind,
+    isDelegated: false, // P5 sub-graph will pass true for delegated prompts
   };
 
   if (params.boundPersona !== undefined) {
