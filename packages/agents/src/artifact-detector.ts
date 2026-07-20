@@ -20,7 +20,9 @@ export function detectArtifact(content: string): Artifact | null {
     // Extract from first < to last >
     const start = content.search(/<(!DOCTYPE\s+html|html)/i);
     if (start !== -1) {
-      return { type: 'html', content: content.slice(start).trim() };
+      const end = content.lastIndexOf('</html>');
+      const slice = end !== -1 ? content.slice(start, end + 7) : content.slice(start);
+      return { type: 'html', content: slice.trim() };
     }
   }
 

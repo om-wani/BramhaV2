@@ -160,7 +160,7 @@ function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string 
 
       {expanded && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden">
+          <div className="bg-[hsl(var(--surface))] rounded-lg w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden border border-[hsl(var(--border))]">
             <div className="flex items-center justify-between p-3 border-b">
               <span className="text-sm font-medium">HTML Artifact</span>
               <button
