@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { eq, and } from 'drizzle-orm';
-import { withTenant, files } from '@bramha/db';
+import { sql } from 'drizzle-orm';
+import { withTenant, getDb, files } from '@bramha/db';
 import { eventBus } from '@bramha/event-bus';
 import type { FileDto, FileStatus } from '@bramha/shared';
 
@@ -117,10 +118,16 @@ export class FilesService {
 
     if (!row) throw new Error('insert failed');
 
-    // 7. Write file to disk; compensate by deleting DB row if write fails
+    // 7. Write file to disk + insert ingestion job; compensate fully if anything fails
     try {
       await fs.mkdir(fullDir, { recursive: true });
       await fs.writeFile(fullPath, buffer);
+      // Insert ingestion job INSIDE the try block so failure triggers full compensation
+      const db = await getDb();
+      await db.execute(sql`
+        INSERT INTO ingestion_jobs (id, file_id, project_id, status, queued_at, updated_at)
+        VALUES (gen_random_uuid(), ${row.id}, ${projectId}, 'pending', NOW(), NOW())
+      `);
     } catch {
       // Compensating delete: remove the DB row we just inserted
       await withTenant({ projectId, userId }, async (db) => {
@@ -128,10 +135,14 @@ export class FilesService {
           .delete(files)
           .where(and(eq(files.id, row.id), eq(files.projectId, projectId)));
       });
+      // Remove the disk file if it was written (swallow ENOENT)
+      await fs.unlink(fullPath).catch((e: NodeJS.ErrnoException) => {
+        if (e.code !== 'ENOENT') throw e;
+      });
       throw new InternalServerErrorException({ code: 'FILE_WRITE_FAILED', title: 'File write failed' });
     }
 
-    // 8. Emit file:status event
+    // 9. Emit file:status event
     eventBus.emit({ type: 'file.status', projectId, fileId: row.id, status: 'pending' });
 
     return rowToDto(row);

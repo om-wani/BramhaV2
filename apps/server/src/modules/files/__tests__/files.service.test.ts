@@ -13,6 +13,7 @@ import { BadRequestException } from '@nestjs/common';
 // Mock @bramha/db
 vi.mock('@bramha/db', () => ({
   withTenant: vi.fn(),
+  getDb: vi.fn(),
   files: {},
 }));
 
@@ -37,11 +38,12 @@ vi.mock('file-type', () => ({
 // Import after mocks are in place
 // ---------------------------------------------------------------------------
 import { FilesService } from '../files.service.js';
-import { withTenant } from '@bramha/db';
+import { withTenant, getDb } from '@bramha/db';
 import { eventBus } from '@bramha/event-bus';
 import { fileTypeFromBuffer } from 'file-type';
 
 const mockedWithTenant = vi.mocked(withTenant);
+const mockedGetDb = vi.mocked(getDb);
 const mockedFileTypeFromBuffer = vi.mocked(fileTypeFromBuffer);
 const mockedEventBusEmit = vi.mocked(eventBus.emit);
 
@@ -68,6 +70,11 @@ describe('FilesService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     service = new FilesService();
+
+    // Default: getDb resolves with a fake db that has execute (for ingestion_jobs insert)
+    mockedGetDb.mockResolvedValue({
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
+    } as never);
 
     // Default: withTenant resolves with a fake inserted row
     mockedWithTenant.mockImplementation(async (_ctx, fn) => {
