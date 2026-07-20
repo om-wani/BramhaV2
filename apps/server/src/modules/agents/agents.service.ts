@@ -6,6 +6,7 @@ import {
   invokeTurnGraph,
   type AgentResponse,
   type PersistResponseFn,
+  type PendingDelegation,
 } from '@bramha/agents';
 import { getDb, conversationNodes, branches, delegationTasks, searchKnowledge } from '@bramha/db';
 import { eq, and } from 'drizzle-orm';
@@ -159,24 +160,162 @@ export class AgentsService implements OnModuleInit {
       },
     });
 
-    // Insert delegation_tasks rows for each detected signal (P5.1 lifecycle).
-    // P5.2 will pick these up and execute the sub-graph.
+    // P5.2: insert delegation_tasks rows with .returning() to get IDs for status updates,
+    // then execute each delegation as a sub-turn-graph.
     if (pendingDelegations.length > 0) {
       const db = await getDb();
+
+      const insertedRows: Array<{
+        id: string;
+        delegatingNodeId: string;
+        delegation: PendingDelegation;
+      }> = [];
+
       for (const delegation of pendingDelegations) {
-        await db.insert(delegationTasks).values({
-          roomId: params.roomId,
-          projectId: params.projectId,
-          sourceNodeId: params.userNodeId,
-          fromPersona: delegation.fromSlug,
-          toPersona: delegation.toSlug,
-          task: delegation.task,
-          status: 'pending',
-        });
+        // Use the delegating agent's actual nodeId (not the user node)
+        const delegatingNodeId =
+          responses.find((r) => r.persona === delegation.fromSlug)?.nodeId ?? params.userNodeId;
+
+        const [row] = await db
+          .insert(delegationTasks)
+          .values({
+            roomId: params.roomId,
+            projectId: params.projectId,
+            sourceNodeId: delegatingNodeId,
+            fromPersona: delegation.fromSlug,
+            toPersona: delegation.toSlug,
+            task: delegation.task,
+            status: 'pending',
+          })
+          .returning();
+
+        if (row?.id) {
+          insertedRows.push({ id: row.id, delegatingNodeId, delegation });
+        }
       }
+
       this.logger.log(
-        `Inserted ${pendingDelegations.length} delegation_tasks row(s) for room ${params.roomId}`,
+        `Inserted ${insertedRows.length} delegation_tasks row(s) for room ${params.roomId}`,
       );
+
+      // Execute each delegation as a sub-turn-graph
+      for (const { id: taskId, delegatingNodeId, delegation } of insertedRows) {
+        // Mark running
+        await db
+          .update(delegationTasks)
+          .set({ status: 'running' })
+          .where(eq(delegationTasks.id, taskId));
+
+        try {
+          // Build context string from last 10 thread nodes
+          const contextNodes = params.thread.slice(-10);
+          const contextText = contextNodes
+            .map((n) => {
+              const speaker =
+                n.authorType === 'user' ? 'User' : (n.persona ?? 'Agent');
+              return `[${speaker}]: ${n.content}`;
+            })
+            .join('\n\n');
+
+          const delegatedMessage = contextText
+            ? `## Recent conversation\n${contextText}\n\n## Your task\n${delegation.task}`
+            : delegation.task;
+
+          // Delegated persistFn: inserts node as child of the delegating agent node.
+          // No branch head advance — delegated node is a side-branch in the DAG.
+          const delegatedPersistFn: PersistResponseFn = async (persistParams) => {
+            const db2 = await getDb();
+            const results: Array<{ persona: string; nodeId: string }> = [];
+
+            for (const response of persistParams.responses) {
+              const [node] = await db2
+                .insert(conversationNodes)
+                .values({
+                  roomId: persistParams.roomId,
+                  projectId: persistParams.projectId,
+                  parentId: delegatingNodeId,
+                  authorType: 'agent',
+                  persona: response.persona,
+                  content: response.content,
+                  metadata: {
+                    ...(response.metadata as Record<string, unknown>),
+                    delegatedFrom: delegation.fromSlug,
+                  },
+                })
+                .returning();
+
+              if (!node) throw new Error('delegated node insert failed');
+              results.push({ persona: response.persona, nodeId: node.id });
+
+              eventBus.emit({
+                type: 'node.created',
+                projectId: persistParams.projectId,
+                roomId: persistParams.roomId,
+                nodeId: node.id,
+                branchId: persistParams.branchId,
+              });
+            }
+
+            return results;
+          };
+
+          const subResult = await invokeTurnGraph({
+            projectId: params.projectId,
+            roomId: params.roomId,
+            branchId: params.branchId,
+            orgName: params.orgName,
+            userNodeId: delegatingNodeId,
+            userMessage: delegatedMessage,
+            roomKind: params.roomKind,
+            boundPersona: delegation.toSlug,
+            recentSpeakers,
+            domainEmbeddings: this.domainEmbeddings,
+            isDelegated: true,
+            persistFn: delegatedPersistFn,
+            searchFn: (projectId, embedding, query, k) =>
+              searchKnowledge(projectId, embedding, query, k),
+            emitStreamingFn: (streamParams) => {
+              eventBus.emit({
+                type: 'node.streaming',
+                projectId: streamParams.projectId,
+                roomId: streamParams.roomId,
+                nodeId: streamParams.nodeId,
+                seq: streamParams.seq,
+                text: streamParams.text,
+              });
+            },
+            emitSelectionFn: (selectionParams) => {
+              eventBus.emit({
+                type: 'turn.selection',
+                projectId: selectionParams.projectId,
+                roomId: selectionParams.roomId,
+                userNodeId: selectionParams.userNodeId,
+                scores: selectionParams.scores,
+              });
+            },
+          });
+
+          const resultNodeId = subResult.responses[0]?.nodeId;
+
+          await db
+            .update(delegationTasks)
+            .set({ status: 'done', ...(resultNodeId !== undefined ? { resultNodeId } : {}) })
+            .where(eq(delegationTasks.id, taskId));
+
+          this.logger.log(
+            `Delegation ${delegation.fromSlug}→${delegation.toSlug} done, nodeId=${resultNodeId ?? 'none'}`,
+          );
+        } catch (err) {
+          // Failure path: mark failed, never rethrow — main turn already succeeded
+          this.logger.error(
+            `Delegation ${delegation.fromSlug}→${delegation.toSlug} failed: ${String(err)}`,
+          );
+          await db
+            .update(delegationTasks)
+            .set({ status: 'failed' })
+            .where(eq(delegationTasks.id, taskId));
+        }
+      }
     }
 
     return responses;
