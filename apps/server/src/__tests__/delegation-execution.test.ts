@@ -174,14 +174,27 @@ describe('AgentsService — delegation execution (P5.2)', () => {
   });
 
   it('updates delegation_tasks: pending → running → done on sub-graph success', async () => {
+    const subGraphNodeId = 'node-cfo-done';
+
     mockInvokeTurnGraph
       .mockResolvedValueOnce({
         responses: [{ persona: 'ceo', nodeId: 'node-ceo-1', content: 'Delegating.' }],
         pendingDelegations: [{ fromSlug: 'ceo', toSlug: 'cfo', task: 'Run the numbers' }],
       })
-      .mockResolvedValueOnce({
-        responses: [{ persona: 'cfo', nodeId: 'node-cfo-done', content: 'Done.' }],
-        pendingDelegations: [],
+      // Second call (delegated sub-graph): invoke persistFn so delegatedPersistFn fires
+      .mockImplementationOnce(async (args: Record<string, unknown>) => {
+        const persistFn = args['persistFn'] as (p: Record<string, unknown>) => Promise<unknown>;
+        await persistFn({
+          responses: [{ persona: 'cfo', nodeId: subGraphNodeId, content: 'Done.' }],
+          roomId: 'room-1',
+          projectId: 'proj-1',
+          branchId: 'branch-1',
+          userNodeId: 'node-ceo-1',
+        });
+        return {
+          responses: [{ persona: 'cfo', nodeId: subGraphNodeId, content: 'Done.' }],
+          pendingDelegations: [],
+        };
       });
 
     setupDbMocks({ delegationTasksInsertRow: { id: 'dtask-002' } });
@@ -191,7 +204,12 @@ describe('AgentsService — delegation execution (P5.2)', () => {
     // Expect exactly two update calls: running, then done
     expect(capturedUpdates).toHaveLength(2);
     expect(capturedUpdates[0]?.set).toEqual({ status: 'running' });
-    expect(capturedUpdates[1]?.set).toMatchObject({ status: 'done' });
+    expect(capturedUpdates[1]?.set).toEqual({ status: 'done', resultNodeId: subGraphNodeId });
+
+    // Delegated node creation must emit node.created
+    expect(mockEventBusEmit).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'node.created' })
+    );
   });
 
   it('sets delegation_tasks status=failed and does not rethrow when sub-graph throws', async () => {
