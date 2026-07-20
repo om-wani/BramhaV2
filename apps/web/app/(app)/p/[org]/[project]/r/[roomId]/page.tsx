@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
-import type { ConversationNodeDto, BranchDto, PersonaScore } from '@bramha/shared';
+import type { ConversationNodeDto, BranchDto, PersonaScore, ValidatedCitation } from '@bramha/shared';
 import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent } from '@bramha/shared';
 import { PERSONA_SLUGS } from '@bramha/shared';
 import type { PersonaSlug } from '@bramha/shared';
@@ -101,12 +101,36 @@ function getPersonaName(slug: string): string {
     : slug;
 }
 
+// ---- citation chip --------------------------------------------------------
+
+function CitationChip({
+  citation,
+  onClick,
+}: {
+  citation: ValidatedCitation;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full
+        bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] hover:bg-[hsl(var(--accent)/0.25)]
+        border border-[hsl(var(--accent)/0.3)] transition-colors"
+    >
+      <span className="font-medium truncate max-w-[120px]">{citation.filename}</span>
+      <span className="text-[hsl(var(--accent)/0.7))]">#{citation.chunkIndex}</span>
+    </button>
+  );
+}
+
 function MessageCard({
   node,
   onBranchFrom,
+  onCitationClick,
 }: {
   node: ConversationNodeDto;
   onBranchFrom: (nodeId: string) => void;
+  onCitationClick: (citation: ValidatedCitation) => void;
 }) {
   const isUser = node.authorType === 'user';
   const persona = node.persona ?? null;
@@ -118,6 +142,11 @@ function MessageCard({
     : persona
     ? `hsl(var(--persona-${persona}))`
     : 'hsl(var(--accent))';
+
+  const citations =
+    node.authorType === 'agent' && Array.isArray(node.metadata?.citations)
+      ? (node.metadata.citations as ValidatedCitation[])
+      : [];
 
   return (
     <article className="relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors">
@@ -150,6 +179,17 @@ function MessageCard({
         <pre className="text-sm text-[hsl(var(--text-primary))] whitespace-pre-wrap break-words font-sans leading-relaxed">
           {node.content}
         </pre>
+        {citations.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {citations.map((c, i) => (
+              <CitationChip
+                key={`${c.chunkId}-${i}`}
+                citation={c}
+                onClick={() => onCitationClick(c)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </article>
   );
@@ -510,6 +550,8 @@ export default function RoomPage() {
   // @mention popover state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  // citation excerpt popover
+  const [activeCitation, setActiveCitation] = useState<ValidatedCitation | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeBranchIdRef = useRef<string | null>(null);
@@ -867,7 +909,7 @@ export default function RoomPage() {
             )}
 
             {!error && !loading && nodes.map((node) => (
-              <MessageCard key={node.id} node={node} onBranchFrom={openDialogFromNode} />
+              <MessageCard key={node.id} node={node} onBranchFrom={openDialogFromNode} onCitationClick={setActiveCitation} />
             ))}
 
             {/* Streaming agent responses — appear before finalize persists them */}
@@ -949,6 +991,26 @@ export default function RoomPage() {
           onClose={() => setShowDialog(false)}
           onCreated={handleBranchCreated}
         />
+      )}
+
+      {/* Citation excerpt popover */}
+      {activeCitation !== null && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setActiveCitation(null)}
+        >
+          <div
+            className="absolute bg-[hsl(var(--surface))] border border-[hsl(var(--border))]
+              rounded-lg shadow-xl p-4 max-w-sm max-h-48 overflow-y-auto"
+            style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-xs font-medium text-[hsl(var(--text-muted))] mb-2">
+              {activeCitation.filename} #{activeCitation.chunkIndex}
+            </p>
+            <p className="text-sm leading-relaxed">{activeCitation.excerpt}</p>
+          </div>
+        </div>
       )}
     </div>
   );

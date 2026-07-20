@@ -65,6 +65,15 @@ export interface PersonaScore {
   selected: boolean;
 }
 
+// Validated citation from agent response (P4.4)
+export interface ValidatedCitation {
+  filename: string;
+  chunkIndex: number;
+  excerpt: string; // first 200 chars of chunk content
+  chunkId: string;
+  fileId: string;
+}
+
 // Knowledge chunk returned by hybrid RRF search (P4.3)
 export interface KnowledgeChunk {
   id: string;

@@ -8,18 +8,19 @@
  */
 
 import { Annotation, StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
-import type { PersonaSlug, KnowledgeChunk } from '@bramha/shared';
+import type { PersonaSlug, KnowledgeChunk, ValidatedCitation } from '@bramha/shared';
 import { PERSONAS, scorePersonas } from './index.js';
 import { getModelRouter } from './model-router.js';
 import type { PersonaScore } from './relevance.js';
 import type { PersonaConfig } from './personas/index.js';
 import { buildSystemPrompt } from './prompt-builder.js';
+import { parseCitations, validateCitations } from './citation-parser.js';
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export type { KnowledgeChunk } from '@bramha/shared';
+export type { KnowledgeChunk, ValidatedCitation } from '@bramha/shared';
 
 export interface AgentResponse {
   persona: PersonaSlug;
@@ -33,7 +34,7 @@ export type PersistResponseFn = (params: {
   roomId: string;
   branchId: string;
   userNodeId: string;
-  responses: Array<{ persona: string; content: string }>;
+  responses: Array<{ persona: string; content: string; metadata: Record<string, unknown> }>;
 }) => Promise<Array<{ persona: string; nodeId: string }>>;
 
 /** Injected callback for emitting streaming token events. */
@@ -248,12 +249,20 @@ export function createTurnGraph(
   // finalize node: persist to DB, set real nodeIds
   // -------------------------------------------------------------------------
   async function finalizeNode(state: TurnState): Promise<Partial<TurnState>> {
+    // Build per-response citations and metadata before persisting
+    const responsesWithMeta = state.responses.map((r) => {
+      const parsed = parseCitations(r.content);
+      const citations: ValidatedCitation[] = validateCitations(parsed, state.chunks);
+      const metadata: Record<string, unknown> = citations.length > 0 ? { citations } : {};
+      return { persona: r.persona, content: r.content, metadata };
+    });
+
     const persistResults = await persistFn({
       projectId: state.projectId,
       roomId: state.roomId,
       branchId: state.branchId,
       userNodeId: state.userNodeId,
-      responses: state.responses.map((r) => ({ persona: r.persona, content: r.content })),
+      responses: responsesWithMeta,
     });
 
     // Guard: persistFn must return one result per response

@@ -69,6 +69,7 @@ export class AgentsService implements OnModuleInit {
             authorType: 'agent',
             persona: response.persona,
             content: response.content,
+            metadata: response.metadata,
           })
           .returning();
 
