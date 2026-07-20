@@ -201,7 +201,16 @@ export class EventsGateway
       } satisfies TurnSelectionEvent);
     });
 
-    this.unsubs.push(unsubNode, unsubBranch, unsubStreaming, unsubError, unsubSelection);
+    // --- file.status → file:status ---
+    const unsubFileStatus = eventBus.on('file.status', (event) => {
+      this.server.to(`project:${event.projectId}`).emit('file:status', {
+        type: 'file:status',
+        fileId: event.fileId,
+        status: event.status as import('@bramha/shared').FileStatus,
+      });
+    });
+
+    this.unsubs.push(unsubNode, unsubBranch, unsubStreaming, unsubError, unsubSelection, unsubFileStatus);
     this.logger.log('EventsGateway initialized — event-bus subscriptions active');
   }
 
@@ -296,6 +305,57 @@ export class EventsGateway
       this.logger.debug(`[room:join] userId=${user.id} joined room:${roomId}`);
     } catch (err) {
       this.logger.error(`[room:join] unexpected error`, err);
+      socket.emit('error:room', { code: 'INTERNAL_ERROR' });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // project:join — join project room for file:status events
+  // -------------------------------------------------------------------------
+  @SubscribeMessage('project:join')
+  async handleProjectJoin(
+    @ConnectedSocket() socket: AuthSocket,
+    @MessageBody() data: unknown,
+  ) {
+    const user = socket.data.user;
+    if (!user) {
+      socket.emit('error:room', { code: 'UNAUTHORIZED' });
+      return;
+    }
+
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      !isUuid((data as Record<string, unknown>)['projectId'])
+    ) {
+      socket.emit('error:room', { code: 'INVALID_INPUT' });
+      return;
+    }
+
+    const { projectId } = data as { projectId: string };
+
+    try {
+      const db = await getDb();
+
+      const [membership] = await db
+        .select({ role: projectMembers.role })
+        .from(projectMembers)
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.userId, user.id),
+          ),
+        );
+
+      if (!membership) {
+        socket.emit('error:room', { code: 'FORBIDDEN' });
+        return;
+      }
+
+      await socket.join(`project:${projectId}`);
+      this.logger.debug(`[project:join] userId=${user.id} joined project:${projectId}`);
+    } catch (err) {
+      this.logger.error(`[project:join] unexpected error`, err);
       socket.emit('error:room', { code: 'INTERNAL_ERROR' });
     }
   }

@@ -54,4 +54,5 @@ export type ServerToClientEvents = {
 export type ClientToServerEvents = {
   'room:join': (payload: { projectId: string; roomId: string }) => void;
   'room:leave': (payload: { roomId: string }) => void;
+  'project:join': (payload: { projectId: string }) => void;
 };

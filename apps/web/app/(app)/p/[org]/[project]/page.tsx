@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -173,6 +173,10 @@ export default function ProjectPage() {
   const params = useParams<{ org: string; project: string }>();
   const { org: orgSlug, project: projectSlug } = params;
   const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
 
   const orgsQuery = useQuery<OrgRow[]>({
     queryKey: ['orgs'],
@@ -201,6 +205,22 @@ export default function ProjectPage() {
   });
 
   const rooms = roomsQuery.data ?? [];
+
+  async function handleFiles(files: FileList) {
+    if (!projectId) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const form = new FormData();
+      form.append('file', file);
+      await fetch(`/backend/projects/${projectId}/files`, {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+    }
+    setUploading(false);
+    queryClient.invalidateQueries({ queryKey: ['files', projectId] });
+  }
 
   const resolving = orgsQuery.isLoading || projectsQuery.isLoading;
   const resolutionFailed =
@@ -327,6 +347,44 @@ export default function ProjectPage() {
           </div>
         )}
       </section>
+
+      {/* Files section */}
+      {projectId && (
+        <section aria-label="Files" className="mt-10">
+          <h2 className="sr-only">Files</h2>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-medium text-[hsl(var(--text-primary))]">Knowledge files</p>
+            <Link
+              href={`/p/${orgSlug}/${projectSlug}/files`}
+              className="text-xs text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
+            >
+              View all files →
+            </Link>
+          </div>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-lg p-6 cursor-pointer text-center transition-colors ${
+              dragOver
+                ? 'border-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.05)]'
+                : 'border-[hsl(var(--border))]'
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={(e) => { if (e.target.files) void handleFiles(e.target.files); }}
+            />
+            <p className="text-sm text-[hsl(var(--text-muted))]">
+              {uploading ? 'Uploading…' : 'Drop files here or click to upload (PDF, DOCX, TXT, MD, CSV · 25 MB max)'}
+            </p>
+          </div>
+        </section>
+      )}
 
       {showCreateRoom && projectId && (
         <CreateRoomDialog projectId={projectId} onClose={() => setShowCreateRoom(false)} />
