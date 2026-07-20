@@ -4,7 +4,7 @@
 >
 > Task IDs are stable — never renumber. Add new tasks at the end of their phase.
 
-**Current phase: P4**
+**Current phase: P5**
 
 ---
 
@@ -58,7 +58,7 @@
 - [x] P4.4 Citation flow: inline `[Source: f #n]` parse → validate against real chunk set → metadata.citations → citation chips + excerpt popover
 - [x] P4.5 Files UI: dropzone on project home, files page with live status + chunk side panel
 - [x] P4.6 Artifact sandbox: detect html artifact in response → `metadata.artifact` → sandboxed iframe card (allow-scripts, null origin) + expand dialog
-- [ ] P4.7 Gate check: e2e — upload fixture PDF, ask doc-only question, response cites correct file/chunk
+- [x] P4.7 Gate check: e2e — upload fixture PDF, ask doc-only question, response cites correct file/chunk
 
 ## P5 — Delegation (gate: delegation demo beat end-to-end)
 
