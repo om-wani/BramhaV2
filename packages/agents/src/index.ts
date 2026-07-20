@@ -4,3 +4,4 @@ export * from './relevance.js';
 export * from './turn-graph.js';
 export * from './prompt-builder.js';
 export * from './citation-parser.js';
+export { detectArtifact, type Artifact } from './artifact-detector.js';

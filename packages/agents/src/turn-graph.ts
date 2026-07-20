@@ -15,6 +15,7 @@ import type { PersonaScore } from './relevance.js';
 import type { PersonaConfig } from './personas/index.js';
 import { buildSystemPrompt } from './prompt-builder.js';
 import { parseCitations, validateCitations } from './citation-parser.js';
+import { detectArtifact } from './artifact-detector.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -253,7 +254,11 @@ export function createTurnGraph(
     const responsesWithMeta = state.responses.map((r) => {
       const parsed = parseCitations(r.content);
       const citations: ValidatedCitation[] = validateCitations(parsed, state.chunks);
-      const metadata: Record<string, unknown> = citations.length > 0 ? { citations } : {};
+      const artifact = detectArtifact(r.content);
+      const metadata: Record<string, unknown> = {
+        ...(citations.length > 0 ? { citations } : {}),
+        ...(artifact !== null ? { artifact } : {}),
+      };
       return { persona: r.persona, content: r.content, metadata };
     });
 

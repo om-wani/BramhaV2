@@ -123,6 +123,68 @@ function CitationChip({
   );
 }
 
+// ---- artifact card --------------------------------------------------------
+
+function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string } }) {
+  const [expanded, setExpanded] = useState(false);
+  const srcDoc = artifact.content;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expanded]);
+
+  return (
+    <div className="mt-3 rounded-lg border border-[hsl(var(--border))] overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-[hsl(var(--surface-raised))]
+        border-b border-[hsl(var(--border))]">
+        <span className="text-xs font-medium text-[hsl(var(--text-muted))]">HTML Artifact</span>
+        <button
+          onClick={() => setExpanded(true)}
+          className="text-xs text-[hsl(var(--accent))] hover:underline"
+        >
+          Expand ↗
+        </button>
+      </div>
+      {/* No allow-same-origin — sandbox enforces null origin */}
+      <iframe
+        srcDoc={srcDoc}
+        sandbox="allow-scripts"
+        title="artifact"
+        className="w-full h-48 border-0"
+      />
+
+      {expanded && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-3 border-b">
+              <span className="text-sm font-medium">HTML Artifact</span>
+              <button
+                onClick={() => setExpanded(false)}
+                className="text-sm text-gray-500 hover:text-gray-800"
+              >
+                ✕ Close
+              </button>
+            </div>
+            <iframe
+              srcDoc={srcDoc}
+              sandbox="allow-scripts"
+              title="artifact expanded"
+              className="flex-1 border-0"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- message card ---------------------------------------------------------
+
 function MessageCard({
   node,
   onBranchFrom,
@@ -190,6 +252,10 @@ function MessageCard({
             ))}
           </div>
         )}
+        {node.authorType === 'agent' &&
+          typeof (node.metadata?.artifact as { type?: unknown } | undefined)?.type === 'string' && (
+            <ArtifactCard artifact={node.metadata.artifact as { type: 'html'; content: string }} />
+          )}
       </div>
     </article>
   );
