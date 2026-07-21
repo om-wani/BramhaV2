@@ -1,0 +1,12 @@
+your-domain.com {
+    # Web app (Next.js)
+    handle /* {
+        reverse_proxy localhost:3000
+    }
+
+    # API + WebSocket proxy
+    handle /backend/* {
+        uri strip_prefix /backend
+        reverse_proxy localhost:3001
+    }
+}

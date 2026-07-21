@@ -1,0 +1,17 @@
+[Unit]
+Description=BramhaV2 Web App
+After=network.target bramha-server.service
+
+[Service]
+Type=simple
+User=bramha
+WorkingDirectory=/home/bramha/app/apps/web
+EnvironmentFile=/home/bramha/app/.env.web
+ExecStart=/home/bramha/.nvm/versions/node/v20/bin/node .next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

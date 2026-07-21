@@ -73,7 +73,7 @@
 - [x] P6.2 `pnpm seed:demo`: account, org Northwind, project Q3 Strategy, ready market-research.pdf, backdated open loop in Vulcan 1:1
 - [x] P6.3 Landing page + polish pass (motion, empty states, skeletons, no-layout-shift streaming)
 - [x] P6.4 `check-env --strict` + prod hardening pass (headers verified, CSP report-only spot check)
-- [ ] P6.5 Deploy: VPS + Caddy + managed Postgres (pgvector), systemd units, deploy runbook in docs/
+- [x] P6.5 Deploy: VPS + Caddy + managed Postgres (pgvector), systemd units, deploy runbook in docs/
 - [ ] P6.6 Golden-path Playwright spec (demo beats 1–6)
 - [ ] P6.7 EXIT GATE: non-developer dry run on deployed URL, ≤15 min, all 7 beats
 

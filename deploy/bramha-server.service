@@ -1,0 +1,17 @@
+[Unit]
+Description=BramhaV2 API Server
+After=network.target
+
+[Service]
+Type=simple
+User=bramha
+WorkingDirectory=/home/bramha/app/apps/server
+EnvironmentFile=/home/bramha/app/.env.server
+ExecStart=/home/bramha/.nvm/versions/node/v20/bin/node dist/main.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
