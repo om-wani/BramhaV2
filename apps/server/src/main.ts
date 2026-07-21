@@ -22,6 +22,7 @@ async function bootstrap() {
     contentSecurityPolicy: false, // CSP is handled by the web app's middleware
     crossOriginEmbedderPolicy: false,
     frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
 
   // Cookie parsing (no secret — using SHA-256 token hash, not signed cookies)

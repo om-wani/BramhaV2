@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src",
-    "seed:demo": "tsx src/scripts/seed-demo.ts"
+    "seed:demo": "tsx src/scripts/seed-demo.ts",
+    "check-env": "tsx src/scripts/check-env.ts",
+    "check-env:strict": "tsx src/scripts/check-env.ts --strict"
   },
   "dependencies": {
     "@bramha/agents": "workspace:*",

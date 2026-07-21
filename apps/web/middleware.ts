@@ -31,6 +31,7 @@ export function middleware(request: NextRequest): NextResponse {
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
+    ...(process.env.NODE_ENV === 'production' ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 
   if (isProtected(pathname)) {
