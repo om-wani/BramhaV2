@@ -9,7 +9,9 @@
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src app middleware.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@bramha/shared": "workspace:*",
@@ -22,6 +24,7 @@
     "zxcvbn": "4.4.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.5.2",

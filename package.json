@@ -10,7 +10,8 @@
     "db:migrate": "pnpm --filter @bramha/db db:migrate",
     "seed:demo": "pnpm --filter @bramha/server seed:demo",
     "check-env": "pnpm --filter @bramha/server check-env",
-    "check-env:strict": "pnpm --filter @bramha/server check-env:strict"
+    "check-env:strict": "pnpm --filter @bramha/server check-env:strict",
+    "e2e": "pnpm --filter @bramha/web e2e"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.0",
