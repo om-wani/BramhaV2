@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-21 — P5 complete + P6.1–P6.6 complete; P6.7 EXIT GATE ready for deploy
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 3e797bd..1bb0a21
+**Done:** P5.1 fix (delegation regex restricted to final line, /m removed, (?:^|\n) prefix, emitDelegationFn wired); P5.2 (delegation sub-graph: invokeTurnGraph with isDelegated:true, delegated node as child of delegating agent node, failure path catches+sets failed+no rethrow, delegation_tasks lifecycle pending→running→done/failed); P5.3 (indented delegated node UI, ↳ from {persona} badge, streaming unchanged); P5.4 (p5 gate check: 25 assertions, 124 agents tests pass); P6.1 (PA lite: open-loop capture 1:1-only, 30-min setInterval scanner, 24h/4h guards, proactive badge, CAS fix on branch head advance); P6.2 (seed:demo: Northwind account, Q3 Strategy, market-research.pdf 3 pre-seeded chunks, backdated open loop); P6.3 (landing page 3 feature cards, room empty state, streaming layout-shift fix); P6.4 (check-env --strict script, referrerPolicy in helmet, upgrade-insecure-requests in prod CSP); P6.5 (deploy runbook docs/05_deploy.md, deploy/ systemd units + Caddyfile); P6.6 (Playwright golden-path spec 6 beats, @playwright/test installed).
+**Decisions:** P5.1: DELEGATE_TO must be final line only — /m flag allowed mid-response triggers (security/reliability issue). P5.2: delegated turn uses `parentId: delegatingNodeId` (not user node), `isDelegated: true` prevents cascade, no branch head advance for delegated nodes. P6.1: forwardRef circular dep pattern for AgentsModule ↔ ProactiveModule; publicDomainEmbeddings getter exposes map to scanner. P6.2: chunkCount is computed DTO field, not stored column. P6.3: pre-existing webpack .js extension resolution issue in packages/shared (not caused by P6 changes). P6.6: Playwright installed with --engine-strict=false due to Node 23.5 vs expected 20/22/24 engine constraint.
+**Next:** P6.7 EXIT GATE — deploy to VPS using docs/05_deploy.md runbook, run `pnpm seed:demo`, non-developer dry run of all 7 demo beats in ≤15 min on deployed URL.
+
+---
+
 ## 2026-07-19 — P2 complete: socket gateway, room screen, branch rail, gate
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ e261cbd..{latest}
