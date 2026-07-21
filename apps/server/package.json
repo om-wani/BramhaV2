@@ -8,15 +8,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "tsx --env-file ../../.env watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src",
-    "seed:demo": "tsx src/scripts/seed-demo.ts",
-    "check-env": "tsx src/scripts/check-env.ts",
-    "check-env:strict": "tsx src/scripts/check-env.ts --strict"
+    "seed:demo": "tsx --env-file ../../.env src/scripts/seed-demo.ts",
+    "check-env": "tsx --env-file ../../.env src/scripts/check-env.ts",
+    "check-env:strict": "tsx --env-file ../../.env src/scripts/check-env.ts --strict"
   },
   "dependencies": {
     "@bramha/agents": "workspace:*",
