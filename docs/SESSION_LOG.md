@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-22 — Local dev fully working; OpenRouter model tiering; permission system; markdown; telemetry + status bar
+
+**Branch/commits:** `claude/multi-agent-ai-orchestration-zt6xvw` @ 3202872..{this}
+**Done:** Local-run fix arc: dev script → `node --env-file-if-exists=../../.env --import @swc-node/register/esm-register --watch` (tsx/esbuild drops decorator metadata → NestJS DI injected undefined → login 500); dev-only `'unsafe-eval'` in CSP (Next HMR); webpack `extensionAlias` `.js`→`.ts` + `transpilePackages` for workspace imports; Socket.IO dev connects direct to :3001 (Next rewrite strips trailing slash → engine.io 404); `skipTrailingSlashRedirect`. DAG bugs: user nodes inserted with `parentId: null` → history lost on refresh (fix: default parent = branch head); multi-persona responses now CHAINED not siblings (siblings dropped from ancestry). OpenRouter support: `OPENAI_BASE_URL`/`OPENAI_CHAT_MODEL` env; model tiering — primary `moonshotai/kimi-k2.6`, light executor `meta-llama/llama-3.3-70b-instruct` via `purpose: 'delegation'`; reasoning disabled via fetch-injected `reasoning:{enabled:false}` (kimi burned whole budget on hidden thinking → empty responses); forced `provider.chat()` (SDK defaulted to /responses API, bypassing the wrapper); `MODEL_MAX_TOKENS=2000` (4000 → 402 on free-tier key, credit reserved up-front). Permission system: `projects.settings` (migration 0005), delegationMode ask|auto (default ask), approval card UI, `delegation:pending` WS event, approve/deny endpoints. Markdown rendering (react-markdown+GFM, raw HTML off). Artifact fixes: prompt now advertises capability; raw ```html block stripped from prose. Telemetry: `GET /usage/me` + always-visible status bar (route context, live dot, 24h/total est. spend); `configureModelRouter` wired at bootstrap — was NEVER called, model_calls empty since P3. UI feedback: ToastProvider/useToast, ThinkingIndicator (send→selection→streaming), `node.error` emitted from turn-failure catch (previously silent). Also: migration 0003 committed (missed last session).
+**Decisions:** Default delegationMode 'ask' (user-requested Claude-Code-style permissions; demo beat 6 now needs approval click or auto mode). Anthropic placeholder key must stay unset — placeholder counts as configured, wastes 3 attempts/call. Free-tier OpenRouter: max_tokens reserved up-front, cap at 2000 until credits added.
+**Next:** P6.7 exit gate — full 7-beat demo dry run on local (deploy deferred per user), verify artifacts + delegation approval flow with real key.
+
+---
+
 ## 2026-07-21 — P5 complete + P6.1–P6.6 complete; P6.7 EXIT GATE ready for deploy
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 3e797bd..1bb0a21

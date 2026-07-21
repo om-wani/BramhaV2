@@ -15,7 +15,7 @@ import type { PersonaScore } from './relevance.js';
 import type { PersonaConfig } from './personas/index.js';
 import { buildSystemPrompt } from './prompt-builder.js';
 import { parseCitations, validateCitations } from './citation-parser.js';
-import { detectArtifact } from './artifact-detector.js';
+import { detectArtifact, stripArtifactBlock } from './artifact-detector.js';
 import { parseDelegationSignal, type PendingDelegation } from './delegation-parser.js';
 
 // ---------------------------------------------------------------------------
@@ -226,9 +226,10 @@ export function createTurnGraph(
         projectId: state.projectId,
         roomId: state.roomId,
         persona: slug,
+        // Delegated executor turns run on the light/fast model tier
+        purpose: state.isDelegated ? 'delegation' : 'turn',
         messages,
         system,
-        maxTokens: 700,
       });
 
       for await (const chunk of stream) {
@@ -326,7 +327,9 @@ export function createTurnGraph(
         ...(citations.length > 0 ? { citations } : {}),
         ...(artifact !== null ? { artifact } : {}),
       };
-      return { persona: r.persona, content: r.content, metadata };
+      // Artifact renders as its own card — strip the raw block from the prose
+      const content = artifact !== null ? stripArtifactBlock(r.content) : r.content;
+      return { persona: r.persona, content, metadata };
     });
 
     const persistResults = await persistFn({

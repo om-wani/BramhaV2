@@ -24,9 +24,50 @@ import type {
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
-const OPENAI_CHAT_MODEL = 'gpt-4o-mini';
-const OPENAI_EMBED_MODEL = 'text-embedding-3-small';
+// Model + endpoint are env-overridable so OpenAI-compatible gateways
+// (OpenRouter, Together, local vLLM, …) work without code changes.
+// OpenRouter chat needs a provider-prefixed model, e.g. OPENAI_CHAT_MODEL=openai/gpt-4o-mini
+const OPENAI_CHAT_MODEL = process.env['OPENAI_CHAT_MODEL'] ?? 'gpt-4o-mini';
+// Light/fast tier for mechanical execution (delegated tasks). Falls back to
+// the primary chat model when unset.
+const OPENAI_CHAT_MODEL_LIGHT = process.env['OPENAI_CHAT_MODEL_LIGHT'] ?? OPENAI_CHAT_MODEL;
+const OPENAI_EMBED_MODEL = process.env['EMBEDDING_MODEL'] ?? 'text-embedding-3-small';
 const EMBED_BATCH_SIZE = 64;
+
+/** Delegated executor turns use the light tier; everything else the primary. */
+function chatModelFor(purpose: string | undefined): string {
+  return purpose === 'delegation' ? OPENAI_CHAT_MODEL_LIGHT : OPENAI_CHAT_MODEL;
+}
+
+// Default token budget per persona reply. Reasoning models burn budget on
+// hidden thinking tokens, so this is env-tunable (MODEL_MAX_TOKENS).
+const DEFAULT_MAX_TOKENS = parseInt(process.env['MODEL_MAX_TOKENS'] ?? '700', 10);
+
+/**
+ * OpenRouter serves reasoning models (e.g. kimi-k2.6) that spend the entire
+ * max_tokens budget on hidden reasoning and return EMPTY content. Unless
+ * OPENAI_REASONING=on, inject OpenRouter's `reasoning: {enabled: false}` into
+ * every chat request so replies are immediate and the token budget goes to
+ * visible text. No-op for non-chat bodies (embeddings) and non-OpenRouter APIs
+ * that ignore unknown fields... except some strict APIs — so only wrap when
+ * the base URL is OpenRouter.
+ */
+function reasoningControlFetch(): typeof fetch {
+  return async (input, init) => {
+    if (init?.body && typeof init.body === 'string') {
+      try {
+        const body = JSON.parse(init.body) as Record<string, unknown>;
+        if (Array.isArray(body['messages'])) {
+          body['reasoning'] = { enabled: false };
+          init = { ...init, body: JSON.stringify(body) };
+        }
+      } catch {
+        // not JSON — leave untouched
+      }
+    }
+    return fetch(input, init);
+  };
+}
 const RETRY_BACKOFFS_MS: readonly [number, number] = [500, 2000];
 
 // ---------------------------------------------------------------------------
@@ -84,7 +125,7 @@ async function* streamWithRetryAndLog(
     purpose = 'turn',
     messages,
     system,
-    maxTokens = 700,
+    maxTokens = DEFAULT_MAX_TOKENS,
   } = params;
 
   let lastErr: unknown;
@@ -127,7 +168,7 @@ async function* streamWithRetryAndLog(
     try {
       const start = Date.now();
       const callOpts = buildTextOpts(
-        { model: openaiProvider(OPENAI_CHAT_MODEL), messages, maxOutputTokens: maxTokens },
+        { model: openaiProvider.chat(chatModelFor(purpose)), messages, maxOutputTokens: maxTokens },
         system,
       );
       const result = streamText(callOpts);
@@ -140,7 +181,7 @@ async function* streamWithRetryAndLog(
         ...(roomId !== undefined ? { roomId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'openai',
-        model: OPENAI_CHAT_MODEL,
+        model: chatModelFor(purpose),
         purpose: purpose as CallPurpose,
         inputTokens: usage.inputTokens ?? 0,
         outputTokens: usage.outputTokens ?? 0,
@@ -174,7 +215,7 @@ async function chatWithRetryAndLog(
     purpose = 'turn',
     messages,
     system,
-    maxTokens = 700,
+    maxTokens = DEFAULT_MAX_TOKENS,
   } = params;
 
   let lastErr: unknown;
@@ -213,7 +254,7 @@ async function chatWithRetryAndLog(
     try {
       const start = Date.now();
       const callOpts = buildTextOpts(
-        { model: openaiProvider(OPENAI_CHAT_MODEL), messages, maxOutputTokens: maxTokens },
+        { model: openaiProvider.chat(chatModelFor(purpose)), messages, maxOutputTokens: maxTokens },
         system,
       );
       const result = await generateText(callOpts);
@@ -222,7 +263,7 @@ async function chatWithRetryAndLog(
         ...(roomId !== undefined ? { roomId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'openai',
-        model: OPENAI_CHAT_MODEL,
+        model: chatModelFor(purpose),
         purpose: purpose as CallPurpose,
         inputTokens: result.usage.inputTokens ?? 0,
         outputTokens: result.usage.outputTokens ?? 0,
@@ -244,7 +285,7 @@ async function chatWithRetryAndLog(
 // ---------------------------------------------------------------------------
 
 async function embedWithLog(
-  openaiProvider: OpenAIProvider,
+  embedProvider: OpenAIProvider,
   params: EmbedParams,
   onCallComplete: OnCallComplete | undefined,
 ): Promise<number[][]> {
@@ -257,7 +298,7 @@ async function embedWithLog(
   for (let i = 0; i < inputs.length; i += EMBED_BATCH_SIZE) {
     const batch = inputs.slice(i, i + EMBED_BATCH_SIZE);
     const result = await embedMany({
-      model: openaiProvider.textEmbeddingModel(OPENAI_EMBED_MODEL),
+      model: embedProvider.textEmbeddingModel(OPENAI_EMBED_MODEL),
       values: batch,
     });
     allEmbeddings.push(...(result.embeddings as number[][]));
@@ -290,8 +331,27 @@ export function createLiveRouter(
   const anthropicProvider = anthropicKey !== undefined
     ? createAnthropic({ apiKey: anthropicKey })
     : null;
+
+  // Chat provider: honors OPENAI_BASE_URL so an OpenAI-compatible gateway
+  // (e.g. OpenRouter: https://openrouter.ai/api/v1) can serve chat.
+  const openaiBaseURL = process.env['OPENAI_BASE_URL'];
+  const isOpenRouter = openaiBaseURL?.includes('openrouter') ?? false;
+  const disableReasoning = isOpenRouter && process.env['OPENAI_REASONING'] !== 'on';
   const openaiProvider = openaiKey !== undefined
-    ? createOpenAI({ apiKey: openaiKey })
+    ? createOpenAI({
+        apiKey: openaiKey,
+        ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
+        ...(disableReasoning ? { fetch: reasoningControlFetch() as never } : {}),
+      })
+    : null;
+
+  // Embeddings provider: defaults to the same key/endpoint as chat (OpenRouter
+  // serves /embeddings too). Override with EMBEDDING_API_KEY / EMBEDDING_BASE_URL
+  // only if you want embeddings on a different provider than chat.
+  const embedKey = process.env['EMBEDDING_API_KEY'] ?? openaiKey;
+  const embedBaseURL = process.env['EMBEDDING_BASE_URL'] ?? openaiBaseURL;
+  const embedProvider = embedKey !== undefined
+    ? createOpenAI({ apiKey: embedKey, ...(embedBaseURL ? { baseURL: embedBaseURL } : {}) })
     : null;
 
   return {
@@ -304,9 +364,9 @@ export function createLiveRouter(
         const start = Date.now();
         const callOpts = buildTextOpts(
           {
-            model: openaiProvider(OPENAI_CHAT_MODEL),
+            model: openaiProvider.chat(chatModelFor(params.purpose)),
             messages: params.messages,
-            maxOutputTokens: params.maxTokens ?? 700,
+            maxOutputTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
           },
           params.system,
         );
@@ -316,7 +376,7 @@ export function createLiveRouter(
           ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
           ...(params.persona !== undefined ? { persona: params.persona } : {}),
           provider: 'openai',
-          model: OPENAI_CHAT_MODEL,
+          model: chatModelFor(params.purpose),
           purpose: (params.purpose ?? 'turn') as CallPurpose,
           inputTokens: result.usage.inputTokens ?? 0,
           outputTokens: result.usage.outputTokens ?? 0,
@@ -337,9 +397,9 @@ export function createLiveRouter(
         const start = Date.now();
         const callOpts = buildTextOpts(
           {
-            model: openaiProvider(OPENAI_CHAT_MODEL),
+            model: openaiProvider.chat(chatModelFor(params.purpose)),
             messages: params.messages,
-            maxOutputTokens: params.maxTokens ?? 700,
+            maxOutputTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
           },
           params.system,
         );
@@ -353,7 +413,7 @@ export function createLiveRouter(
           ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
           ...(params.persona !== undefined ? { persona: params.persona } : {}),
           provider: 'openai',
-          model: OPENAI_CHAT_MODEL,
+          model: chatModelFor(params.purpose),
           purpose: (params.purpose ?? 'turn') as CallPurpose,
           inputTokens: usage.inputTokens ?? 0,
           outputTokens: usage.outputTokens ?? 0,
@@ -365,10 +425,12 @@ export function createLiveRouter(
     },
 
     async embed(params: EmbedParams): Promise<number[][]> {
-      if (openaiProvider === null) {
-        throw new Error('ModelRouter: OPENAI_API_KEY required for embeddings.');
+      if (embedProvider === null) {
+        throw new Error(
+          'ModelRouter: embeddings require OPENAI_API_KEY (or EMBEDDING_API_KEY).',
+        );
       }
-      return embedWithLog(openaiProvider, params, onCallComplete);
+      return embedWithLog(embedProvider, params, onCallComplete);
     },
   };
 }

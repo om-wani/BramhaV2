@@ -17,6 +17,7 @@ import { ProjectMemberGuard } from '../../common/guards/project-member.guard.js'
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { RoomsService } from '../rooms/rooms.service.js';
+import { eventBus } from '@bramha/event-bus';
 import type { PersonaSlug } from '@bramha/shared';
 
 type AuthenticatedRequest = FastifyRequest & {
@@ -93,6 +94,14 @@ export class ConversationController {
         });
       } catch (err) {
         this.logger.error('agent turn failed', err);
+        // Tell connected clients the turn died so the UI stops waiting
+        eventBus.emit({
+          type: 'node.error',
+          projectId,
+          roomId,
+          nodeId: `turn-${result.nodeId}`,
+          code: 'AGENT_TURN_FAILED',
+        });
       }
     })();
 

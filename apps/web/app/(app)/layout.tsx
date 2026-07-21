@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { StatusBar } from '@/components/StatusBar';
+import { ToastProvider } from '@/components/Toaster';
 
 interface Org {
   id: string;
@@ -212,7 +214,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   };
 
   return (
-    <div className="min-h-screen flex bg-[hsl(var(--canvas))]">
+    <ToastProvider>
+    <div className="h-screen flex flex-col bg-[hsl(var(--canvas))]">
+      <div className="flex flex-1 min-h-0">
       {/* Sidebar */}
       <aside className="w-60 shrink-0 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--surface))]">
         {/* Logo */}
@@ -307,6 +311,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main */}
       <main className="flex-1 overflow-auto">{children}</main>
+      </div>
+
+      {/* Status bar — always visible */}
+      <StatusBar />
 
       {/* Dialogs */}
       {showNewOrg && <NewOrgDialog onClose={() => setShowNewOrg(false)} />}
@@ -314,5 +322,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <NewProjectDialog orgId={currentOrgId} onClose={() => setShowNewProject(false)} />
       )}
     </div>
+    </ToastProvider>
   );
 }

@@ -201,6 +201,19 @@ export class EventsGateway
       } satisfies TurnSelectionEvent);
     });
 
+    // --- delegation.pending → delegation:pending ---
+    const unsubDelegationPending = eventBus.on('delegation.pending', (event) => {
+      this.server.to(`room:${event.roomId}`).emit('delegation:pending', {
+        type: 'delegation:pending',
+        taskId: event.taskId,
+        roomId: event.roomId,
+        fromPersona: event.fromPersona,
+        toPersona: event.toPersona,
+        task: event.task,
+      });
+    });
+    this.unsubs.push(unsubDelegationPending);
+
     // --- file.status → file:status ---
     const unsubFileStatus = eventBus.on('file.status', (event) => {
       this.server.to(`project:${event.projectId}`).emit('file:status', {

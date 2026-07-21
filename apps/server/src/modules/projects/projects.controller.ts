@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -11,6 +12,8 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { getDb, projects } from '@bramha/db';
 import { ProjectsService } from './projects.service.js';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard.js';
 import { ProjectMemberGuard } from '../../common/guards/project-member.guard.js';
@@ -30,8 +33,13 @@ const AddMemberSchema = z.object({
   role: z.enum(['admin', 'member']),
 });
 
+const UpdateSettingsSchema = z.object({
+  delegationMode: z.enum(['auto', 'ask']).optional(),
+});
+
 type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 type AddMemberInput = z.infer<typeof AddMemberSchema>;
+type UpdateSettingsInput = z.infer<typeof UpdateSettingsSchema>;
 
 // ---------------------------------------------------------------------------
 // Org-scoped routes: /orgs/:orgId/projects
@@ -77,6 +85,35 @@ export class ProjectsController {
     @Req() req: AuthenticatedRequest,
   ): Promise<{ id: string; orgId: string; name: string; createdAt: Date }> {
     return this.projectsService.getProject(req.user.id, projectId);
+  }
+
+  // GET /projects/:projectId/settings — current project settings
+  @Get(':projectId/settings')
+  @UseGuards(ProjectMemberGuard('member'))
+  async getSettings(@Param('projectId') projectId: string): Promise<Record<string, unknown>> {
+    const db = await getDb();
+    const [row] = await db
+      .select({ settings: projects.settings })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    return (row?.settings as Record<string, unknown> | null) ?? {};
+  }
+
+  // PATCH /projects/:projectId/settings — merge-update settings
+  @Patch(':projectId/settings')
+  @UseGuards(ProjectMemberGuard('member'))
+  async updateSettings(
+    @Param('projectId') projectId: string,
+    @Body(new ZodValidationPipe(UpdateSettingsSchema)) body: UpdateSettingsInput,
+  ): Promise<Record<string, unknown>> {
+    const db = await getDb();
+    const [row] = await db
+      .select({ settings: projects.settings })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const merged = { ...((row?.settings as Record<string, unknown> | null) ?? {}), ...body };
+    await db.update(projects).set({ settings: merged }).where(eq(projects.id, projectId));
+    return merged;
   }
 
   @Post(':projectId/members')

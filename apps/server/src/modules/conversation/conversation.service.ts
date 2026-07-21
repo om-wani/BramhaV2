@@ -113,12 +113,15 @@ export class ConversationService {
         : eq(branches.headNodeId, expectedHead);
 
     const result = await db.transaction(async (tx) => {
+      // Default parent = current branch head. Without this every user node is a
+      // parentless root and the ancestry walk from head only ever sees the
+      // latest turn — all older history disappears from the thread.
       const [node] = await tx
         .insert(conversationNodes)
         .values({
           roomId,
           projectId,
-          parentId: parentNodeId ?? null,
+          parentId: parentNodeId ?? branch.headNodeId ?? null,
           authorType: 'user',
           userId: callerId,
           content,

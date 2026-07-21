@@ -10,6 +10,7 @@ import { AgentsModule } from './modules/agents/agents.module.js';
 import { FilesModule } from './modules/files/files.module.js';
 import { IngestionModule } from './modules/ingestion/ingestion.module.js';
 import { ProactiveModule } from './modules/proactive/proactive.module.js';
+import { UsageModule } from './modules/usage/usage.module.js';
 
-@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule, RoomsModule, ConversationModule, GatewayModule, AgentsModule, FilesModule, IngestionModule, ProactiveModule] })
+@Module({ imports: [HealthModule, AuthModule, OrgsModule, ProjectsModule, RoomsModule, ConversationModule, GatewayModule, AgentsModule, FilesModule, IngestionModule, ProactiveModule, UsageModule] })
 export class AppModule {}

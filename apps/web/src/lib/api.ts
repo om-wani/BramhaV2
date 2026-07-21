@@ -1,4 +1,4 @@
-export async function apiFetch(path: string, init?: RequestInit) {
+export async function apiFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { credentials: 'include', ...init });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ title: res.statusText }));
@@ -7,5 +7,5 @@ export async function apiFetch(path: string, init?: RequestInit) {
       code: err.code,
     });
   }
-  return res.status === 204 ? null : res.json();
+  return (res.status === 204 ? null : res.json()) as Promise<T>;
 }

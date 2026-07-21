@@ -2,17 +2,23 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   PERSONAS,
   computeDomainEmbeddings,
+  configureModelRouter,
   getModelRouter,
   invokeTurnGraph,
   type AgentResponse,
   type PersistResponseFn,
-  type PendingDelegation,
 } from '@bramha/agents';
-import { getDb, conversationNodes, branches, delegationTasks, projects, searchKnowledge } from '@bramha/db';
+import { getDb, conversationNodes, branches, delegationTasks, projects, modelCalls, searchKnowledge, getThreadAncestry } from '@bramha/db';
 import { eq, and } from 'drizzle-orm';
 import { eventBus } from '@bramha/event-bus';
 import type { ConversationNodeRow } from '@bramha/db';
 import type { PersonaSlug } from '@bramha/shared';
+
+export type DelegationMode = 'auto' | 'ask';
+
+export interface ProjectSettings {
+  delegationMode?: DelegationMode;
+}
 
 // PA lite types
 export interface OpenLoop {
@@ -38,6 +44,29 @@ export class AgentsService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
+    // Wire model_calls logging BEFORE any model call — this was never called
+    // previously, so every call went unlogged (usage bar always $0, and the
+    // "silent = $0" gate assertion had no data).
+    configureModelRouter(async (record) => {
+      try {
+        const db = await getDb();
+        await db.insert(modelCalls).values({
+          projectId: record.projectId,
+          roomId: record.roomId ?? null,
+          persona: record.persona ?? null,
+          provider: record.provider,
+          model: record.model,
+          purpose: record.purpose,
+          inputTokens: record.inputTokens,
+          outputTokens: record.outputTokens,
+          latencyMs: record.latencyMs,
+        });
+      } catch {
+        // 'system' bootstrap calls have a non-UUID projectId — skip silently;
+        // never let logging break the model call path
+      }
+    });
+
     try {
       const router = getModelRouter();
       const allPersonas = Object.values(PERSONAS);
@@ -77,14 +106,18 @@ export class AgentsService implements OnModuleInit {
       const db = await getDb();
       const results: Array<{ persona: string; nodeId: string }> = [];
 
-      // Insert all agent nodes (all are children of userNodeId)
+      // Insert agent nodes as a CHAIN: first is child of userNodeId, each
+      // subsequent response is child of the previous one. Chaining keeps every
+      // persona's reply inside the head's ancestry — siblings would drop all
+      // but the last response from the thread on reload.
+      let chainParentId = persistParams.userNodeId;
       for (const response of persistParams.responses) {
         const [node] = await db
           .insert(conversationNodes)
           .values({
             roomId: persistParams.roomId,
             projectId: persistParams.projectId,
-            parentId: persistParams.userNodeId,
+            parentId: chainParentId,
             authorType: 'agent',
             persona: response.persona,
             content: response.content,
@@ -94,15 +127,14 @@ export class AgentsService implements OnModuleInit {
 
         if (!node) throw new Error('agent node insert failed');
         results.push({ persona: response.persona, nodeId: node.id });
+        chainParentId = node.id;
       }
 
-      // Advance branch head once after all inserts, to the last agent node.
-      // Multi-persona turns produce sibling nodes (all children of userNodeId).
-      // The head pointer moves to the last inserted sibling — this is an MVP
-      // simplification; P5 delegation will need to handle the sibling case explicitly.
-      // Optimistic: WHERE head_node_id = userNodeId so concurrent turns don't
-      // silently overwrite each other's work. If 0 rows updated, another turn
-      // already moved the head — log a warning but don't throw (nodes are safe).
+      // Advance branch head once after all inserts, to the last agent node
+      // (tail of the chain). Optimistic: WHERE head_node_id = userNodeId so
+      // concurrent turns don't silently overwrite each other's work. If 0 rows
+      // updated, another turn already moved the head — log a warning but don't
+      // throw (nodes are safe).
       const lastNodeId = results[results.length - 1]?.nodeId;
       if (lastNodeId !== undefined) {
         const headUpdated = await db
@@ -178,16 +210,18 @@ export class AgentsService implements OnModuleInit {
       },
     });
 
-    // P5.2: insert delegation_tasks rows with .returning() to get IDs for status updates,
-    // then execute each delegation as a sub-turn-graph.
+    // P5: persist delegation_tasks. Execution depends on the project's
+    // delegationMode setting: 'auto' runs immediately, 'ask' (default) waits
+    // for explicit user approval via POST .../delegations/:taskId/approve.
     if (pendingDelegations.length > 0) {
       const db = await getDb();
 
-      const insertedRows: Array<{
-        id: string;
-        delegatingNodeId: string;
-        delegation: PendingDelegation;
-      }> = [];
+      const [projRow] = await db
+        .select({ settings: projects.settings })
+        .from(projects)
+        .where(eq(projects.id, params.projectId));
+      const mode: DelegationMode =
+        (projRow?.settings as ProjectSettings | null)?.delegationMode ?? 'ask';
 
       for (const delegation of pendingDelegations) {
         // Use the delegating agent's actual nodeId (not the user node)
@@ -207,132 +241,37 @@ export class AgentsService implements OnModuleInit {
           })
           .returning();
 
-        if (row?.id) {
-          insertedRows.push({ id: row.id, delegatingNodeId, delegation });
-        }
-      }
+        if (!row?.id) continue;
 
-      this.logger.log(
-        `Inserted ${insertedRows.length} delegation_tasks row(s) for room ${params.roomId}`,
-      );
-
-      // Execute each delegation as a sub-turn-graph
-      for (const { id: taskId, delegatingNodeId, delegation } of insertedRows) {
-        // Mark running
-        await db
-          .update(delegationTasks)
-          .set({ status: 'running' })
-          .where(eq(delegationTasks.id, taskId));
-
-        try {
-          // Build context string from last 10 thread nodes
-          const contextNodes = params.thread.slice(-10);
-          const contextText = contextNodes
-            .map((n) => {
-              const speaker =
-                n.authorType === 'user' ? 'User' : (n.persona ?? 'Agent');
-              return `[${speaker}]: ${n.content}`;
-            })
-            .join('\n\n');
-
-          const delegatedMessage = contextText
-            ? `## Recent conversation\n${contextText}\n\n## Your task\n${delegation.task}`
-            : delegation.task;
-
-          // Delegated persistFn: inserts node as child of the delegating agent node.
-          // No branch head advance — delegated node is a side-branch in the DAG.
-          const delegatedPersistFn: PersistResponseFn = async (persistParams) => {
-            const db2 = await getDb();
-            const results: Array<{ persona: string; nodeId: string }> = [];
-
-            for (const response of persistParams.responses) {
-              const [node] = await db2
-                .insert(conversationNodes)
-                .values({
-                  roomId: persistParams.roomId,
-                  projectId: persistParams.projectId,
-                  parentId: delegatingNodeId,
-                  authorType: 'agent',
-                  persona: response.persona,
-                  content: response.content,
-                  metadata: {
-                    ...(response.metadata as Record<string, unknown>),
-                    delegatedFrom: delegation.fromSlug,
-                  },
-                })
-                .returning();
-
-              if (!node) throw new Error('delegated node insert failed');
-              results.push({ persona: response.persona, nodeId: node.id });
-
-              eventBus.emit({
-                type: 'node.created',
-                projectId: persistParams.projectId,
-                roomId: persistParams.roomId,
-                nodeId: node.id,
-                branchId: persistParams.branchId,
-              });
-            }
-
-            return results;
-          };
-
-          const subResult = await invokeTurnGraph({
+        if (mode === 'ask') {
+          // Surface to the user; execution deferred until approval
+          eventBus.emit({
+            type: 'delegation.pending',
             projectId: params.projectId,
             roomId: params.roomId,
-            branchId: params.branchId,
-            orgName: params.orgName,
-            userNodeId: delegatingNodeId,
-            userMessage: delegatedMessage,
-            roomKind: params.roomKind,
-            boundPersona: delegation.toSlug,
-            recentSpeakers,
-            domainEmbeddings: this.domainEmbeddings,
-            isDelegated: true,
-            persistFn: delegatedPersistFn,
-            searchFn: (projectId, embedding, query, k) =>
-              searchKnowledge(projectId, embedding, query, k),
-            emitStreamingFn: (streamParams) => {
-              eventBus.emit({
-                type: 'node.streaming',
-                projectId: streamParams.projectId,
-                roomId: streamParams.roomId,
-                nodeId: streamParams.nodeId,
-                seq: streamParams.seq,
-                text: streamParams.text,
-              });
-            },
-            emitSelectionFn: (selectionParams) => {
-              eventBus.emit({
-                type: 'turn.selection',
-                projectId: selectionParams.projectId,
-                roomId: selectionParams.roomId,
-                userNodeId: selectionParams.userNodeId,
-                scores: selectionParams.scores,
-              });
-            },
+            taskId: row.id,
+            fromPersona: delegation.fromSlug,
+            toPersona: delegation.toSlug,
+            task: delegation.task,
           });
-
-          const resultNodeId = subResult.responses[0]?.nodeId;
-
-          await db
-            .update(delegationTasks)
-            .set({ status: 'done', ...(resultNodeId !== undefined ? { resultNodeId } : {}) })
-            .where(eq(delegationTasks.id, taskId));
-
           this.logger.log(
-            `Delegation ${delegation.fromSlug}→${delegation.toSlug} done, nodeId=${resultNodeId ?? 'none'}`,
+            `Delegation ${delegation.fromSlug}→${delegation.toSlug} awaiting approval (task ${row.id})`,
           );
-        } catch (err) {
-          // Failure path: mark failed, never rethrow — main turn already succeeded
-          this.logger.error(
-            `Delegation ${delegation.fromSlug}→${delegation.toSlug} failed: ${String(err)}`,
-          );
-          await db
-            .update(delegationTasks)
-            .set({ status: 'failed' })
-            .where(eq(delegationTasks.id, taskId));
+          continue;
         }
+
+        await this.executeDelegationTask({
+          taskId: row.id,
+          projectId: params.projectId,
+          roomId: params.roomId,
+          branchId: params.branchId,
+          orgName: params.orgName,
+          roomKind: params.roomKind,
+          delegatingNodeId,
+          fromPersona: delegation.fromSlug,
+          toPersona: delegation.toSlug,
+          task: delegation.task,
+        });
       }
     }
 
@@ -368,5 +307,146 @@ export class AgentsService implements OnModuleInit {
     }
 
     return responses;
+  }
+
+  /**
+   * Execute one delegation sub-turn. Self-sufficient: rebuilds context from
+   * the delegating node's ancestry so it can run immediately (auto mode) or
+   * later from the approval endpoint (ask mode).
+   * Never throws — failures mark the task 'failed' and the thread continues.
+   */
+  async executeDelegationTask(params: {
+    taskId: string;
+    projectId: string;
+    roomId: string;
+    branchId: string;
+    orgName: string;
+    roomKind: 'council' | 'one_on_one';
+    delegatingNodeId: string;
+    fromPersona: PersonaSlug;
+    toPersona: PersonaSlug;
+    task: string;
+  }): Promise<void> {
+    const db = await getDb();
+
+    await db
+      .update(delegationTasks)
+      .set({ status: 'running' })
+      .where(eq(delegationTasks.id, params.taskId));
+
+    try {
+      // Context: last 10 nodes of the delegating node's ancestry
+      const ancestry = await getThreadAncestry(params.delegatingNodeId, params.projectId);
+      const contextNodes = ancestry.slice(-10);
+      const contextText = contextNodes
+        .map((n) => {
+          const speaker = n.authorType === 'user' ? 'User' : (n.persona ?? 'Agent');
+          return `[${speaker}]: ${n.content}`;
+        })
+        .join('\n\n');
+
+      const delegatedMessage = contextText
+        ? `## Recent conversation\n${contextText}\n\n## Your task\n${params.task}`
+        : params.task;
+
+      const recentSpeakers: PersonaSlug[] = ancestry
+        .filter((n) => n.authorType === 'agent' && n.persona !== null && n.persona !== undefined)
+        .slice(-3)
+        .map((n) => n.persona as PersonaSlug);
+
+      // Delegated persistFn: node is a child of the delegating agent node.
+      // No branch head advance — delegated node is a side-branch in the DAG.
+      const delegatedPersistFn: PersistResponseFn = async (persistParams) => {
+        const db2 = await getDb();
+        const results: Array<{ persona: string; nodeId: string }> = [];
+
+        for (const response of persistParams.responses) {
+          const [node] = await db2
+            .insert(conversationNodes)
+            .values({
+              roomId: persistParams.roomId,
+              projectId: persistParams.projectId,
+              parentId: params.delegatingNodeId,
+              authorType: 'agent',
+              persona: response.persona,
+              content: response.content,
+              metadata: {
+                ...(response.metadata as Record<string, unknown>),
+                delegatedFrom: params.fromPersona,
+              },
+            })
+            .returning();
+
+          if (!node) throw new Error('delegated node insert failed');
+          results.push({ persona: response.persona, nodeId: node.id });
+
+          eventBus.emit({
+            type: 'node.created',
+            projectId: persistParams.projectId,
+            roomId: persistParams.roomId,
+            nodeId: node.id,
+            branchId: persistParams.branchId,
+          });
+        }
+
+        return results;
+      };
+
+      const subResult = await invokeTurnGraph({
+        projectId: params.projectId,
+        roomId: params.roomId,
+        branchId: params.branchId,
+        orgName: params.orgName,
+        userNodeId: params.delegatingNodeId,
+        userMessage: delegatedMessage,
+        roomKind: params.roomKind,
+        boundPersona: params.toPersona,
+        recentSpeakers,
+        domainEmbeddings: this.domainEmbeddings,
+        isDelegated: true,
+        persistFn: delegatedPersistFn,
+        searchFn: (projectId, embedding, query, k) =>
+          searchKnowledge(projectId, embedding, query, k),
+        emitStreamingFn: (streamParams) => {
+          eventBus.emit({
+            type: 'node.streaming',
+            projectId: streamParams.projectId,
+            roomId: streamParams.roomId,
+            nodeId: streamParams.nodeId,
+            seq: streamParams.seq,
+            text: streamParams.text,
+          });
+        },
+        emitSelectionFn: (selectionParams) => {
+          eventBus.emit({
+            type: 'turn.selection',
+            projectId: selectionParams.projectId,
+            roomId: selectionParams.roomId,
+            userNodeId: selectionParams.userNodeId,
+            scores: selectionParams.scores,
+          });
+        },
+      });
+
+      const resultNodeId = subResult.responses[0]?.nodeId;
+
+      await db
+        .update(delegationTasks)
+        .set({ status: 'done', ...(resultNodeId !== undefined ? { resultNodeId } : {}) })
+        .where(eq(delegationTasks.id, params.taskId));
+
+      this.logger.log(
+        `Delegation ${params.fromPersona}→${params.toPersona} done, nodeId=${resultNodeId ?? 'none'}`,
+      );
+    } catch (err) {
+      // Failure path: mark failed, never rethrow — main turn already succeeded
+      this.logger.error(
+        `Delegation ${params.fromPersona}→${params.toPersona} failed: ${String(err)}`,
+      );
+      await db
+        .update(delegationTasks)
+        .set({ status: 'failed' })
+        .where(eq(delegationTasks.id, params.taskId));
+    }
   }
 }

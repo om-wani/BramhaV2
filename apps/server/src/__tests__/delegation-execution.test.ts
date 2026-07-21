@@ -24,6 +24,7 @@ const { mockInvokeTurnGraph, mockDb, mockEventBusEmit } = vi.hoisted(() => {
   const mockDb = {
     insert: vi.fn(),
     update: vi.fn(),
+    select: vi.fn(),
   };
 
   return { mockInvokeTurnGraph, mockDb, mockEventBusEmit };
@@ -48,7 +49,9 @@ vi.mock('@bramha/db', () => ({
   conversationNodes: 'conversationNodes_table',
   branches: 'branches_table',
   delegationTasks: { id: 'delegation_tasks_id_col' },
+  projects: { id: 'projects_id_col', settings: 'projects_settings_col', workingMemory: 'projects_wm_col' },
   searchKnowledge: vi.fn().mockResolvedValue([]),
+  getThreadAncestry: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('@bramha/event-bus', () => ({
@@ -71,8 +74,18 @@ const capturedUpdates: Array<{ set: Record<string, unknown> }> = [];
 function setupDbMocks(opts: {
   delegationTasksInsertRow?: { id: string };
   subGraphResponses?: Array<{ persona: string; nodeId: string; content: string }>;
+  delegationMode?: 'auto' | 'ask';
 }) {
   capturedUpdates.length = 0;
+
+  // projects settings select — delegationMode drives execute-vs-defer.
+  // Tests exercising execution default to 'auto'.
+  mockDb.select.mockImplementation(() => ({
+    from: () => ({
+      where: () =>
+        Promise.resolve([{ settings: { delegationMode: opts.delegationMode ?? 'auto' } }]),
+    }),
+  }));
 
   // conversationNodes insert (in delegatedPersistFn)
   const nodeInsertRow = {
@@ -106,7 +119,10 @@ function setupDbMocks(opts: {
     set: (vals: Record<string, unknown>) => ({
       where: () => {
         capturedUpdates.push({ set: vals });
-        return Promise.resolve([]);
+        // Awaitable AND supports .returning() for the branch-head advance path
+        const p = Promise.resolve([]) as unknown as Promise<unknown[]> & { returning: () => Promise<unknown[]> };
+        p.returning = () => Promise.resolve([]);
+        return p;
       },
     }),
   }));
@@ -229,6 +245,24 @@ describe('AgentsService — delegation execution (P5.2)', () => {
     expect(capturedUpdates).toHaveLength(2);
     expect(capturedUpdates[0]?.set).toEqual({ status: 'running' });
     expect(capturedUpdates[1]?.set).toEqual({ status: 'failed' });
+  });
+
+  it("defers execution and emits delegation.pending when mode is 'ask' (default)", async () => {
+    mockInvokeTurnGraph.mockResolvedValueOnce({
+      responses: [{ persona: 'ceo', nodeId: 'node-ceo-1', content: 'Delegating.' }],
+      pendingDelegations: [{ fromSlug: 'ceo', toSlug: 'cfo', task: 'Run the numbers' }],
+    });
+
+    setupDbMocks({ delegationTasksInsertRow: { id: 'dtask-ask' }, delegationMode: 'ask' });
+
+    await service.triggerAgentTurn(buildParams());
+
+    // No sub-graph execution — task waits for approval
+    expect(mockInvokeTurnGraph).toHaveBeenCalledTimes(1);
+    expect(capturedUpdates).toHaveLength(0);
+    expect(mockEventBusEmit).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'delegation.pending', taskId: 'dtask-ask' }),
+    );
   });
 
   it('does not call invokeTurnGraph a second time when there are no delegations', async () => {

@@ -57,6 +57,7 @@ vi.mock('@ai-sdk/anthropic', () => ({
 vi.mock('@ai-sdk/openai', () => ({
   createOpenAI: vi.fn(() => {
     const fn = Object.assign(mockOpenAIModel, {
+      chat: mockOpenAIModel, // provider.chat(model) — Chat Completions API path
       textEmbeddingModel: mockTextEmbeddingModel,
     });
     return fn;
@@ -125,8 +126,8 @@ function makeFailingStream(message: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Re-attach textEmbeddingModel after clearAllMocks resets it
-  Object.assign(mockOpenAIModel, { textEmbeddingModel: mockTextEmbeddingModel });
+  // Re-attach helpers after clearAllMocks resets them
+  Object.assign(mockOpenAIModel, { chat: mockOpenAIModel, textEmbeddingModel: mockTextEmbeddingModel });
 });
 
 // ---- chat() ----------------------------------------------------------------
@@ -383,6 +384,6 @@ describe('ModelRouter.embed()', () => {
     const router = createLiveRouter('ant-key', undefined);
     await expect(
       router.embed({ projectId: 'proj-e4', inputs: ['test'] }),
-    ).rejects.toThrow('OPENAI_API_KEY required for embeddings');
+    ).rejects.toThrow('embeddings require OPENAI_API_KEY');
   });
 });

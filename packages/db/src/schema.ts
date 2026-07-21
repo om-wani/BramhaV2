@@ -97,6 +97,8 @@ export const projects = pgTable(
     slug: text('slug').notNull(),
     description: text('description'),
     workingMemory: jsonb('working_memory').notNull().default({}),
+    // { delegationMode?: 'auto' | 'ask' } — extend as needed
+    settings: jsonb('settings').notNull().default({}),
     proactivePaEnabled: boolean('proactive_pa_enabled').notNull().default(false),
     createdAt: timestamptz('created_at').notNull().defaultNow(),
   },

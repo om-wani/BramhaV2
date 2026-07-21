@@ -6,8 +6,10 @@ import Link from 'next/link';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { useToast } from '@/components/Toaster';
+import { Markdown } from '@/components/Markdown';
 import type { ConversationNodeDto, BranchDto, PersonaScore, ValidatedCitation } from '@bramha/shared';
-import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent } from '@bramha/shared';
+import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent, DelegationPendingEvent } from '@bramha/shared';
 import { PERSONA_SLUGS } from '@bramha/shared';
 import type { PersonaSlug } from '@bramha/shared';
 
@@ -118,7 +120,7 @@ function CitationChip({
         border border-[hsl(var(--accent)/0.3)] transition-colors"
     >
       <span className="font-medium truncate max-w-[120px]">{citation.filename}</span>
-      <span className="text-[hsl(var(--accent)/0.7))]">#{citation.chunkIndex}</span>
+      <span className="text-[hsl(var(--accent)/0.7)]">#{citation.chunkIndex}</span>
     </button>
   );
 }
@@ -255,9 +257,7 @@ function MessageCard({
             </span>
           )}
         </div>
-        <pre className="text-sm text-[hsl(var(--text-primary))] whitespace-pre-wrap break-words font-sans leading-relaxed">
-          {node.content}
-        </pre>
+        <Markdown content={node.content} />
         {citations.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
             {citations.map((c, i) => (
@@ -395,15 +395,97 @@ function StreamingCard({ slug, content }: { slug: PersonaSlug; content: string }
           </span>
           <span className="text-xs text-[hsl(var(--text-muted))]">streaming…</span>
         </div>
-        <pre className="text-sm text-[hsl(var(--text-primary))] whitespace-pre-wrap break-words font-sans leading-relaxed">
-          {content}
+        <div className="relative">
+          <Markdown content={content} />
           <span
             aria-hidden="true"
             className="inline-block w-0.5 h-4 bg-[hsl(var(--text-primary))] animate-caret ml-0.5 align-text-bottom"
           />
-        </pre>
+        </div>
       </div>
     </article>
+  );
+}
+
+// ---- thinking indicator ---------------------------------------------------
+
+function ThinkingIndicator({ personas }: { personas: PersonaSlug[] }) {
+  const label =
+    personas.length === 0
+      ? 'Council is thinking'
+      : `${personas.map(getPersonaName).join(', ')} ${personas.length === 1 ? 'is' : 'are'} preparing a response`;
+
+  return (
+    <div role="status" aria-label={label} className="flex items-center gap-3 px-6 py-4">
+      <div className="flex -space-x-2 shrink-0" aria-hidden="true">
+        {personas.length === 0 ? (
+          <div className="w-8 h-8 rounded-full bg-[hsl(var(--surface-raised))] border border-[hsl(var(--border))] flex items-center justify-center text-xs">
+            💭
+          </div>
+        ) : (
+          personas.slice(0, 4).map((slug) => (
+            <div
+              key={slug}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-[hsl(var(--canvas))] border-2 border-[hsl(var(--canvas))]"
+              style={{ backgroundColor: `hsl(var(--persona-${slug}))` }}
+            >
+              {slug[0]?.toUpperCase()}
+            </div>
+          ))
+        )}
+      </div>
+      <span className="text-sm text-[hsl(var(--text-muted))]">{label}</span>
+      <span className="flex gap-1" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="thinking-dot inline-block w-1.5 h-1.5 rounded-full bg-[hsl(var(--text-muted))]" />
+        ))}
+      </span>
+    </div>
+  );
+}
+
+// ---- delegation approval card ---------------------------------------------
+
+function DelegationApprovalCard({
+  pending,
+  onApprove,
+  onDeny,
+}: {
+  pending: DelegationPendingEvent;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  return (
+    <div className="mx-6 my-3 rounded-lg border border-[hsl(var(--accent)/0.4)] bg-[hsl(var(--accent)/0.06)] p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-[hsl(var(--canvas))]"
+          style={{ backgroundColor: `hsl(var(--persona-${pending.fromPersona}))` }}
+          aria-hidden="true"
+        >
+          {pending.fromPersona[0]?.toUpperCase()}
+        </div>
+        <span className="text-xs text-[hsl(var(--text-primary))]">
+          <strong>{getPersonaName(pending.fromPersona)}</strong> wants to delegate to{' '}
+          <strong>{getPersonaName(pending.toPersona)}</strong>
+        </span>
+      </div>
+      <p className="text-sm text-[hsl(var(--text-muted))] mb-3 pl-8">“{pending.task}”</p>
+      <div className="flex gap-2 pl-8">
+        <button
+          onClick={onApprove}
+          className="px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity"
+        >
+          ✓ Run task
+        </button>
+        <button
+          onClick={onDeny}
+          className="px-3 py-1.5 text-xs rounded-lg border border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--surface))] transition-colors"
+        >
+          ✕ Skip
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -630,6 +712,13 @@ export default function RoomPage() {
   const [streamingNodes, setStreamingNodes] = useState<Map<string, string>>(new Map());
   // Council panel scores from turn:selection
   const [personaScores, setPersonaScores] = useState<PersonaScore[]>([]);
+  // Turn progress: true from send until every selected persona has replied
+  const [turnWaiting, setTurnWaiting] = useState(false);
+  // Personas selected for this turn that haven't finished responding yet
+  const [respondingPersonas, setRespondingPersonas] = useState<PersonaSlug[]>([]);
+  // Delegations awaiting user approval (project delegationMode = 'ask')
+  const [pendingApprovals, setPendingApprovals] = useState<DelegationPendingEvent[]>([]);
+  const toast = useToast();
   // @mention popover state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -721,7 +810,7 @@ export default function RoomPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [nodes.length, streamingNodes]);
+  }, [nodes.length, streamingNodes, turnWaiting]);
 
   // ---- Socket.IO — lifecycle (connect once per room) ----------------------
 
@@ -762,6 +851,14 @@ export default function RoomPage() {
           next.delete(`pending-${event.node.persona}`);
           return next;
         });
+        // Turn progress: this persona is done. Clear the waiting state once the
+        // last selected persona replies (or on the first reply in 1:1 rooms,
+        // where no turn:selection fires and the list stays empty).
+        setRespondingPersonas((prev) => {
+          const next = prev.filter((p) => p !== event.node.persona);
+          if (next.length === 0) setTurnWaiting(false);
+          return next;
+        });
       }
     };
 
@@ -779,23 +876,49 @@ export default function RoomPage() {
         next.delete(event.nodeId);
         return next;
       });
+      // Surface the failure instead of silently going idle
+      const slug = event.nodeId.startsWith('pending-') ? event.nodeId.slice('pending-'.length) : null;
+      toast(`${slug ? getPersonaName(slug) : 'An agent'} failed to respond`, { kind: 'error' });
+      if (slug) {
+        setRespondingPersonas((prev) => {
+          const next = prev.filter((p) => p !== slug);
+          if (next.length === 0) setTurnWaiting(false);
+          return next;
+        });
+      } else {
+        setTurnWaiting(false);
+      }
     };
 
     const handleTurnSelection = (event: TurnSelectionEvent) => {
       setPersonaScores(event.scores);
+      // Selection done — we now know who will speak this turn
+      setRespondingPersonas(
+        event.scores.filter((s) => s.selected).map((s) => s.persona as PersonaSlug),
+      );
+    };
+
+    const handleDelegationPending = (event: DelegationPendingEvent) => {
+      if (event.roomId !== roomId) return;
+      setPendingApprovals((prev) =>
+        prev.some((p) => p.taskId === event.taskId) ? prev : [...prev, event],
+      );
+      toast(`${getPersonaName(event.fromPersona)} wants to delegate a task — approval needed`);
     };
 
     socket.on('node:created', handleNodeCreated);
     socket.on('node:delta', handleNodeDelta);
     socket.on('node:error', handleNodeError);
     socket.on('turn:selection', handleTurnSelection);
+    socket.on('delegation:pending', handleDelegationPending);
     return () => {
       socket.off('node:created', handleNodeCreated);
       socket.off('node:delta', handleNodeDelta);
       socket.off('node:error', handleNodeError);
       socket.off('turn:selection', handleTurnSelection);
+      socket.off('delegation:pending', handleDelegationPending);
     };
-  }, [projectId, roomId, qc]);
+  }, [projectId, roomId, qc, toast]);
 
   // ---- Socket.IO — branch:created handler ---------------------------------
 
@@ -818,7 +941,78 @@ export default function RoomPage() {
 
   useEffect(() => {
     setStreamingNodes(new Map());
+    setTurnWaiting(false);
+    setRespondingPersonas([]);
+    setPendingApprovals([]);
   }, [roomId, activeBranchId]);
+
+  // ---- project settings (delegation mode) ---------------------------------
+
+  const settingsQuery = useQuery<{ delegationMode?: 'auto' | 'ask' }>({
+    queryKey: ['project-settings', projectId],
+    queryFn: () => apiFetch(`/backend/projects/${projectId}/settings`),
+    enabled: projectId !== null,
+    staleTime: 60_000,
+  });
+
+  const delegationMode = settingsQuery.data?.delegationMode ?? 'ask';
+
+  const setDelegationMode = useCallback(
+    async (mode: 'auto' | 'ask') => {
+      if (!projectId) return;
+      try {
+        await apiFetch(`/backend/projects/${projectId}/settings`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delegationMode: mode }),
+        });
+        void qc.invalidateQueries({ queryKey: ['project-settings', projectId] });
+        toast(mode === 'auto' ? 'Delegations will run automatically' : 'Delegations will ask first', { kind: 'success' });
+      } catch {
+        toast('Failed to update setting', { kind: 'error' });
+      }
+    },
+    [projectId, qc, toast],
+  );
+
+  // ---- delegation approval ------------------------------------------------
+
+  const resolveApproval = useCallback(
+    async (taskId: string, approve: boolean) => {
+      if (!projectId || !activeBranchId) return;
+      try {
+        await apiFetch(
+          `/backend/projects/${projectId}/rooms/${roomId}/delegations/${taskId}/${approve ? 'approve' : 'deny'}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            ...(approve ? { body: JSON.stringify({ branchId: activeBranchId }) } : {}),
+          },
+        );
+        setPendingApprovals((prev) => prev.filter((p) => p.taskId !== taskId));
+        toast(approve ? 'Delegation approved — running' : 'Delegation denied', {
+          kind: approve ? 'success' : 'info',
+        });
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Action failed', { kind: 'error' });
+      }
+    },
+    [projectId, roomId, activeBranchId, toast],
+  );
+
+  // ---- Turn-waiting safety timeout ----------------------------------------
+  // If nothing comes back (model outage, server crash) stop the indicator
+  // instead of spinning forever.
+
+  useEffect(() => {
+    if (!turnWaiting) return;
+    const timer = window.setTimeout(() => {
+      setTurnWaiting(false);
+      setRespondingPersonas([]);
+      toast('No agent response — the model may be unavailable', { kind: 'error', durationMs: 6000 });
+    }, 120_000);
+    return () => window.clearTimeout(timer);
+  }, [turnWaiting, toast]);
 
   // ---- branch dialog callbacks --------------------------------------------
 
@@ -832,8 +1026,9 @@ export default function RoomPage() {
       setShowDialog(false);
       void qc.invalidateQueries({ queryKey: ['branches', projectId, roomId] });
       setActiveBranchId(branch.id);
+      toast(`Branch “${branch.name}” created`, { kind: 'success' });
     },
-    [qc, projectId, roomId],
+    [qc, projectId, roomId, toast],
   );
 
   // ---- @mention popover ---------------------------------------------------
@@ -862,19 +1057,34 @@ export default function RoomPage() {
     setSending(true);
     setSendError('');
     try {
-      await apiFetch(`/backend/projects/${projectId}/rooms/${roomId}/nodes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ branchId: activeBranch.id, content }),
-      });
+      const result = await apiFetch<{ nodeId: string; branchId: string; forked: boolean; newBranchId?: string }>(
+        `/backend/projects/${projectId}/rooms/${roomId}/nodes`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ branchId: activeBranch.id, content }),
+        },
+      );
       setDraft('');
+      // Turn feedback: show the thinking indicator until agents respond
+      setTurnWaiting(true);
+      setRespondingPersonas([]);
+      // Auto-fork: concurrent write moved the head — follow the new branch
+      if (result.forked && result.newBranchId) {
+        void qc.invalidateQueries({ queryKey: ['branches', projectId, roomId] });
+        setActiveBranchId(result.newBranchId);
+      } else {
+        // Refetch so the user message shows immediately even if the socket
+        // is down; socket node:created dedupes by id when it also arrives.
+        void qc.invalidateQueries({ queryKey: ['thread', projectId, roomId, activeBranch.id] });
+      }
       textareaRef.current?.focus();
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Failed to send.');
     } finally {
       setSending(false);
     }
-  }, [draft, projectId, roomId, activeBranch]);
+  }, [draft, projectId, roomId, activeBranch, qc]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Escape always closes the mention popover, even when there are no matches
@@ -929,7 +1139,7 @@ export default function RoomPage() {
   const projectBackHref = `/p/${orgSlug}/${projectSlug}`;
 
   return (
-    <div className="flex flex-col h-screen bg-[hsl(var(--canvas))]">
+    <div className="flex flex-col h-full bg-[hsl(var(--canvas))]">
       {/* Header */}
       <header className="shrink-0 flex items-center gap-3 px-6 py-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--surface))]">
         <Link
@@ -952,6 +1162,18 @@ export default function RoomPage() {
             ⑂ {activeBranch.name}
           </span>
         )}
+        {/* Delegation permission mode — like Claude Code permission modes */}
+        <label className="flex items-center gap-1.5 shrink-0 text-xs text-[hsl(var(--text-muted))]">
+          Delegations
+          <select
+            value={delegationMode}
+            onChange={(e) => void setDelegationMode(e.target.value as 'auto' | 'ask')}
+            className="px-2 py-1 rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--text-primary))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--accent))]"
+          >
+            <option value="ask">Ask first</option>
+            <option value="auto">Auto-run</option>
+          </select>
+        </label>
       </header>
 
       {/* Body: council panel + thread + branch rail */}
@@ -1013,6 +1235,24 @@ export default function RoomPage() {
                 <StreamingCard key={pendingId} slug={slug} content={content} />
               );
             })}
+
+            {/* Delegations awaiting approval */}
+            {pendingApprovals.map((p) => (
+              <DelegationApprovalCard
+                key={p.taskId}
+                pending={p}
+                onApprove={() => void resolveApproval(p.taskId, true)}
+                onDeny={() => void resolveApproval(p.taskId, false)}
+              />
+            ))}
+
+            {/* Turn progress — visible from send until agents reply. Personas
+                already streaming have their own card, so only show the rest. */}
+            {turnWaiting && (() => {
+              const queued = respondingPersonas.filter((p) => !streamingNodes.has(`pending-${p}`));
+              if (queued.length === 0 && streamingNodes.size > 0) return null;
+              return <ThinkingIndicator personas={queued} />;
+            })()}
 
             <div ref={bottomRef} />
           </section>

@@ -35,13 +35,24 @@ export interface TurnSelectionEvent {
   scores: PersonaScore[];
 }
 
+// A delegation awaiting user approval (project delegationMode = 'ask')
+export interface DelegationPendingEvent {
+  type: 'delegation:pending';
+  taskId: string;
+  roomId: string;
+  fromPersona: string;
+  toPersona: string;
+  task: string;
+}
+
 export type ServerToClientEvent =
   | NodeCreatedEvent
   | NodeDeltaEvent
   | NodeErrorEvent
   | BranchCreatedEvent
   | FileStatusEvent
-  | TurnSelectionEvent;
+  | TurnSelectionEvent
+  | DelegationPendingEvent;
 
 // Type map for typed Socket.IO — used by both server gateway and web client
 export type ServerToClientEvents = {

@@ -21,6 +21,9 @@ export class ProblemJsonExceptionFilter implements ExceptionFilter {
         body = { type: 'about:blank', title: String(res), status };
       }
     } else {
+      if (process.env['NODE_ENV'] !== 'production') {
+        console.error('[ProblemJsonFilter] unhandled exception:', exception);
+      }
       // Internal errors: no details leaked in production
       body = {
         type: 'about:blank',

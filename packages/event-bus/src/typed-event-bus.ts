@@ -26,6 +26,15 @@ export type InternalEvent =
     }
   | { type: 'file.status'; projectId: string; fileId: string; status: string }
   | {
+      type: 'delegation.pending';
+      projectId: string;
+      roomId: string;
+      taskId: string;
+      fromPersona: string;
+      toPersona: string;
+      task: string;
+    }
+  | {
       type: 'turn.selection';
       projectId: string;
       roomId: string;

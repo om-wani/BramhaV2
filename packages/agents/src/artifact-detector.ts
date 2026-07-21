@@ -28,3 +28,27 @@ export function detectArtifact(content: string): Artifact | null {
 
   return null;
 }
+
+/**
+ * Remove the artifact block from message content (the artifact renders as its
+ * own card — leaving the raw HTML in the text doubles it as a code block).
+ * Leaves a short marker so the prose still reads naturally.
+ */
+export function stripArtifactBlock(content: string): string {
+  const marker = '*(interactive artifact attached below)*';
+
+  const fenced = content.match(/```html\s*\n[\s\S]*?```/i);
+  if (fenced) {
+    return content.replace(fenced[0], marker).trim();
+  }
+
+  const start = content.search(/<(!DOCTYPE\s+html|html)/i);
+  if (start !== -1) {
+    const end = content.lastIndexOf('</html>');
+    const before = content.slice(0, start);
+    const after = end !== -1 ? content.slice(end + 7) : '';
+    return `${before}${marker}${after}`.trim();
+  }
+
+  return content;
+}
