@@ -1,5 +1,27 @@
 # Deploy — Vercel (web) + Render (server + Postgres), no Docker
 
+> **Live deployment (2026-07):**
+> - Web: https://bramha-v2-web.vercel.app (Vercel project `bramha-v2-web`, root `apps/web`)
+> - Server: https://bramha-mvp.onrender.com (Render `bramha-mvp`, `srv-d9iiba741pts73baja30`, Singapore, free)
+> - DB: Neon `bramha-v2` (`old-paper-25965101`, ap-southeast-1), pgvector
+> - Demo login: `demo@northwind.com` / `Northwind2025!`
+>
+> **Gotchas hit (all fixed in code/config):**
+> - Render CLI v2.17 `services update` reports success but does NOT persist
+>   config — set build/start/branch/env at `services create` time instead.
+> - `corepack enable` fails on Node 22.13 (stale signature keys) → build
+>   command uses `npm i -g pnpm@9.15.0 && pnpm install --frozen-lockfile`.
+> - `NODE_ENV=production` makes pnpm skip devDeps → `@swc-node/register`,
+>   `@swc/core` must be in `dependencies` (they are).
+> - Strict pnpm isolation surfaced an undeclared `zod` import in the server
+>   (was only in `@bramha/shared`) → added to server deps.
+> - Vercel's `/backend` rewrite strips the trailing slash engine.io needs →
+>   gateway sets `addTrailingSlash: false`.
+> - Deploy web via `vercel --prod --archive=tgz` from repo root (plain upload
+>   aborts on the monorepo file count; project root dir is already `apps/web`).
+
+
+
 Architecture: **first-party proxy**. The browser only ever talks to the Vercel
 domain; Vercel rewrites `/backend/*` (incl. Socket.IO) to the Render server.
 Auth cookies stay first-party on the Vercel domain → no third-party-cookie
