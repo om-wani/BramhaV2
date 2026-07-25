@@ -76,6 +76,9 @@ type AuthSocket = Socket & { data: SocketData };
     origin: process.env['APP_ORIGIN'] ?? 'http://localhost:3000',
     credentials: true,
   },
+  // Accept /socket.io as well as /socket.io/ — the Vercel /backend rewrite
+  // strips the trailing slash engine.io normally requires, which otherwise 404s.
+  addTrailingSlash: false,
 })
 export class EventsGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
