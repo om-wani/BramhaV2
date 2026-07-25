@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-26 — Deployed to Vercel + Render + Neon (no Docker), verified end-to-end
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 3f5f95c..5090566
+**Done:** Live deploy. Web https://bramha-v2-web.vercel.app (Vercel `bramha-v2-web`, root apps/web). Server https://bramha-mvp.onrender.com (Render `bramha-mvp` srv-d9iiba741pts73baja30, Singapore free). DB Neon `bramha-v2` (old-paper-25965101, ap-southeast-1, pgvector, direct conn) — migrations + seed run against it. First-party-proxy architecture: browser→Vercel→/backend rewrite→Render→Neon. Verified: web 200, proxied login 200 + first-party Secure cookie, socket.io handshake through proxy 200. Code/config for deploy: server reads Render PORT; prod runs TS via @swc-node (no tsc, swc-node in deps); socket NEXT_PUBLIC_SOCKET_TRANSPORTS=polling; gateway addTrailingSlash:false; zod added to server deps; render.yaml; .node-version 22.13.0; docs/06_deploy_vercel_render.md.
+**Decisions:** First-party proxy over direct-cross-origin (avoids Safari/Chrome third-party-cookie blocking; socket over polling since Vercel can't proxy WS upgrade). Neon over Render PG (Render free PG dies in 30d; Neon persists, no pooler/IPv6 footguns). Reused existing Vercel project; created NEW Render service (old BramhaV2-api left on old branch — Render CLI can't delete or reliably update config, so `services create` fresh with all env). Build uses npm-installed pnpm (corepack signature bug on Node 22.13).
+**Next:** Run docs/QA_PLAYBOOK.md against the live URL (warm the free server first — ~50s cold start). Optionally delete orphaned Render services via dashboard.
+
+---
+
 ## 2026-07-22 — Local dev fully working; OpenRouter model tiering; permission system; markdown; telemetry + status bar
 
 **Branch/commits:** `claude/multi-agent-ai-orchestration-zt6xvw` @ 3202872..{this}
