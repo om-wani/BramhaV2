@@ -1,0 +1,49 @@
+# Render Blueprint — BramhaV2 server + managed Postgres (pgvector).
+# The Next.js web app deploys separately on Vercel (see docs/06_deploy_vercel_render.md).
+#
+# The server runs straight from TypeScript via @swc-node/register — workspace
+# packages are consumed as TS source (main = ./src/index.ts), so there is no
+# compile step. Do NOT add a tsc build.
+
+services:
+  - type: web
+    name: bramha-server
+    runtime: node
+    plan: free # free spins down after ~15 min idle (~50s cold start); use starter to avoid
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @bramha/server start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22.13.0"
+      - key: NODE_ENV
+        value: production
+      # Set to the deployed Vercel URL after the web project exists, e.g.
+      # https://bramha.vercel.app — required (server throws in prod without it).
+      - key: APP_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bramha-db
+          property: connectionString
+      # LLM — fill OPENAI_API_KEY (OpenRouter key) in the dashboard.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENAI_CHAT_MODEL
+        value: moonshotai/kimi-k2.6
+      - key: OPENAI_CHAT_MODEL_LIGHT
+        value: meta-llama/llama-3.3-70b-instruct
+      - key: MODEL_MAX_TOKENS
+        value: "2000"
+      # Ephemeral on free tier — uploaded files are lost on redeploy.
+      - key: UPLOADS_DIR
+        value: /tmp/uploads
+
+databases:
+  - name: bramha-db
+    plan: free # free Postgres expires after 30 days
+    postgresMajorVersion: "16"

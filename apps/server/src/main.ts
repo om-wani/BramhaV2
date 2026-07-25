@@ -53,7 +53,8 @@ async function bootstrap() {
   // Run DB migrations before accepting requests
   await migrate();
 
-  const port = parseInt(process.env['PORT_SERVER'] ?? '3001', 10);
+  // Render/most PaaS inject PORT; fall back to PORT_SERVER, then 3001.
+  const port = parseInt(process.env['PORT'] ?? process.env['PORT_SERVER'] ?? '3001', 10);
   await app.listen(port, '0.0.0.0');
   console.log(`[server] listening on :${port}`);
 }
