@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     passWithNoTests: true,
+    // e2e/ is Playwright's — vitest must not collect it
+    exclude: ['**/node_modules/**', '**/e2e/**', '**/.next/**'],
   },
 });

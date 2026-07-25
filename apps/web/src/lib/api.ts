@@ -7,5 +7,10 @@ export async function apiFetch<T = unknown>(path: string, init?: RequestInit): P
       code: err.code,
     });
   }
-  return (res.status === 204 ? null : res.json()) as Promise<T>;
+  // Some endpoints (e.g. register) return 201 with an empty body — calling
+  // res.json() on that throws "Unexpected end of JSON input". Guard on both
+  // status and actual content length.
+  if (res.status === 204) return null as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }

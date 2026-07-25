@@ -4,6 +4,7 @@ import { Suspense, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
+import { PasswordInput } from '@/components/PasswordInput';
 
 function LoginForm() {
   const router = useRouter();
@@ -70,15 +71,12 @@ function LoginForm() {
           >
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--surface))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder-[hsl(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] focus:border-transparent transition text-sm"
+            onChange={setPassword}
           />
         </div>
 
