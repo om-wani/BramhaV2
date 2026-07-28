@@ -2,6 +2,7 @@
 
 import { Suspense, useState, FormEvent } from 'react';
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { PasswordInput } from '@/components/PasswordInput';
@@ -97,8 +98,8 @@ function LoginForm() {
 
       <p className="mt-6 text-center text-sm text-[hsl(var(--text-muted))]">
         No account?{' '}
-        <Link href="/register" className="text-[hsl(var(--accent))] hover:underline font-medium">
-          Create one →
+        <Link href="/register" className="inline-flex items-center gap-1 text-[hsl(var(--accent))] hover:underline font-medium">
+          Create one <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </Link>
       </p>
     </div>

@@ -17,6 +17,7 @@
     "@bramha/shared": "workspace:*",
     "@tanstack/react-query": "^5.80.7",
     "@types/zxcvbn": "4.4.4",
+    "lucide-react": "1.27.0",
     "next": "14.2.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

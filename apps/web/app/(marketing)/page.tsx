@@ -1,9 +1,10 @@
 import Link from 'next/link';
+import { Target, GitFork, Paperclip, type LucideIcon } from 'lucide-react';
 
-function FeatureCard({ icon, title, description }: { icon: string; title: string; description: string }) {
+function FeatureCard({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description: string }) {
   return (
     <div className="flex flex-col gap-3 p-6 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] text-left">
-      <span className="text-3xl" aria-hidden="true">{icon}</span>
+      <Icon className="w-7 h-7 text-[hsl(var(--accent))]" aria-hidden="true" />
       <h3 className="text-base font-semibold text-[hsl(var(--text-primary))]">{title}</h3>
       <p className="text-sm text-[hsl(var(--text-muted))] leading-relaxed">{description}</p>
     </div>
@@ -26,17 +27,17 @@ export default function LandingPage() {
       </Link>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl w-full mt-12">
         <FeatureCard
-          icon="🎯"
+          icon={Target}
           title="Council selectivity"
           description="Only the right agents speak. Silent members cost $0. Relevance scoring filters the room so you get signal, not noise."
         />
         <FeatureCard
-          icon="⑂"
+          icon={GitFork}
           title="Non-linear branching"
           description="Fork any message mid-thread. Explore diverging strategies without losing context. Switch branches and both lineages persist."
         />
         <FeatureCard
-          icon="📎"
+          icon={Paperclip}
           title="Cited knowledge"
           description="Upload PDFs, docs, and data. Agents cite exact chunks in-line. Citations link to excerpts — no hallucinated sources."
         />

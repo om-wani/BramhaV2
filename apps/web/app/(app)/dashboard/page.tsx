@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { Building2, Sparkles, ArrowRight } from 'lucide-react';
 
 interface Org {
   id: string;
@@ -252,7 +253,7 @@ export default function DashboardPage() {
       {orgs.length === 0 && (
         <div className="border border-dashed border-[hsl(var(--border))] rounded-xl p-12 text-center">
           <h2 className="sr-only">No organisations</h2>
-          <div className="text-4xl mb-4">🏢</div>
+          <Building2 className="w-10 h-10 mx-auto mb-4 text-[hsl(var(--text-muted))]" aria-hidden="true" />
           <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-2">
             No organisations yet
           </h3>
@@ -283,7 +284,7 @@ export default function DashboardPage() {
             </div>
           ) : projects.length === 0 ? (
             <div className="border border-dashed border-[hsl(var(--border))] rounded-xl p-12 text-center">
-              <div className="text-4xl mb-4">✦</div>
+              <Sparkles className="w-10 h-10 mx-auto mb-4 text-[hsl(var(--text-muted))]" aria-hidden="true" />
               <h3 className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-2">
                 No projects yet
               </h3>
@@ -315,9 +316,9 @@ export default function DashboardPage() {
                   <div className="mt-4">
                     <Link
                       href={`/p/${slugify(firstOrg.name)}/${slugify(project.name)}`}
-                      className="inline-block px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
                     >
-                      Open →
+                      Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                     </Link>
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Zap } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useToast } from '@/components/Toaster';
@@ -340,7 +341,9 @@ export default function AdminPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center gap-2 mb-4">
-        <h1 className="text-xl font-bold text-[hsl(var(--text-primary))]">⚡ Godmode</h1>
+        <h1 className="flex items-center gap-1.5 text-xl font-bold text-[hsl(var(--text-primary))]">
+          <Zap className="w-5 h-5 text-[hsl(var(--accent))]" aria-hidden="true" /> Godmode
+        </h1>
         <span className="text-xs text-[hsl(var(--text-muted))]">signed in as {meQuery.data.email}</span>
       </div>
 

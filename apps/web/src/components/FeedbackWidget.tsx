@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useToast } from './Toaster';
+import { MessageSquare, X } from 'lucide-react';
 
 interface FeedbackRow {
   id: string;
@@ -80,7 +81,7 @@ export function FeedbackWidget() {
         title="Leave demo feedback"
         className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[hsl(var(--accent)/0.12)] text-[hsl(var(--accent))] text-[11px] font-medium hover:bg-[hsl(var(--accent)/0.2)] transition-colors"
       >
-        <span aria-hidden="true">💬</span>
+        <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
         Feedback
       </button>
 
@@ -91,9 +92,9 @@ export function FeedbackWidget() {
             <button
               onClick={() => setOpen(false)}
               aria-label="Collapse feedback"
-              className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] text-sm"
+              className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]"
             >
-              ✕
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
 

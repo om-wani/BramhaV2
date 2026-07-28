@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 interface OrgRow {
   id: string;
@@ -251,9 +252,9 @@ export default function ProjectPage() {
         </p>
         <Link
           href="/dashboard"
-          className="mt-4 inline-block text-sm text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
+          className="mt-4 inline-flex items-center gap-1 text-sm text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
         >
-          ← Back to dashboard
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to dashboard
         </Link>
       </div>
     );
@@ -328,9 +329,9 @@ export default function ProjectPage() {
                 <div className="mt-4">
                   <Link
                     href={`/p/${orgSlug}/${projectSlug}/r/${room.id}`}
-                    className="inline-block px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
                   >
-                    Open →
+                    Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                   </Link>
                 </div>
               </div>
@@ -356,9 +357,9 @@ export default function ProjectPage() {
             <p className="text-sm font-medium text-[hsl(var(--text-primary))]">Knowledge files</p>
             <Link
               href={`/p/${orgSlug}/${projectSlug}/files`}
-              className="text-xs text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
+              className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
             >
-              View all files →
+              View all files <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </Link>
           </div>
           <div

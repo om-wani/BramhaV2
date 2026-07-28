@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api';
 import { StatusBar } from '@/components/StatusBar';
 import { ToastProvider } from '@/components/Toaster';
 import { FeedbackWidget } from '@/components/FeedbackWidget';
+import { Zap, type LucideIcon } from 'lucide-react';
 
 interface Org {
   id: string;
@@ -206,17 +207,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     router.push('/login');
   }
 
-  const navLink = (href: string, label: string) => {
+  const navLink = (href: string, label: string, Icon?: LucideIcon) => {
     const active = pathname === href || pathname.startsWith(href + '/');
     return (
       <Link
         href={href}
-        className={`block px-3 py-2 rounded-lg text-sm transition-colors ${
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
           active
             ? 'bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] font-medium'
             : 'text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--surface))]'
         }`}
       >
+        {Icon && <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />}
         {label}
       </Link>
     );
@@ -312,7 +314,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
         {/* Bottom actions */}
         <div className="px-3 py-3 border-t border-[hsl(var(--border))] space-y-1">
-          {isAdmin && navLink('/admin', '⚡ Godmode')}
+          {isAdmin && navLink('/admin', 'Godmode', Zap)}
           {navLink('/settings', 'Settings')}
           {currentOrg && (
             <div className="px-3 py-1 text-xs text-[hsl(var(--text-muted))] truncate">

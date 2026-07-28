@@ -2,6 +2,7 @@
 
 import { useState, useEffect, FormEvent } from 'react';
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { PasswordInput } from '@/components/PasswordInput';
@@ -169,8 +170,8 @@ export default function RegisterPage() {
 
       <p className="mt-6 text-center text-sm text-[hsl(var(--text-muted))]">
         Already have an account?{' '}
-        <Link href="/login" className="text-[hsl(var(--accent))] hover:underline font-medium">
-          Sign in →
+        <Link href="/login" className="inline-flex items-center gap-1 text-[hsl(var(--accent))] hover:underline font-medium">
+          Sign in <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </Link>
       </p>
     </div>

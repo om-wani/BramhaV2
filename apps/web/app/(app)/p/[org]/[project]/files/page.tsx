@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { ArrowLeft, X } from 'lucide-react';
 import type { FileDto, FileStatus } from '@bramha/shared';
 import type { FileStatusEvent } from '@bramha/shared';
 
@@ -166,9 +167,9 @@ export default function FilesPage() {
         </p>
         <Link
           href="/dashboard"
-          className="mt-4 inline-block text-sm text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
+          className="mt-4 inline-flex items-center gap-1 text-sm text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
         >
-          ← Back to dashboard
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to dashboard
         </Link>
       </div>
     );
@@ -306,7 +307,7 @@ export default function FilesPage() {
                 className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors shrink-0"
                 aria-label="Close panel"
               >
-                ✕
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
             <p className="text-xs text-[hsl(var(--text-muted))]">

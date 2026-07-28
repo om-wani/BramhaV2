@@ -8,6 +8,18 @@ import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { useToast } from '@/components/Toaster';
 import { Markdown } from '@/components/Markdown';
+import {
+  ArrowLeft,
+  Maximize2,
+  X,
+  Check,
+  CornerDownRight,
+  Sparkles,
+  Circle,
+  CircleDot,
+  MessageSquare,
+  GitFork,
+} from 'lucide-react';
 import type { ConversationNodeDto, BranchDto, PersonaScore, ValidatedCitation } from '@bramha/shared';
 import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent, DelegationPendingEvent } from '@bramha/shared';
 import { PERSONA_SLUGS } from '@bramha/shared';
@@ -147,9 +159,9 @@ function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string 
         <span className="text-xs font-medium text-[hsl(var(--text-muted))]">HTML Artifact</span>
         <button
           onClick={() => setExpanded(true)}
-          className="text-xs text-[hsl(var(--accent))] hover:underline"
+          className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))] hover:underline"
         >
-          Expand ↗
+          Expand <Maximize2 className="w-3 h-3" aria-hidden="true" />
         </button>
       </div>
       {/* No allow-same-origin — sandbox enforces null origin */}
@@ -167,9 +179,9 @@ function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string 
               <span className="text-sm font-medium">HTML Artifact</span>
               <button
                 onClick={() => setExpanded(false)}
-                className="text-sm text-gray-500 hover:text-gray-800"
+                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
               >
-                ✕ Close
+                <X className="w-4 h-4" aria-hidden="true" /> Close
               </button>
             </div>
             <iframe
@@ -223,10 +235,10 @@ function MessageCard({
     <article className={`relative group flex gap-3 px-6 py-4 hover:bg-[hsl(var(--surface)/0.4)] transition-colors transition-opacity duration-150${delegatedFrom ? ' ml-8 border-l-2 border-[hsl(var(--accent)/0.25)]' : ''}`}>
       <button
         onClick={() => onBranchFrom(node.id)}
-        className="absolute top-3 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--accent))] bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded px-2 py-0.5 whitespace-nowrap"
+        className="absolute top-3 right-4 opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1 text-xs text-[hsl(var(--text-muted))] hover:text-[hsl(var(--accent))] bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded px-2 py-0.5 whitespace-nowrap"
         aria-label={`Branch conversation from this message`}
       >
-        ⑂ Branch from here
+        <GitFork className="w-3 h-3" aria-hidden="true" /> Branch from here
       </button>
       <div
         aria-hidden="true"
@@ -247,13 +259,13 @@ function MessageCard({
             {relativeTime(node.createdAt)}
           </time>
           {delegatedFrom && (
-            <span className="text-[10px] text-[hsl(var(--text-muted))] bg-[hsl(var(--surface-raised))] px-1.5 py-0.5 rounded border border-[hsl(var(--border))]">
-              ↳ from {getPersonaName(delegatedFrom)}
+            <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--text-muted))] bg-[hsl(var(--surface-raised))] px-1.5 py-0.5 rounded border border-[hsl(var(--border))]">
+              <CornerDownRight className="w-3 h-3" aria-hidden="true" /> from {getPersonaName(delegatedFrom)}
             </span>
           )}
           {isProactive && (
-            <span className="text-[10px] text-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.1)] px-1.5 py-0.5 rounded border border-[hsl(var(--accent)/0.3)]">
-              ✦ Proactive
+            <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.1)] px-1.5 py-0.5 rounded border border-[hsl(var(--accent)/0.3)]">
+              <Sparkles className="w-3 h-3" aria-hidden="true" /> Proactive
             </span>
           )}
         </div>
@@ -361,11 +373,11 @@ function BranchItem({
         .join(' ')}
     >
       {isActive ? (
-        <span aria-hidden="true" className="shrink-0">●</span>
+        <CircleDot className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
       ) : indent ? (
-        <span aria-hidden="true" className="shrink-0 text-[hsl(var(--text-muted))]">├</span>
+        <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-[hsl(var(--text-muted))]" aria-hidden="true" />
       ) : (
-        <span aria-hidden="true" className="shrink-0 text-[hsl(var(--text-muted))]">○</span>
+        <Circle className="w-3.5 h-3.5 shrink-0 text-[hsl(var(--text-muted))]" aria-hidden="true" />
       )}
       <span className="truncate">{branch.name}</span>
     </button>
@@ -419,8 +431,8 @@ function ThinkingIndicator({ personas }: { personas: PersonaSlug[] }) {
     <div role="status" aria-label={label} className="flex items-center gap-3 px-6 py-4">
       <div className="flex -space-x-2 shrink-0" aria-hidden="true">
         {personas.length === 0 ? (
-          <div className="w-8 h-8 rounded-full bg-[hsl(var(--surface-raised))] border border-[hsl(var(--border))] flex items-center justify-center text-xs">
-            💭
+          <div className="w-8 h-8 rounded-full bg-[hsl(var(--surface-raised))] border border-[hsl(var(--border))] flex items-center justify-center text-[hsl(var(--text-muted))]">
+            <MessageSquare className="w-4 h-4" aria-hidden="true" />
           </div>
         ) : (
           personas.slice(0, 4).map((slug) => (
@@ -474,15 +486,15 @@ function DelegationApprovalCard({
       <div className="flex gap-2 pl-8">
         <button
           onClick={onApprove}
-          className="px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity"
         >
-          ✓ Run task
+          <Check className="w-3.5 h-3.5" aria-hidden="true" /> Run task
         </button>
         <button
           onClick={onDeny}
-          className="px-3 py-1.5 text-xs rounded-lg border border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--surface))] transition-colors"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--surface))] transition-colors"
         >
-          ✕ Skip
+          <X className="w-3.5 h-3.5" aria-hidden="true" /> Skip
         </button>
       </div>
     </div>
@@ -594,7 +606,7 @@ function CreateBranchDialog({
       return;
     }
     if (!fromNodeId) {
-      setError('No message selected to branch from. Hover a message and click ⑂.');
+      setError('No message selected to branch from. Hover a message and click the branch button.');
       return;
     }
     setError('');
@@ -1151,10 +1163,10 @@ export default function RoomPage() {
       <header className="shrink-0 flex items-center gap-3 px-6 py-3 border-b border-[hsl(var(--border))] bg-[hsl(var(--surface))]">
         <Link
           href={projectBackHref}
-          className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] text-sm transition-colors"
+          className="text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
           aria-label="Back to project"
         >
-          ←
+          <ArrowLeft className="w-5 h-5" aria-hidden="true" />
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-semibold text-[hsl(var(--text-primary))] truncate">
@@ -1165,8 +1177,8 @@ export default function RoomPage() {
           )}
         </div>
         {activeBranch && activeBranch.name !== 'main' && (
-          <span className="text-xs text-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.1)] border border-[hsl(var(--accent)/0.3)] rounded px-2 py-0.5 shrink-0">
-            ⑂ {activeBranch.name}
+          <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))] bg-[hsl(var(--accent)/0.1)] border border-[hsl(var(--accent)/0.3)] rounded px-2 py-0.5 shrink-0">
+            <GitFork className="w-3 h-3" aria-hidden="true" /> {activeBranch.name}
           </span>
         )}
         {/* Delegation permission mode — like Claude Code permission modes */}
@@ -1224,7 +1236,7 @@ export default function RoomPage() {
 
             {nodes.length === 0 && streamingNodes.size === 0 && !loading && !error && (
               <div className="flex flex-col items-center justify-center flex-1 gap-3 text-[hsl(var(--text-muted))]">
-                <span className="text-4xl" aria-hidden="true">💬</span>
+                <MessageSquare className="w-10 h-10" aria-hidden="true" />
                 <p className="text-sm">Start the conversation — your C-suite is listening.</p>
               </div>
             )}
