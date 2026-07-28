@@ -28,6 +28,7 @@ export type CallPurpose = 'turn' | 'delegation' | 'embedding' | 'proactive';
 export interface ModelCallRecord {
   projectId: string;
   roomId?: string;
+  userId?: string; // triggering user (null for system/proactive turns)
   persona?: string;
   provider: 'anthropic' | 'openai';
   model: string;
@@ -43,6 +44,7 @@ export type OnCallComplete = (record: ModelCallRecord) => void | Promise<void>;
 export interface ChatParams {
   projectId: string;
   roomId?: string;
+  userId?: string;
   persona?: string;
   purpose?: CallPurpose;
   messages: ChatMessage[];
@@ -53,6 +55,7 @@ export interface ChatParams {
 export interface EmbedParams {
   projectId: string;
   roomId?: string;
+  userId?: string;
   inputs: string[];
 }
 

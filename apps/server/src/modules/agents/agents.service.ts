@@ -8,8 +8,8 @@ import {
   type AgentResponse,
   type PersistResponseFn,
 } from '@bramha/agents';
-import { getDb, conversationNodes, branches, delegationTasks, projects, modelCalls, searchKnowledge, getThreadAncestry } from '@bramha/db';
-import { eq, and } from 'drizzle-orm';
+import { getDb, conversationNodes, branches, delegationTasks, projects, modelCalls, users, searchKnowledge, getThreadAncestry } from '@bramha/db';
+import { eq, and, sql } from 'drizzle-orm';
 import { eventBus } from '@bramha/event-bus';
 import type { ConversationNodeRow } from '@bramha/db';
 import type { PersonaSlug } from '@bramha/shared';
@@ -53,6 +53,7 @@ export class AgentsService implements OnModuleInit {
         await db.insert(modelCalls).values({
           projectId: record.projectId,
           roomId: record.roomId ?? null,
+          userId: record.userId ?? null,
           persona: record.persona ?? null,
           provider: record.provider,
           model: record.model,
@@ -78,6 +79,25 @@ export class AgentsService implements OnModuleInit {
     }
   }
 
+  /**
+   * Total tokens (input+output) a user has consumed vs their limit.
+   * null limit = unlimited.
+   */
+  async getUserUsage(userId: string): Promise<{ used: number; limit: number | null; allowed: boolean }> {
+    const db = await getDb();
+    const [row] = await db
+      .select({ used: sql<number>`coalesce(sum(${modelCalls.inputTokens} + ${modelCalls.outputTokens}), 0)::int` })
+      .from(modelCalls)
+      .where(eq(modelCalls.userId, userId));
+    const [u] = await db
+      .select({ limit: users.usageTokenLimit })
+      .from(users)
+      .where(eq(users.id, userId));
+    const used = row?.used ?? 0;
+    const limit = u?.limit ?? null;
+    return { used, limit, allowed: limit === null || used < limit };
+  }
+
   async triggerAgentTurn(params: {
     projectId: string;
     roomId: string;
@@ -87,8 +107,25 @@ export class AgentsService implements OnModuleInit {
     userMessage: string;
     roomKind: 'council' | 'one_on_one';
     boundPersona?: PersonaSlug;
+    userId?: string; // triggering user (undefined for system/proactive)
     thread: ConversationNodeRow[];
   }): Promise<AgentResponse[]> {
+    // Usage gate: block the turn if the user is over their token limit.
+    if (params.userId) {
+      const usage = await this.getUserUsage(params.userId);
+      if (!usage.allowed) {
+        this.logger.warn(`User ${params.userId} over token limit (${usage.used}/${usage.limit}) — turn blocked`);
+        eventBus.emit({
+          type: 'node.error',
+          projectId: params.projectId,
+          roomId: params.roomId,
+          nodeId: `usage-${params.userNodeId}`,
+          code: 'USAGE_LIMIT_EXCEEDED',
+        });
+        return [];
+      }
+    }
+
     // Warn if domain embeddings were never computed (e.g. no API key in dev).
     // Scoring will degrade to lexical-only (all expertise scores = 0).
     if (this.domainEmbeddings.size === 0) {
@@ -178,6 +215,7 @@ export class AgentsService implements OnModuleInit {
       userNodeId: params.userNodeId,
       userMessage: params.userMessage,
       roomKind: params.roomKind,
+      ...(params.userId !== undefined ? { triggerUserId: params.userId } : {}),
       ...(params.boundPersona !== undefined ? { boundPersona: params.boundPersona } : {}),
       recentSpeakers,
       domainEmbeddings: this.domainEmbeddings,
@@ -271,6 +309,7 @@ export class AgentsService implements OnModuleInit {
           fromPersona: delegation.fromSlug,
           toPersona: delegation.toSlug,
           task: delegation.task,
+          ...(params.userId !== undefined ? { triggerUserId: params.userId } : {}),
         });
       }
     }
@@ -326,6 +365,7 @@ export class AgentsService implements OnModuleInit {
     fromPersona: PersonaSlug;
     toPersona: PersonaSlug;
     task: string;
+    triggerUserId?: string;
   }): Promise<void> {
     const db = await getDb();
 
@@ -399,6 +439,7 @@ export class AgentsService implements OnModuleInit {
         orgName: params.orgName,
         userNodeId: params.delegatingNodeId,
         userMessage: delegatedMessage,
+        ...(params.triggerUserId !== undefined ? { triggerUserId: params.triggerUserId } : {}),
         roomKind: params.roomKind,
         boundPersona: params.toPersona,
         recentSpeakers,

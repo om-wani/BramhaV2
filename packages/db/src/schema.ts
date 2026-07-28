@@ -35,6 +35,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   emailVerifiedAt: timestamptz('email_verified_at'),
   isAdmin: boolean('is_admin').notNull().default(false),
+  usageTokenLimit: integer('usage_token_limit'), // null = unlimited
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 
@@ -284,6 +285,7 @@ export const modelCalls = pgTable('model_calls', {
   id: uuid('id').primaryKey().defaultRandom(),
   projectId: uuid('project_id').notNull(),
   roomId: uuid('room_id'),
+  userId: uuid('user_id'),
   persona: text('persona'),
   provider: text('provider').notNull(),
   model: text('model').notNull(),

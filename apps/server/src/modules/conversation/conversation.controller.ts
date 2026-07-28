@@ -90,6 +90,7 @@ export class ConversationController {
           userMessage: body.content,
           roomKind: room.kind as 'council' | 'one_on_one',
           ...(room.persona !== null ? { boundPersona: room.persona as PersonaSlug } : {}),
+          userId: req.user.id,
           thread,
         });
       } catch (err) {

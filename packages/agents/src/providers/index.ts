@@ -121,6 +121,7 @@ async function* streamWithRetryAndLog(
   const {
     projectId,
     roomId,
+    userId,
     persona,
     purpose = 'turn',
     messages,
@@ -149,6 +150,7 @@ async function* streamWithRetryAndLog(
       fireLog(onCallComplete, {
         projectId,
         ...(roomId !== undefined ? { roomId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'anthropic',
         model: ANTHROPIC_MODEL,
@@ -179,6 +181,7 @@ async function* streamWithRetryAndLog(
       fireLog(onCallComplete, {
         projectId,
         ...(roomId !== undefined ? { roomId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'openai',
         model: chatModelFor(purpose),
@@ -211,6 +214,7 @@ async function chatWithRetryAndLog(
   const {
     projectId,
     roomId,
+    userId,
     persona,
     purpose = 'turn',
     messages,
@@ -235,6 +239,7 @@ async function chatWithRetryAndLog(
       fireLog(onCallComplete, {
         projectId,
         ...(roomId !== undefined ? { roomId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'anthropic',
         model: ANTHROPIC_MODEL,
@@ -261,6 +266,7 @@ async function chatWithRetryAndLog(
       fireLog(onCallComplete, {
         projectId,
         ...(roomId !== undefined ? { roomId } : {}),
+        ...(userId !== undefined ? { userId } : {}),
         ...(persona !== undefined ? { persona } : {}),
         provider: 'openai',
         model: chatModelFor(purpose),
@@ -289,7 +295,7 @@ async function embedWithLog(
   params: EmbedParams,
   onCallComplete: OnCallComplete | undefined,
 ): Promise<number[][]> {
-  const { projectId, roomId, inputs } = params;
+  const { projectId, roomId, userId, inputs } = params;
   const allEmbeddings: number[][] = [];
   const start = Date.now();
   let totalInputTokens = 0;
@@ -308,6 +314,7 @@ async function embedWithLog(
   fireLog(onCallComplete, {
     projectId,
     ...(roomId !== undefined ? { roomId } : {}),
+    ...(userId !== undefined ? { userId } : {}),
     provider: 'openai',
     model: OPENAI_EMBED_MODEL,
     purpose: 'embedding',
@@ -374,6 +381,7 @@ export function createLiveRouter(
         fireLog(onCallComplete, {
           projectId: params.projectId,
           ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
+          ...(params.userId !== undefined ? { userId: params.userId } : {}),
           ...(params.persona !== undefined ? { persona: params.persona } : {}),
           provider: 'openai',
           model: chatModelFor(params.purpose),
@@ -411,6 +419,7 @@ export function createLiveRouter(
         fireLog(onCallComplete, {
           projectId: params.projectId,
           ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
+          ...(params.userId !== undefined ? { userId: params.userId } : {}),
           ...(params.persona !== undefined ? { persona: params.persona } : {}),
           provider: 'openai',
           model: chatModelFor(params.purpose),

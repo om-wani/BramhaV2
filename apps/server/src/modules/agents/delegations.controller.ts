@@ -3,11 +3,13 @@ import {
   Post,
   Param,
   Body,
+  Req,
   HttpCode,
   UseGuards,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb, delegationTasks, rooms } from '@bramha/db';
@@ -36,6 +38,7 @@ export class DelegationsController {
     @Param('roomId') roomId: string,
     @Param('taskId') taskId: string,
     @Body(new ZodValidationPipe(ApproveSchema)) body: ApproveInput,
+    @Req() req: FastifyRequest & { user: { id: string } },
   ): Promise<{ status: string }> {
     const db = await getDb();
 
@@ -76,6 +79,7 @@ export class DelegationsController {
       fromPersona: task.fromPersona as PersonaSlug,
       toPersona: task.toPersona as PersonaSlug,
       task: task.task,
+      triggerUserId: req.user.id,
     });
 
     return { status: 'running' };

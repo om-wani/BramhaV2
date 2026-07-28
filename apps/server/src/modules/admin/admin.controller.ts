@@ -20,6 +20,9 @@ import type { AdminFeedbackRow } from '../feedback/feedback.service.js';
 const SetAdminSchema = z.object({ isAdmin: z.boolean() });
 type SetAdminInput = z.infer<typeof SetAdminSchema>;
 
+const SetLimitSchema = z.object({ tokenLimit: z.number().int().min(0).nullable() });
+type SetLimitInput = z.infer<typeof SetLimitSchema>;
+
 @Controller('admin')
 @UseGuards(SessionAuthGuard, AdminGuard)
 export class AdminController {
@@ -64,6 +67,21 @@ export class AdminController {
     @Body(new ZodValidationPipe(SetAdminSchema)) body: SetAdminInput,
   ): Promise<{ ok: true }> {
     await this.adminService.setUserAdmin(id, body.isAdmin);
+    return { ok: true };
+  }
+
+  @Get('usage')
+  async usage(): Promise<Awaited<ReturnType<AdminService['userUsage']>>> {
+    return this.adminService.userUsage();
+  }
+
+  @Post('users/:id/limit')
+  @HttpCode(200)
+  async setLimit(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetLimitSchema)) body: SetLimitInput,
+  ): Promise<{ ok: true }> {
+    await this.adminService.setUserLimit(id, body.tokenLimit);
     return { ok: true };
   }
 }

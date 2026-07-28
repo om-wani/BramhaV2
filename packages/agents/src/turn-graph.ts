@@ -79,6 +79,7 @@ export type EmitDelegationFn = (
 const TurnStateAnnotation = Annotation.Root({
   projectId: Annotation<string>(),
   roomId: Annotation<string>(),
+  triggerUserId: Annotation<string | undefined>(),
   branchId: Annotation<string>(),
   orgName: Annotation<string>(),
   userNodeId: Annotation<string>(),
@@ -122,6 +123,7 @@ export function createTurnGraph(
   async function selectNode(state: TurnState): Promise<Partial<TurnState>> {
     const embeddings = await router.embed({
       projectId: state.projectId,
+      ...(state.triggerUserId !== undefined ? { userId: state.triggerUserId } : {}),
       inputs: [state.userMessage],
     });
 
@@ -225,6 +227,7 @@ export function createTurnGraph(
       const stream = router.stream({
         projectId: state.projectId,
         roomId: state.roomId,
+        ...(state.triggerUserId !== undefined ? { userId: state.triggerUserId } : {}),
         persona: slug,
         // Delegated executor turns run on the light/fast model tier
         purpose: state.isDelegated ? 'delegation' : 'turn',
@@ -384,6 +387,7 @@ export function createTurnGraph(
 // ---------------------------------------------------------------------------
 
 export interface TurnGraphParams {
+  triggerUserId?: string;
   projectId: string;
   roomId: string;
   branchId: string;
@@ -417,6 +421,7 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<TurnGrap
     branchId: params.branchId,
     orgName: params.orgName,
     userNodeId: params.userNodeId,
+    ...(params.triggerUserId !== undefined ? { triggerUserId: params.triggerUserId } : {}),
     userMessage: params.userMessage,
     messageEmbedding: [],
     selected: [],

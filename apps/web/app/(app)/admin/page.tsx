@@ -77,6 +77,122 @@ function FeedbackTab() {
   );
 }
 
+// ---- usage tab -------------------------------------------------------------
+
+interface UserUsage {
+  userId: string;
+  email: string;
+  name: string;
+  isAdmin: boolean;
+  tokens: number;
+  calls: number;
+  costUsd: number;
+  limit: number | null;
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function UsageRow({ u, onSaved }: { u: UserUsage; onSaved: () => void }) {
+  const toast = useToast();
+  const [val, setVal] = useState(u.limit === null ? '' : String(u.limit));
+  const save = useMutation<unknown, Error, number | null>({
+    mutationFn: (tokenLimit) =>
+      apiFetch(`/backend/admin/users/${u.userId}/limit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenLimit }),
+      }),
+    onSuccess: () => {
+      toast('Limit updated', { kind: 'success' });
+      onSaved();
+    },
+    onError: (e) => toast(e.message || 'Failed', { kind: 'error' }),
+  });
+
+  const over = u.limit !== null && u.tokens >= u.limit;
+
+  return (
+    <tr className="hover:bg-[hsl(var(--surface)/0.5)]">
+      <td className="px-2 py-1.5 border-b border-[hsl(var(--border))] whitespace-nowrap">
+        <span className="text-[hsl(var(--text-primary))]">{u.name}</span>
+        {u.isAdmin && <span className="ml-1 text-[9px] text-[hsl(var(--accent))]">admin</span>}
+        <div className="text-[10px] text-[hsl(var(--text-muted))]">{u.email}</div>
+      </td>
+      <td className={`px-2 py-1.5 border-b border-[hsl(var(--border))] text-right tabular-nums ${over ? 'text-red-400 font-semibold' : 'text-[hsl(var(--text-primary))]'}`}>
+        {fmtTokens(u.tokens)}
+      </td>
+      <td className="px-2 py-1.5 border-b border-[hsl(var(--border))] text-right tabular-nums text-[hsl(var(--text-muted))]">{u.calls}</td>
+      <td className="px-2 py-1.5 border-b border-[hsl(var(--border))] text-right tabular-nums text-[hsl(var(--text-muted))]">
+        {u.costUsd < 0.01 && u.costUsd > 0 ? '<$0.01' : `$${u.costUsd.toFixed(2)}`}
+      </td>
+      <td className="px-2 py-1.5 border-b border-[hsl(var(--border))]">
+        <div className="flex items-center gap-1.5">
+          <input
+            type="number"
+            min={0}
+            value={val}
+            onChange={(e) => setVal(e.target.value)}
+            placeholder="∞"
+            className="w-24 px-2 py-1 rounded bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] text-xs focus:outline-none focus:ring-1 focus:ring-[hsl(var(--accent))]"
+          />
+          <button
+            onClick={() => save.mutate(val.trim() === '' ? null : Math.max(0, parseInt(val, 10) || 0))}
+            className="text-[hsl(var(--accent))] hover:underline text-xs"
+          >
+            save
+          </button>
+          {u.limit !== null && (
+            <button onClick={() => { setVal(''); save.mutate(null); }} className="text-[hsl(var(--text-muted))] hover:underline text-xs">
+              clear
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function UsageTab() {
+  const qc = useQueryClient();
+  const q = useQuery<UserUsage[]>({
+    queryKey: ['admin', 'usage'],
+    queryFn: () => apiFetch('/backend/admin/usage'),
+  });
+  const rows = q.data ?? [];
+
+  if (q.isLoading) return <p className="text-sm text-[hsl(var(--text-muted))]">Loading…</p>;
+
+  return (
+    <div>
+      <p className="text-xs text-[hsl(var(--text-muted))] mb-3">
+        Token limit = total input+output tokens. Empty = unlimited. Over-limit users are blocked from new turns (their message still posts).
+      </p>
+      <div className="overflow-auto border border-[hsl(var(--border))] rounded-lg">
+        <table className="text-xs w-full">
+          <thead className="bg-[hsl(var(--surface))]">
+            <tr>
+              <th className="text-left px-2 py-1.5 font-semibold text-[hsl(var(--text-muted))] border-b border-[hsl(var(--border))]">User</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-[hsl(var(--text-muted))] border-b border-[hsl(var(--border))]">Tokens</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-[hsl(var(--text-muted))] border-b border-[hsl(var(--border))]">Calls</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-[hsl(var(--text-muted))] border-b border-[hsl(var(--border))]">~Cost</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-[hsl(var(--text-muted))] border-b border-[hsl(var(--border))]">Token limit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((u) => (
+              <UsageRow key={u.userId} u={u} onSaved={() => qc.invalidateQueries({ queryKey: ['admin', 'usage'] })} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ---- tables tab ------------------------------------------------------------
 
 function TablesTab({ overview }: { overview: Overview | undefined }) {
@@ -201,7 +317,7 @@ function TablesTab({ overview }: { overview: Overview | undefined }) {
 // ---- page ------------------------------------------------------------------
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'feedback' | 'tables'>('feedback');
+  const [tab, setTab] = useState<'feedback' | 'usage' | 'tables'>('feedback');
   const meQuery = useQuery<Me>({ queryKey: ['me'], queryFn: () => apiFetch('/backend/auth/me'), retry: 0 });
   const overviewQuery = useQuery<Overview>({
     queryKey: ['admin', 'overview'],
@@ -229,7 +345,7 @@ export default function AdminPage() {
       </div>
 
       <div className="flex gap-1.5 mb-5">
-        {(['feedback', 'tables'] as const).map((t) => (
+        {(['feedback', 'usage', 'tables'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -244,7 +360,7 @@ export default function AdminPage() {
         ))}
       </div>
 
-      {tab === 'feedback' ? <FeedbackTab /> : <TablesTab overview={overviewQuery.data} />}
+      {tab === 'feedback' ? <FeedbackTab /> : tab === 'usage' ? <UsageTab /> : <TablesTab overview={overviewQuery.data} />}
     </div>
   );
 }

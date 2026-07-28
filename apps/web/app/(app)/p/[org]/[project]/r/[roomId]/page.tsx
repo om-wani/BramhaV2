@@ -876,6 +876,13 @@ export default function RoomPage() {
         next.delete(event.nodeId);
         return next;
       });
+      // Usage cap hit — clear, specific message; the turn never started.
+      if (event.code === 'USAGE_LIMIT_EXCEEDED') {
+        toast('Usage limit reached — an admin must raise your token limit', { kind: 'error', durationMs: 7000 });
+        setTurnWaiting(false);
+        setRespondingPersonas([]);
+        return;
+      }
       // Surface the failure instead of silently going idle
       const slug = event.nodeId.startsWith('pending-') ? event.nodeId.slice('pending-'.length) : null;
       toast(`${slug ? getPersonaName(slug) : 'An agent'} failed to respond`, { kind: 'error' });
