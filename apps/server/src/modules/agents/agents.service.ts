@@ -18,6 +18,7 @@ export type DelegationMode = 'auto' | 'ask';
 
 export interface ProjectSettings {
   delegationMode?: DelegationMode;
+  webSearchEnabled?: boolean;
 }
 
 // PA lite types
@@ -207,13 +208,28 @@ export class AgentsService implements OnModuleInit {
       return results;
     };
 
+    // Web search: on if the project has it enabled OR the user prefixed @web.
+    // Strip the @web marker before it reaches the model.
+    const db0 = await getDb();
+    const [proj0] = await db0
+      .select({ settings: projects.settings })
+      .from(projects)
+      .where(eq(projects.id, params.projectId));
+    const settings0 = (proj0?.settings as ProjectSettings | null) ?? {};
+    const hasWebPrefix = /^\s*@web\b/i.test(params.userMessage);
+    const enableWebSearch = settings0.webSearchEnabled === true || hasWebPrefix;
+    const graphMessage = hasWebPrefix
+      ? params.userMessage.replace(/^\s*@web\b\s*/i, '')
+      : params.userMessage;
+
     const { responses, pendingDelegations } = await invokeTurnGraph({
       projectId: params.projectId,
       roomId: params.roomId,
       branchId: params.branchId,
       orgName: params.orgName,
       userNodeId: params.userNodeId,
-      userMessage: params.userMessage,
+      userMessage: graphMessage,
+      enableWebSearch,
       roomKind: params.roomKind,
       ...(params.userId !== undefined ? { triggerUserId: params.userId } : {}),
       ...(params.boundPersona !== undefined ? { boundPersona: params.boundPersona } : {}),

@@ -16,6 +16,7 @@ import type { PersonaConfig } from './personas/index.js';
 import { buildSystemPrompt } from './prompt-builder.js';
 import { parseCitations, validateCitations } from './citation-parser.js';
 import { detectArtifact, stripArtifactBlock } from './artifact-detector.js';
+import { webSearch } from './providers/web-search.js';
 import { parseDelegationSignal, type PendingDelegation } from './delegation-parser.js';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,7 @@ const TurnStateAnnotation = Annotation.Root({
   projectId: Annotation<string>(),
   roomId: Annotation<string>(),
   triggerUserId: Annotation<string | undefined>(),
+  enableWebSearch: Annotation<boolean | undefined>(),
   branchId: Annotation<string>(),
   orgName: Annotation<string>(),
   userNodeId: Annotation<string>(),
@@ -171,13 +173,16 @@ export function createTurnGraph(
   // Reuses messageEmbedding computed in selectNode — no extra embed call.
   // -------------------------------------------------------------------------
   async function retrieveNode(state: TurnState): Promise<Partial<TurnState>> {
-    const chunks = await state.searchFn(
+    const docChunks = await state.searchFn(
       state.projectId,
       state.messageEmbedding,
       state.userMessage,
       6,
     );
-    return { chunks };
+    // Optional live web results, merged into the same context/citation path.
+    // filename = source domain, so agents cite as [Source: domain #n].
+    const webChunks = state.enableWebSearch ? await webSearch(state.userMessage, 4) : [];
+    return { chunks: [...docChunks, ...webChunks] };
   }
 
   // -------------------------------------------------------------------------
@@ -388,6 +393,7 @@ export function createTurnGraph(
 
 export interface TurnGraphParams {
   triggerUserId?: string;
+  enableWebSearch?: boolean;
   projectId: string;
   roomId: string;
   branchId: string;
@@ -422,6 +428,7 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<TurnGrap
     orgName: params.orgName,
     userNodeId: params.userNodeId,
     ...(params.triggerUserId !== undefined ? { triggerUserId: params.triggerUserId } : {}),
+    ...(params.enableWebSearch !== undefined ? { enableWebSearch: params.enableWebSearch } : {}),
     userMessage: params.userMessage,
     messageEmbedding: [],
     selected: [],

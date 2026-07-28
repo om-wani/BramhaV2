@@ -18,6 +18,7 @@
     "@bramha/shared": "workspace:*",
     "@langchain/langgraph": "^0.2.0",
     "ai": "7.0.31",
+    "duck-duck-scrape": "2.2.7",
     "zod": "4.4.3"
   }
 }

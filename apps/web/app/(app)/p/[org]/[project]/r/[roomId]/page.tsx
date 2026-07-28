@@ -19,6 +19,7 @@ import {
   CircleDot,
   MessageSquare,
   GitFork,
+  Globe,
 } from 'lucide-react';
 import type { ConversationNodeDto, BranchDto, PersonaScore, ValidatedCitation } from '@bramha/shared';
 import type { NodeCreatedEvent, BranchCreatedEvent, NodeDeltaEvent, NodeErrorEvent, TurnSelectionEvent, DelegationPendingEvent } from '@bramha/shared';
@@ -967,7 +968,7 @@ export default function RoomPage() {
 
   // ---- project settings (delegation mode) ---------------------------------
 
-  const settingsQuery = useQuery<{ delegationMode?: 'auto' | 'ask' }>({
+  const settingsQuery = useQuery<{ delegationMode?: 'auto' | 'ask'; webSearchEnabled?: boolean }>({
     queryKey: ['project-settings', projectId],
     queryFn: () => apiFetch(`/backend/projects/${projectId}/settings`),
     enabled: projectId !== null,
@@ -975,6 +976,25 @@ export default function RoomPage() {
   });
 
   const delegationMode = settingsQuery.data?.delegationMode ?? 'ask';
+  const webSearchEnabled = settingsQuery.data?.webSearchEnabled ?? false;
+
+  const setWebSearch = useCallback(
+    async (enabled: boolean) => {
+      if (!projectId) return;
+      try {
+        await apiFetch(`/backend/projects/${projectId}/settings`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webSearchEnabled: enabled }),
+        });
+        void qc.invalidateQueries({ queryKey: ['project-settings', projectId] });
+        toast(enabled ? 'Web search on' : 'Web search off', { kind: 'success' });
+      } catch {
+        toast('Failed to update setting', { kind: 'error' });
+      }
+    },
+    [projectId, qc, toast],
+  );
 
   const setDelegationMode = useCallback(
     async (mode: 'auto' | 'ask') => {
@@ -1193,6 +1213,19 @@ export default function RoomPage() {
             <option value="auto">Auto-run</option>
           </select>
         </label>
+        {/* Web search toggle — also triggerable per-message with @web */}
+        <button
+          onClick={() => void setWebSearch(!webSearchEnabled)}
+          title={webSearchEnabled ? 'Web search on — click to disable (or use @web per message)' : 'Web search off — click to enable (or prefix a message with @web)'}
+          aria-pressed={webSearchEnabled}
+          className={`flex items-center gap-1 shrink-0 text-xs px-2 py-1 rounded-lg border transition-colors ${
+            webSearchEnabled
+              ? 'bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] border-[hsl(var(--accent)/0.4)]'
+              : 'text-[hsl(var(--text-muted))] border-[hsl(var(--border))] hover:text-[hsl(var(--text-primary))]'
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5" aria-hidden="true" /> Web
+        </button>
       </header>
 
       {/* Body: council panel + thread + branch rail */}

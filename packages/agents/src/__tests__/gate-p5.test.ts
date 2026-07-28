@@ -231,8 +231,9 @@ describe('P5.4 Gate: room page renders chain badge for delegated nodes', () => {
     expect(roomPageSource).toContain('metadata?.delegatedFrom');
   });
 
-  it('page.tsx renders ↳ from text for the chain badge', () => {
-    expect(roomPageSource).toContain('↳ from');
+  it('page.tsx renders the delegation chain badge (CornerDownRight icon + from)', () => {
+    expect(roomPageSource).toContain('CornerDownRight');
+    expect(roomPageSource).toMatch(/from \{getPersonaName\(delegatedFrom\)\}/);
   });
 
   it('page.tsx calls getPersonaName(delegatedFrom) to resolve the badge label', () => {

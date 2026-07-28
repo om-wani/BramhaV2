@@ -35,6 +35,7 @@ const AddMemberSchema = z.object({
 
 const UpdateSettingsSchema = z.object({
   delegationMode: z.enum(['auto', 'ask']).optional(),
+  webSearchEnabled: z.boolean().optional(),
 });
 
 type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
