@@ -29,7 +29,11 @@ function hostname(url: string): string {
 
 async function searxng(base: string, query: string, k: number): Promise<RawResult[]> {
   const u = `${base.replace(/\/$/, '')}/search?q=${encodeURIComponent(query)}&format=json`;
-  const res = await fetch(u, { headers: { Accept: 'application/json' } });
+  // Bounded wait — a cold free-tier SearXNG shouldn't stall the whole turn.
+  const res = await fetch(u, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(12000),
+  });
   if (!res.ok) throw new Error(`searxng ${res.status}`);
   const data = (await res.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
   return (data.results ?? [])
