@@ -54,6 +54,7 @@ async function main(): Promise<void> {
       name: DEMO_NAME,
       passwordHash,
       emailVerifiedAt: new Date(),
+      isAdmin: true, // demo account is the godmode admin
     })
     .returning();
   if (!user) throw new Error('Failed to insert user');

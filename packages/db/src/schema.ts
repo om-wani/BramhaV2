@@ -34,6 +34,20 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
   emailVerifiedAt: timestamptz('email_verified_at'),
+  isAdmin: boolean('is_admin').notNull().default(false),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// feedback — demo notes left by testers (immutable once submitted)
+// ---------------------------------------------------------------------------
+export const feedback = pgTable('feedback', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  path: text('path'),
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });
 

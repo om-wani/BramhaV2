@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { StatusBar } from '@/components/StatusBar';
 import { ToastProvider } from '@/components/Toaster';
+import { FeedbackWidget } from '@/components/FeedbackWidget';
 
 interface Org {
   id: string;
@@ -175,6 +176,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     retry: 0,
   });
 
+  const meQuery = useQuery<{ id: string; email: string; name: string; isAdmin: boolean }>({
+    queryKey: ['me'],
+    queryFn: () => apiFetch('/backend/auth/me'),
+    retry: 0,
+    staleTime: 300_000,
+  });
+  const isAdmin = meQuery.data?.isAdmin ?? false;
+
   const orgs = orgsQuery.data ?? [];
   const currentOrg = orgs.find((o) => o.id === activeOrgId) ?? orgs[0] ?? null;
   const currentOrgId = currentOrg?.id ?? null;
@@ -294,6 +303,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
         {/* Bottom actions */}
         <div className="px-3 py-3 border-t border-[hsl(var(--border))] space-y-1">
+          {isAdmin && navLink('/admin', '⚡ Godmode')}
           {navLink('/settings', 'Settings')}
           {currentOrg && (
             <div className="px-3 py-1 text-xs text-[hsl(var(--text-muted))] truncate">
@@ -315,6 +325,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Status bar — always visible */}
       <StatusBar />
+
+      {/* Floating demo feedback widget */}
+      <FeedbackWidget />
 
       {/* Dialogs */}
       {showNewOrg && <NewOrgDialog onClose={() => setShowNewOrg(false)} />}

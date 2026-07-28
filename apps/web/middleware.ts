@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/settings', '/p/'];
+const PROTECTED_PREFIXES = ['/dashboard', '/settings', '/p/', '/admin'];
 const SESSION_COOKIE = 'bramha_session';
 
 function isProtected(pathname: string): boolean {

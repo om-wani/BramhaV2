@@ -109,7 +109,9 @@ export class AuthService {
     await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
   }
 
-  async validateSession(rawToken: string): Promise<{ id: string; email: string; name: string }> {
+  async validateSession(
+    rawToken: string,
+  ): Promise<{ id: string; email: string; name: string; isAdmin: boolean }> {
     const tokenHash = hashToken(rawToken);
     const db = await getDb();
     const now = new Date();
@@ -120,6 +122,7 @@ export class AuthService {
         expiresAt: sessions.expiresAt,
         email: users.email,
         name: users.name,
+        isAdmin: users.isAdmin,
       })
       .from(sessions)
       .innerJoin(users, eq(sessions.userId, users.id))
@@ -142,6 +145,6 @@ export class AuthService {
         .where(eq(sessions.tokenHash, tokenHash));
     }
 
-    return { id: row.userId, email: row.email, name: row.name };
+    return { id: row.userId, email: row.email, name: row.name, isAdmin: row.isAdmin };
   }
 }

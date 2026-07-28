@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   Req,
@@ -74,6 +75,14 @@ export class AuthController {
     });
 
     return { userId: user.id };
+  }
+
+  @Get('me')
+  @UseGuards(SessionAuthGuard)
+  async me(
+    @Req() req: FastifyRequest,
+  ): Promise<{ id: string; email: string; name: string; isAdmin: boolean }> {
+    return (req as FastifyRequest & { user: { id: string; email: string; name: string; isAdmin: boolean } }).user;
   }
 
   @Post('logout')
