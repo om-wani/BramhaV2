@@ -70,9 +70,22 @@ export function FeedbackWidget() {
   const mine = mineQuery.data ?? [];
 
   return (
-    <div className="fixed bottom-9 left-4 z-40 flex flex-col items-start gap-2">
+    <div className="relative">
+      <button
+        onClick={() => {
+          setOpen((v) => !v);
+          if (!open) setTimeout(() => taRef.current?.focus(), 50);
+        }}
+        aria-expanded={open}
+        title="Leave demo feedback"
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[hsl(var(--accent)/0.12)] text-[hsl(var(--accent))] text-[11px] font-medium hover:bg-[hsl(var(--accent)/0.2)] transition-colors"
+      >
+        <span aria-hidden="true">💬</span>
+        Feedback
+      </button>
+
       {open && (
-        <div className="w-80 max-h-[70vh] flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-2xl overflow-hidden">
+        <div className="absolute top-full left-0 mt-2 w-80 max-h-[70vh] z-50 flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))]">
             <span className="text-xs font-semibold text-[hsl(var(--text-primary))]">Demo feedback</span>
             <button
@@ -124,18 +137,6 @@ export function FeedbackWidget() {
           </div>
         </div>
       )}
-
-      <button
-        onClick={() => {
-          setOpen((v) => !v);
-          if (!open) setTimeout(() => taRef.current?.focus(), 50);
-        }}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-[hsl(var(--accent))] text-white text-xs font-medium shadow-lg hover:opacity-90 transition-opacity"
-      >
-        <span aria-hidden="true">💬</span>
-        {open ? 'Hide' : 'Feedback'}
-      </button>
     </div>
   );
 }

@@ -229,8 +229,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <aside className="w-60 shrink-0 flex flex-col border-r border-[hsl(var(--border))] bg-[hsl(var(--surface))]">
         {/* Logo */}
-        <div className="px-4 py-4 border-b border-[hsl(var(--border))]">
+        <div className="px-4 py-4 border-b border-[hsl(var(--border))] flex items-center justify-between gap-2">
           <span className="font-bold text-base text-[hsl(var(--text-primary))]">Bramha</span>
+          <FeedbackWidget />
         </div>
 
         {/* Org switcher */}
@@ -325,9 +326,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Status bar — always visible */}
       <StatusBar />
-
-      {/* Floating demo feedback widget */}
-      <FeedbackWidget />
 
       {/* Dialogs */}
       {showNewOrg && <NewOrgDialog onClose={() => setShowNewOrg(false)} />}
