@@ -230,12 +230,20 @@ export default function DashboardPage() {
             </button>
           )}
           {firstOrg && (
-            <button
-              onClick={() => setShowCreateProject(true)}
-              className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity"
-            >
-              New project
-            </button>
+            <>
+              <button
+                onClick={() => setShowCreateOrg(true)}
+                className="px-4 py-2 text-sm rounded-lg border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] font-medium hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
+              >
+                New org
+              </button>
+              <button
+                onClick={() => setShowCreateProject(true)}
+                className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity"
+              >
+                New project
+              </button>
+            </>
           )}
         </div>
       </div>
