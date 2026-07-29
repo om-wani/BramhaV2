@@ -123,13 +123,20 @@ export function createTurnGraph(
   // select node: embed message, score all 8 personas, emit selection event
   // -------------------------------------------------------------------------
   async function selectNode(state: TurnState): Promise<Partial<TurnState>> {
-    const embeddings = await router.embed({
-      projectId: state.projectId,
-      ...(state.triggerUserId !== undefined ? { userId: state.triggerUserId } : {}),
-      inputs: [state.userMessage],
-    });
-
-    const messageEmbedding = embeddings[0] ?? [];
+    // Embeddings are one paid call per turn. If they fail (no credits, rate
+    // limit), degrade gracefully: empty embedding → lexical-only relevance and
+    // doc-RAG is skipped, but the turn still runs.
+    let messageEmbedding: number[] = [];
+    try {
+      const embeddings = await router.embed({
+        projectId: state.projectId,
+        ...(state.triggerUserId !== undefined ? { userId: state.triggerUserId } : {}),
+        inputs: [state.userMessage],
+      });
+      messageEmbedding = embeddings[0] ?? [];
+    } catch {
+      messageEmbedding = [];
+    }
 
     // Build options without boundPersona if it's undefined (exactOptionalPropertyTypes)
     const scoringOptions =
@@ -173,12 +180,16 @@ export function createTurnGraph(
   // Reuses messageEmbedding computed in selectNode — no extra embed call.
   // -------------------------------------------------------------------------
   async function retrieveNode(state: TurnState): Promise<Partial<TurnState>> {
-    const docChunks = await state.searchFn(
-      state.projectId,
-      state.messageEmbedding,
-      state.userMessage,
-      6,
-    );
+    // Doc RAG needs the query embedding; skip it (not the whole turn) if the
+    // embed call failed. Never let retrieval errors kill the turn.
+    let docChunks: KnowledgeChunk[] = [];
+    if (state.messageEmbedding.length > 0) {
+      try {
+        docChunks = await state.searchFn(state.projectId, state.messageEmbedding, state.userMessage, 6);
+      } catch {
+        docChunks = [];
+      }
+    }
     // Optional live web results, merged into the same context/citation path.
     // filename = source domain, so agents cite as [Source: domain #n].
     const webChunks = state.enableWebSearch ? await webSearch(state.userMessage, 4) : [];
