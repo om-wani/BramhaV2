@@ -34,9 +34,24 @@ const OPENAI_CHAT_MODEL_LIGHT = process.env['OPENAI_CHAT_MODEL_LIGHT'] ?? OPENAI
 const OPENAI_EMBED_MODEL = process.env['EMBEDDING_MODEL'] ?? 'text-embedding-3-small';
 const EMBED_BATCH_SIZE = 64;
 
-/** Delegated executor turns use the light tier; everything else the primary. */
+/**
+ * Models to try for a purpose, in order. OPENAI_CHAT_MODEL(_LIGHT) may be a
+ * comma-separated list — free OpenRouter models rate-limit (429) on the shared
+ * pool, so we roll to the next one on failure/empty output.
+ */
+function chatModelsFor(purpose: string | undefined): string[] {
+  const split = (raw: string) => raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const primary = split(OPENAI_CHAT_MODEL);
+  if (purpose === 'delegation') {
+    const light = split(OPENAI_CHAT_MODEL_LIGHT);
+    if (light.length > 0) return light;
+  }
+  return primary.length > 0 ? primary : ['gpt-4o-mini'];
+}
+
+/** First model for the purpose — used by the Anthropic-fallback path. */
 function chatModelFor(purpose: string | undefined): string {
-  return purpose === 'delegation' ? OPENAI_CHAT_MODEL_LIGHT : OPENAI_CHAT_MODEL;
+  return chatModelsFor(purpose)[0]!;
 }
 
 // Default token budget per persona reply. Reasoning models burn budget on
@@ -367,30 +382,46 @@ export function createLiveRouter(
         return chatWithRetryAndLog(anthropicProvider, openaiProvider, params, onCallComplete);
       }
       if (openaiProvider !== null) {
-        // OpenAI-only mode
+        // OpenAI-only mode — try each configured model until one produces text.
+        const models = chatModelsFor(params.purpose);
+        let lastErr: unknown;
+        for (let i = 0; i < models.length; i++) {
+        const model = models[i]!;
+        try {
         const start = Date.now();
         const callOpts = buildTextOpts(
           {
-            model: openaiProvider.chat(chatModelFor(params.purpose)),
+            model: openaiProvider.chat(model),
             messages: params.messages,
             maxOutputTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
           },
           params.system,
         );
         const result = await generateText(callOpts);
+        if (!result.text || result.text.trim().length === 0) {
+          lastErr = new Error(`empty output from ${model}`);
+          if (i > 0) await sleep(400);
+          continue;
+        }
         fireLog(onCallComplete, {
           projectId: params.projectId,
+          model,
           ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
           ...(params.userId !== undefined ? { userId: params.userId } : {}),
           ...(params.persona !== undefined ? { persona: params.persona } : {}),
           provider: 'openai',
-          model: chatModelFor(params.purpose),
           purpose: (params.purpose ?? 'turn') as CallPurpose,
           inputTokens: result.usage.inputTokens ?? 0,
           outputTokens: result.usage.outputTokens ?? 0,
           latencyMs: Date.now() - start,
         });
         return result.text;
+        } catch (err) {
+          lastErr = err;
+          if (i < models.length - 1) await sleep(400);
+        }
+        }
+        throw new Error(`ModelRouter: all chat models failed. Last: ${String(lastErr)}`);
       }
       throw new Error('ModelRouter: no provider available for chat.');
     },
@@ -401,34 +432,55 @@ export function createLiveRouter(
         return;
       }
       if (openaiProvider !== null) {
-        // OpenAI-only mode
-        const start = Date.now();
-        const callOpts = buildTextOpts(
-          {
-            model: openaiProvider.chat(chatModelFor(params.purpose)),
-            messages: params.messages,
-            maxOutputTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
-          },
-          params.system,
-        );
-        const result = streamText(callOpts);
-        for await (const chunk of result.textStream) {
-          yield chunk;
+        // OpenAI-only mode — try each configured model until one streams text.
+        // Only fall back if a model fails BEFORE emitting any chunk (429/empty);
+        // once tokens are flowing we can't restart, so propagate.
+        const models = chatModelsFor(params.purpose);
+        let lastErr: unknown;
+        for (let i = 0; i < models.length; i++) {
+          const model = models[i]!;
+          const start = Date.now();
+          const callOpts = buildTextOpts(
+            {
+              model: openaiProvider.chat(model),
+              messages: params.messages,
+              maxOutputTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+            },
+            params.system,
+          );
+          let yielded = 0;
+          try {
+            const result = streamText(callOpts);
+            for await (const chunk of result.textStream) {
+              yielded += 1;
+              yield chunk;
+            }
+            if (yielded === 0) {
+              lastErr = new Error(`empty output from ${model}`);
+              if (i < models.length - 1) await sleep(400);
+              continue;
+            }
+            const usage = await result.usage;
+            fireLog(onCallComplete, {
+              projectId: params.projectId,
+              model,
+              ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
+              ...(params.userId !== undefined ? { userId: params.userId } : {}),
+              ...(params.persona !== undefined ? { persona: params.persona } : {}),
+              provider: 'openai',
+              purpose: (params.purpose ?? 'turn') as CallPurpose,
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+              latencyMs: Date.now() - start,
+            });
+            return;
+          } catch (err) {
+            lastErr = err;
+            if (yielded > 0) throw err; // partial stream — can't fall back
+            if (i < models.length - 1) await sleep(400);
+          }
         }
-        const usage = await result.usage;
-        fireLog(onCallComplete, {
-          projectId: params.projectId,
-          ...(params.roomId !== undefined ? { roomId: params.roomId } : {}),
-          ...(params.userId !== undefined ? { userId: params.userId } : {}),
-          ...(params.persona !== undefined ? { persona: params.persona } : {}),
-          provider: 'openai',
-          model: chatModelFor(params.purpose),
-          purpose: (params.purpose ?? 'turn') as CallPurpose,
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-          latencyMs: Date.now() - start,
-        });
-        return;
+        throw new Error(`ModelRouter: all stream models failed. Last: ${String(lastErr)}`);
       }
       throw new Error('ModelRouter: no provider available for streaming.');
     },

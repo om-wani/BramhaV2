@@ -78,10 +78,9 @@ describe('model tiering by purpose', () => {
 
     const router = await freshRouter();
     await router.chat({ projectId: 'p', purpose: 'delegation', messages: [{ role: 'user', content: 'x' }] });
-    // empty string is falsy-ish but ?? only catches undefined — '' stays.
-    // Accept either behavior explicitly documented here:
+    // Empty light list → fall back to the primary model.
     const used = mockGenerateText.mock.calls[0]?.[0]?.model as string;
-    expect(['chat-model-ref:only-model', 'chat-model-ref:']).toContain(used);
+    expect(used).toBe('chat-model-ref:only-model');
   });
 });
 
