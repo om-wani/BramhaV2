@@ -1045,12 +1045,25 @@ export default function RoomPage() {
 
   useEffect(() => {
     if (!turnWaiting) return;
-    const timer = window.setTimeout(() => {
+    // Free-tier models rate-limit and personas answer one at a time, so a turn
+    // can legitimately run over a minute. Nudge at 60s (still working), only
+    // give up at 180s. The server keeps grinding either way — the real response
+    // still arrives over the socket if it lands after this fires.
+    const nudge = window.setTimeout(() => {
+      toast('Still working — free models are slow, hang tight…', { kind: 'info', durationMs: 5000 });
+    }, 60_000);
+    const giveUp = window.setTimeout(() => {
       setTurnWaiting(false);
       setRespondingPersonas([]);
-      toast('No agent response — the model may be unavailable', { kind: 'error', durationMs: 6000 });
-    }, 120_000);
-    return () => window.clearTimeout(timer);
+      toast('Taking longer than usual — response will appear if it lands', {
+        kind: 'error',
+        durationMs: 6000,
+      });
+    }, 180_000);
+    return () => {
+      window.clearTimeout(nudge);
+      window.clearTimeout(giveUp);
+    };
   }, [turnWaiting, toast]);
 
   // ---- branch dialog callbacks --------------------------------------------

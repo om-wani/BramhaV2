@@ -19,6 +19,14 @@ import { detectArtifact, stripArtifactBlock } from './artifact-detector.js';
 import { webSearch } from './providers/web-search.js';
 import { parseDelegationSignal, type PendingDelegation } from './delegation-parser.js';
 
+// Max personas that respond per council turn. Each persona streams
+// sequentially through the model fallback chain, so a lower cap cuts
+// latency and token spend. Env-tunable; default 2.
+const MAX_PERSONAS_PER_TURN = Math.max(
+  1,
+  parseInt(process.env['MAX_PERSONAS_PER_TURN'] ?? '2', 10) || 2,
+);
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -143,13 +151,13 @@ export function createTurnGraph(
       state.boundPersona !== undefined
         ? {
             threshold: 0.35,
-            maxSelected: 4,
+            maxSelected: MAX_PERSONAS_PER_TURN,
             roomKind: state.roomKind,
             boundPersona: state.boundPersona,
           }
         : {
             threshold: 0.35,
-            maxSelected: 4,
+            maxSelected: MAX_PERSONAS_PER_TURN,
             roomKind: state.roomKind,
           };
 
