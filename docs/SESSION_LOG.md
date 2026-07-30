@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-07-31 — Turn-latency diagnosis + router: exclusive @tags, deterministic no-match, /web
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ db6305b..f05efa4
+**Done:** Diagnosed "council thinking → error → response 2min later": not a failure — free-model 429 churn (fallback chain) + serial personas, and client `page.tsx` had a 120s safety timeout firing "model may be unavailable" while the server was still grinding. Fixes: (1) persona cap 4→2 per turn (`MAX_PERSONAS_PER_TURN` env, turn-graph) — halves serial churn + tokens; (2) turn-wait UI: nudge at 60s ("still working"), give up at 180s, honest copy (d844e34); (3) relevance router reworked (f05efa4) — `@slug`/`@name` = exclusive hard tag (only tagged reply, classifier skipped; soft title phrase stays advisory via `explicitTag` flag); killed arbitrary top-1 fallback (nonzero top score → that agent; all-zero → deterministic CEO route, no LLM); `/web` is now the web-search command (`@web` back-compat alias, regex `^\s*[/@]web\b`); composer/tooltip hints → `@agent · /web`. Tests: relevance top-1→CEO test + 2 new (exclusive tag, soft-title), gate-p3 comment; 140 agents / 111 server green. Pushed → Render auto-deploy.
+**Decisions:** `@` = agent tag (exclusive), `/` = command — user's model. No-match routes to CEO ONLY when all scores zero (user asked algorithmic/LLM-less; a nonzero sub-threshold signal isn't "random", so keep that agent). Persona cap default 2 (cost/latency; env-tunable). Model-wiring (paid primary) deferred — safe to put a cheap paid model first with free chain as fallback (402→rolls to free until user adds ~$1 credit; then auto-upgrades), but not applied to Render env yet (CLI can't update live; recreate only worth it once credit exists).
+**Next:** Web (Vercel) prod deploy pending explicit user OK — carries only UI hints/toast (logic already server-side via Render). Optionally: add ~$1 OpenRouter credit + wire cheap paid model as `OPENAI_CHAT_MODEL` primary to kill 429 churn.
+
+---
+
 ## 2026-07-26 — Deployed to Vercel + Render + Neon (no Docker), verified end-to-end
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 3f5f95c..5090566
