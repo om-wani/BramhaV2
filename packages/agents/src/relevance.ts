@@ -13,6 +13,8 @@ export interface PersonaScore {
   score: number;
   selected: boolean;
   mentionScore: number;
+  /** True only for a hard @slug / @name tag — drives exclusive selection. */
+  explicitTag: boolean;
   expertiseScore: number;
   lexicalScore: number;
   fatigueScore: number;
@@ -57,6 +59,16 @@ function computeMentionScore(
     return 1.0;
   }
   return 0;
+}
+
+// A hard @tag — only the @slug / @name forms, NOT the soft title phrase
+// ("ask the CFO"). Presence of any hard tag flips selection to exclusive mode.
+function hasExplicitTag(messageText: string, persona: PersonaConfig): boolean {
+  const lower = messageText.toLowerCase();
+  return (
+    lower.includes(`@${persona.slug}`) ||
+    lower.includes(`@${persona.name.toLowerCase()}`)
+  );
 }
 
 function computeLexicalScore(
@@ -125,6 +137,7 @@ export function scorePersonas(
       score,
       selected: false,
       mentionScore,
+      explicitTag: hasExplicitTag(input.messageText, persona),
       expertiseScore,
       lexicalScore,
       fatigueScore,
@@ -141,14 +154,35 @@ export function scorePersonas(
     return scores;
   }
 
-  // Council mode: select personas that pass threshold, up to maxSelected
+  // Exclusive @tag: if the user hard-tagged any persona, ONLY those reply.
+  // The classifier is skipped entirely so tagging is fully deterministic.
+  // Still capped by maxSelected to bound cost on absurd many-tag messages.
+  const tagged = scores.filter((s) => s.explicitTag);
+  if (tagged.length > 0) {
+    for (const s of tagged.slice(0, maxSelected)) {
+      s.selected = true;
+    }
+    return scores;
+  }
+
+  // Council mode: select personas that pass threshold, up to maxSelected.
   const passing = scores.filter((s) => s.score >= threshold);
 
   if (passing.length === 0) {
-    // Fallback: top-1
+    // Nobody passed threshold. Two sub-cases:
+    //  - top scorer still has a real (if weak) signal → it's the best match,
+    //    select it. Not random: something in the message pointed at it.
+    //  - every score is zero → top-1 order is an arbitrary near-tie ("random
+    //    agent"). Route to CEO deterministically instead — default owner that
+    //    can delegate. Purely algorithmic, no LLM.
     const top = scores[0];
-    if (top !== undefined) {
+    if (top !== undefined && top.score > 0) {
       top.selected = true;
+    } else {
+      const ceo = scores.find((s) => s.persona === 'ceo') ?? top;
+      if (ceo !== undefined) {
+        ceo.selected = true;
+      }
     }
   } else {
     const toSelect = passing.slice(0, maxSelected);

@@ -104,7 +104,7 @@ describe('scorePersonas', () => {
     expect(cooScore?.fatigueScore).toBe(0);
   });
 
-  it('top-1 fallback when nothing passes threshold', () => {
+  it('CEO fallback when nothing passes threshold (no arbitrary top-1)', () => {
     const input: RelevanceInput = {
       messageText: 'Hello',
       messageEmbedding: ZERO_VEC,
@@ -115,8 +115,36 @@ describe('scorePersonas', () => {
     });
     const selected = scores.filter((s) => s.selected);
     expect(selected).toHaveLength(1);
-    // Top-1 is the first in sorted order
-    expect(scores[0]?.selected).toBe(true);
+    // Deterministic CEO route, not the near-tie top-of-sort.
+    expect(selected[0]?.persona).toBe('ceo');
+  });
+
+  it('exclusive @tag: only tagged personas reply, classifier skipped', () => {
+    const input: RelevanceInput = {
+      // @cto hard-tagged; CFO only softly implied — must NOT be selected.
+      messageText: '@cto can you weigh in on the finance model?',
+      messageEmbedding: ZERO_VEC,
+      recentSpeakers: [],
+    };
+    const scores = scorePersonas(input, zeroDomainEmbeddings(), ALL_PERSONAS, {
+      threshold: 0,
+    });
+    const selected = scores.filter((s) => s.selected);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.persona).toBe('cto');
+  });
+
+  it('soft title phrase does NOT trigger exclusive mode', () => {
+    const input: RelevanceInput = {
+      messageText: 'ask the CFO about runway',
+      messageEmbedding: ZERO_VEC,
+      recentSpeakers: [],
+    };
+    const scores = scorePersonas(input, zeroDomainEmbeddings(), ALL_PERSONAS, {
+      threshold: 0,
+    });
+    // No hard @tag → falls through to normal scoring, not exclusive lock.
+    expect(scores.every((s) => s.explicitTag === false)).toBe(true);
   });
 
   it('one_on_one mode: only boundPersona selected', () => {

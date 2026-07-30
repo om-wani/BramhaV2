@@ -1226,10 +1226,10 @@ export default function RoomPage() {
             <option value="auto">Auto-run</option>
           </select>
         </label>
-        {/* Web search toggle — also triggerable per-message with @web */}
+        {/* Web search toggle — also triggerable per-message with /web */}
         <button
           onClick={() => void setWebSearch(!webSearchEnabled)}
-          title={webSearchEnabled ? 'Web search on — click to disable (or use @web per message)' : 'Web search off — click to enable (or prefix a message with @web)'}
+          title={webSearchEnabled ? 'Web search on — click to disable (or use /web per message)' : 'Web search off — click to enable (or prefix a message with /web)'}
           aria-pressed={webSearchEnabled}
           className={`flex items-center gap-1 shrink-0 text-xs px-2 py-1 rounded-lg border transition-colors ${
             webSearchEnabled
@@ -1348,7 +1348,7 @@ export default function RoomPage() {
               <textarea
                 ref={textareaRef}
                 aria-label="Message"
-                placeholder="Message the council… (Enter to send, Shift+Enter for newline, @ to mention)"
+                placeholder="Message the council… (@agent to tag · /web to search · Enter to send)"
                 value={draft}
                 onChange={(e) => {
                   const newText = e.target.value;

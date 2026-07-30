@@ -208,18 +208,20 @@ export class AgentsService implements OnModuleInit {
       return results;
     };
 
-    // Web search: on if the project has it enabled OR the user prefixed @web.
-    // Strip the @web marker before it reaches the model.
+    // Web search: on if the project has it enabled OR the user ran the /web
+    // command. `/` is the command prefix; `@web` stays as a back-compat alias.
+    // Strip the marker before the message reaches the model / relevance scorer.
     const db0 = await getDb();
     const [proj0] = await db0
       .select({ settings: projects.settings })
       .from(projects)
       .where(eq(projects.id, params.projectId));
     const settings0 = (proj0?.settings as ProjectSettings | null) ?? {};
-    const hasWebPrefix = /^\s*@web\b/i.test(params.userMessage);
+    const WEB_CMD = /^\s*[/@]web\b\s*/i;
+    const hasWebPrefix = WEB_CMD.test(params.userMessage);
     const enableWebSearch = settings0.webSearchEnabled === true || hasWebPrefix;
     const graphMessage = hasWebPrefix
-      ? params.userMessage.replace(/^\s*@web\b\s*/i, '')
+      ? params.userMessage.replace(WEB_CMD, '')
       : params.userMessage;
 
     const { responses, pendingDelegations } = await invokeTurnGraph({
