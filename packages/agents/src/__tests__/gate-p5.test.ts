@@ -63,7 +63,7 @@ describe('P5.4 Gate: parseDelegationSignal — happy path', () => {
 
   it('toSlug is cdao', () => {
     const result = parseDelegationSignal(input);
-    expect(result?.signal.toSlug).toBe('cdao');
+    expect(result?.signal?.toSlug).toBe('cdao');
   });
 
   it('strippedContent does NOT contain DELEGATE_TO:', () => {
@@ -80,7 +80,7 @@ describe('P5.4 Gate: parseDelegationSignal — happy path', () => {
 
   it('task text is extracted correctly', () => {
     const result = parseDelegationSignal(input);
-    expect(result?.signal.task).toBe('Size the data infrastructure for option two.');
+    expect(result?.signal?.task).toBe('Size the data infrastructure for option two.');
   });
 });
 
@@ -109,16 +109,20 @@ describe('P5.4 Gate: parseDelegationSignal — mid-response signal ignored', () 
 // ---------------------------------------------------------------------------
 
 describe('P5.4 Gate: parseDelegationSignal — invalid slug rejected', () => {
-  it('returns null for an unrecognised slug', () => {
+  it('strips but emits no signal for an unrecognised slug', () => {
     const result = parseDelegationSignal(
       'DELEGATE_TO: invalid_slug TASK: Do something.',
     );
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).not.toContain('DELEGATE_TO');
   });
 
-  it('returns null for an empty task', () => {
+  it('strips but emits no signal for an empty task', () => {
     const result = parseDelegationSignal('DELEGATE_TO: cto TASK:   ');
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).not.toContain('DELEGATE_TO');
   });
 
   it('returns null when there is no DELEGATE_TO line at all', () => {

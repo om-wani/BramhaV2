@@ -28,7 +28,8 @@ export interface PendingDelegation {
 }
 
 export interface ParsedDelegation {
-  signal: DelegationSignal;
+  /** Non-null only when the target slug is a known persona AND task is present. */
+  signal: DelegationSignal | null;
   strippedContent: string;
 }
 
@@ -36,10 +37,15 @@ export interface ParsedDelegation {
 // Regex
 // ---------------------------------------------------------------------------
 
-// Matches on the final line only — DELEGATE_TO must appear at position 0 or
-// immediately after a newline, and $ anchors to end-of-string (no /m flag).
-// Case-insensitive flag so "DELEGATE_TO: CFO" → "cfo".
-const DELEGATION_RE = /(?:^|\n)DELEGATE_TO:\s*(\w+)\s+TASK:\s*(.+)$/i;
+// Final-line only — DELEGATE_TO at string start or after a newline, running to
+// end (`.` doesn't cross newlines, no /m flag, so a signal mid-response with
+// text after it won't match). Two regexes:
+//  - STRIP_RE matches ANY trailing DELEGATE_TO line so it never leaks to the
+//    user, even when the model emits garbage (invalid slug, {braces}, no task).
+//  - PARSE_RE extracts a valid slug + task, tolerating optional {braces} the
+//    model sometimes copies from the prompt's `{slug}` placeholder syntax.
+const STRIP_RE = /(?:^|\n)[ \t]*DELEGATE_TO:.*$/i;
+const PARSE_RE = /(?:^|\n)[ \t]*DELEGATE_TO:\s*\{?\s*(\w+)\s*\}?\s+TASK:\s*(.+?)\s*$/i;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -48,29 +54,28 @@ const DELEGATION_RE = /(?:^|\n)DELEGATE_TO:\s*(\w+)\s+TASK:\s*(.+)$/i;
 /**
  * Parses a DELEGATE_TO signal from agent response content.
  *
- * Returns null if:
- *   - no DELEGATE_TO line is present
- *   - the extracted slug is not a known PersonaSlug
- *   - task text is empty after trim
+ * Returns null ONLY when no DELEGATE_TO line is present at all.
  *
- * On success returns the parsed signal and the content with the signal line
- * removed (trimmed).
+ * When a trailing DELEGATE_TO line IS present it is always stripped from
+ * `strippedContent` (so raw signal syntax never leaks to the user), and:
+ *   - `signal` is the parsed target when the slug is a known persona and the
+ *     task is non-empty;
+ *   - `signal` is null when the target is unknown or the task is missing —
+ *     the line is still stripped, but nothing is delegated.
  */
 export function parseDelegationSignal(content: string): ParsedDelegation | null {
-  const match = content.match(DELEGATION_RE);
-  if (!match) return null;
+  if (!STRIP_RE.test(content)) return null;
 
-  const slug = match[1]?.toLowerCase();
-  const task = match[2]?.trim();
+  const strippedContent = content.replace(STRIP_RE, '').trim();
 
-  if (!slug || !task) return null;
-  if (!(PERSONA_SLUGS as readonly string[]).includes(slug)) return null;
+  const parsed = content.match(PARSE_RE);
+  const slug = parsed?.[1]?.toLowerCase();
+  const task = parsed?.[2]?.trim();
 
-  // Strip the DELEGATE_TO line and trim surrounding whitespace
-  const strippedContent = content.replace(DELEGATION_RE, '').trim();
+  if (slug && task && (PERSONA_SLUGS as readonly string[]).includes(slug)) {
+    return { signal: { toSlug: slug as PersonaSlug, task }, strippedContent };
+  }
 
-  return {
-    signal: { toSlug: slug as PersonaSlug, task },
-    strippedContent,
-  };
+  // Line present but not a valid, actionable delegation → strip, no signal.
+  return { signal: null, strippedContent };
 }

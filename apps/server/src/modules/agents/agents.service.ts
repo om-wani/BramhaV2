@@ -217,11 +217,14 @@ export class AgentsService implements OnModuleInit {
       .from(projects)
       .where(eq(projects.id, params.projectId));
     const settings0 = (proj0?.settings as ProjectSettings | null) ?? {};
-    const WEB_CMD = /^\s*[/@]web\b\s*/i;
+    // Match the /web command (or @web alias) anywhere in the message — users
+    // combine it with @tags, e.g. "@ceo /web who is ...". Strip every
+    // occurrence, leaving @tags and the actual question intact.
+    const WEB_CMD = /(^|\s)[/@]web\b/i;
     const hasWebPrefix = WEB_CMD.test(params.userMessage);
     const enableWebSearch = settings0.webSearchEnabled === true || hasWebPrefix;
     const graphMessage = hasWebPrefix
-      ? params.userMessage.replace(WEB_CMD, '')
+      ? params.userMessage.replace(/(^|\s)[/@]web\b\s*/gi, '$1').trim()
       : params.userMessage;
 
     const { responses, pendingDelegations } = await invokeTurnGraph({

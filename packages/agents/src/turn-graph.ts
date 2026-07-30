@@ -291,32 +291,29 @@ export function createTurnGraph(
       fromSlug: PersonaSlug;
       toSlug: PersonaSlug;
       task: string;
-      strippedContent: string;
     }> = [];
 
-    for (let i = 0; i < state.responses.length; i++) {
-      const response = state.responses[i];
-      if (!response) continue;
+    // Strip any DELEGATE_TO line from every response (so raw signal syntax
+    // never leaks to the user), and collect only the VALID signals to execute.
+    let anyStripped = false;
+    const updatedResponses = state.responses.map((response, i) => {
+      if (!response) return response;
       const result = parseDelegationSignal(response.content);
-      if (result) {
+      if (!result) return response;
+      anyStripped = true;
+      if (result.signal) {
         found.push({
           responseIndex: i,
           fromSlug: response.persona,
           toSlug: result.signal.toSlug,
           task: result.signal.task,
-          strippedContent: result.strippedContent,
         });
       }
-    }
-
-    if (found.length === 0) return {};
-
-    // Strip delegation signal lines from response content
-    const updatedResponses = state.responses.map((r, i) => {
-      const d = found.find((f) => f.responseIndex === i);
-      if (!d) return r;
-      return { ...r, content: d.strippedContent };
+      return { ...response, content: result.strippedContent };
     });
+
+    // Nothing to do if no DELEGATE_TO line appeared anywhere.
+    if (!anyStripped) return {};
 
     // Notify via injected callback (if provided)
     if (state.emitDelegationFn !== undefined) {

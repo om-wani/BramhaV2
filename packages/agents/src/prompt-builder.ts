@@ -1,5 +1,6 @@
 import type { PersonaConfig } from './personas/index.js';
 import type { KnowledgeChunk } from '@bramha/shared';
+import { PERSONA_SLUGS } from '@bramha/shared';
 
 export interface PromptBuilderInput {
   persona: PersonaConfig;
@@ -18,7 +19,7 @@ export function buildSystemPrompt(input: PromptBuilderInput): string {
   const delegationInstruction =
     isDelegated === true
       ? null
-      : 'If a sub-question belongs to a silent peer\'s domain, you may delegate: end your reply with exactly one line — DELEGATE_TO: {slug} TASK: {one sentence}.';
+      : `If a sub-question belongs to another executive's domain, you may delegate. To do so, end your reply with exactly one line in this format (no braces, no markdown):\nDELEGATE_TO: <slug> TASK: <one sentence>\nwhere <slug> is EXACTLY ONE of these real personas: ${PERSONA_SLUGS.join(', ')}. Example: "DELEGATE_TO: cfo TASK: Validate the Q3 burn rate." Never invent a role and never wrap the slug in braces. If none of these fit, do not add the line at all.`;
 
   const lines: string[] = [];
 

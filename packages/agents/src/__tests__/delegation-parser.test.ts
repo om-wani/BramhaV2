@@ -35,8 +35,8 @@ describe('parseDelegationSignal', () => {
     const content = 'Here is my analysis.\nDELEGATE_TO: cfo TASK: Review the burn rate.';
     const result = parseDelegationSignal(content);
     expect(result).not.toBeNull();
-    expect(result?.signal.toSlug).toBe('cfo');
-    expect(result?.signal.task).toBe('Review the burn rate.');
+    expect(result?.signal?.toSlug).toBe('cfo');
+    expect(result?.signal?.task).toBe('Review the burn rate.');
   });
 
   it('returns null for no signal', () => {
@@ -45,10 +45,29 @@ describe('parseDelegationSignal', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null for invalid persona slug', () => {
+  it('strips but does NOT delegate for an invalid persona slug', () => {
     const content = 'Some text.\nDELEGATE_TO: wizard TASK: Do something.';
     const result = parseDelegationSignal(content);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).toBe('Some text.');
+    expect(result?.strippedContent).not.toContain('DELEGATE_TO');
+  });
+
+  it('strips {braces} + unknown slug without leaking (the research_analyst bug)', () => {
+    const content =
+      'My position on this.\nDELEGATE_TO: {research_analyst} TASK: find the budget holders.';
+    const result = parseDelegationSignal(content);
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).toBe('My position on this.');
+    expect(result?.strippedContent).not.toContain('DELEGATE_TO');
+  });
+
+  it('tolerates {braces} around a VALID slug and delegates', () => {
+    const content = 'Ok.\nDELEGATE_TO: {cfo} TASK: check the burn rate.';
+    const result = parseDelegationSignal(content);
+    expect(result?.signal?.toSlug).toBe('cfo');
+    expect(result?.signal?.task).toBe('check the burn rate.');
   });
 
   it('strips the DELEGATE_TO line from content', () => {
@@ -74,7 +93,7 @@ describe('parseDelegationSignal', () => {
     const content = 'Analysis done.\nDELEGATE_TO: CFO TASK: Validate the numbers.';
     const result = parseDelegationSignal(content);
     expect(result).not.toBeNull();
-    expect(result?.signal.toSlug).toBe('cfo');
+    expect(result?.signal?.toSlug).toBe('cfo');
   });
 
   it('handles all valid persona slugs', () => {
@@ -82,21 +101,22 @@ describe('parseDelegationSignal', () => {
     for (const slug of slugs) {
       const content = `Some content.\nDELEGATE_TO: ${slug} TASK: Do the task.`;
       const result = parseDelegationSignal(content);
-      expect(result?.signal.toSlug).toBe(slug);
+      expect(result?.signal?.toSlug).toBe(slug);
     }
   });
 
   it('trims task text', () => {
     const content = 'Text.\nDELEGATE_TO: coo TASK:   Optimize operations.   ';
     const result = parseDelegationSignal(content);
-    expect(result?.signal.task).toBe('Optimize operations.');
+    expect(result?.signal?.task).toBe('Optimize operations.');
   });
 
-  it('returns null when task is empty after trim', () => {
-    // Regex requires at least one character after TASK: so empty string won't match
+  it('strips but does NOT delegate when the task is empty', () => {
     const content = 'Text.\nDELEGATE_TO: cfo TASK:';
     const result = parseDelegationSignal(content);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).toBe('Text.');
   });
 
   it('does not match DELEGATE_TO mid-response (must be final line)', () => {
