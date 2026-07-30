@@ -9,7 +9,9 @@
  */
 
 import type { PersonaSlug } from '@bramha/shared';
-import { PERSONA_SLUGS } from '@bramha/shared';
+// Import the persona configs from the source module (not the ./index.js barrel)
+// to avoid a circular import — index.js re-exports this file.
+import { PERSONAS } from './personas/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +50,68 @@ const STRIP_RE = /(?:^|\n)[ \t]*DELEGATE_TO:.*$/i;
 const PARSE_RE = /(?:^|\n)[ \t]*DELEGATE_TO:\s*\{?\s*(\w+)\s*\}?\s+TASK:\s*(.+?)\s*$/i;
 
 // ---------------------------------------------------------------------------
+// Target resolution
+// ---------------------------------------------------------------------------
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function wordTokens(s: string): string[] {
+  return normalize(s).split(' ').filter((t) => t.length >= 3);
+}
+
+// Two role words match if identical, one contains the other (len ≥ 4), or they
+// share a 5-char stem ("analyst" ↔ "analytics"). Keeps mapping tolerant of the
+// loose role names a model invents without matching unrelated short words.
+function wordsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a))) return true;
+  if (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5)) return true;
+  return false;
+}
+
+/**
+ * Resolves whatever target token a model emitted to a REAL persona slug.
+ *
+ * A primary agent should never delegate to a non-existent role, but models
+ * still hallucinate ones like "research_analyst". Rather than drop the
+ * delegation (losing the intent), map it to the closest real persona by
+ * lexical overlap against each persona's slug/name/title/domain/keywords.
+ * Returns null only when nothing plausibly matches.
+ */
+export function resolvePersonaSlug(raw: string): PersonaSlug | null {
+  const configs = Object.values(PERSONAS);
+  const norm = normalize(raw);
+
+  // Fast path: exact slug or name.
+  const exact = configs.find(
+    (p) => p.slug === norm || p.name.toLowerCase() === norm,
+  );
+  if (exact) return exact.slug;
+
+  const rawTokens = wordTokens(raw);
+  if (rawTokens.length === 0) return null;
+
+  let best: PersonaSlug | null = null;
+  let bestScore = 0;
+  for (const p of configs) {
+    const blobTokens = wordTokens(
+      [p.slug, p.name, p.title, p.domain, ...p.keywords].join(' '),
+    );
+    let score = 0;
+    for (const rt of rawTokens) {
+      if (blobTokens.some((bt) => wordsMatch(rt, bt))) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = p.slug;
+    }
+  }
+  return bestScore > 0 ? best : null;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -69,13 +133,17 @@ export function parseDelegationSignal(content: string): ParsedDelegation | null 
   const strippedContent = content.replace(STRIP_RE, '').trim();
 
   const parsed = content.match(PARSE_RE);
-  const slug = parsed?.[1]?.toLowerCase();
+  const rawSlug = parsed?.[1];
   const task = parsed?.[2]?.trim();
 
-  if (slug && task && (PERSONA_SLUGS as readonly string[]).includes(slug)) {
-    return { signal: { toSlug: slug as PersonaSlug, task }, strippedContent };
+  if (rawSlug && task) {
+    const toSlug = resolvePersonaSlug(rawSlug);
+    if (toSlug) {
+      return { signal: { toSlug, task }, strippedContent };
+    }
   }
 
-  // Line present but not a valid, actionable delegation → strip, no signal.
+  // Line present but the target can't be resolved to a real persona (or the
+  // task is empty) → strip it so it never leaks, but delegate nothing.
   return { signal: null, strippedContent };
 }

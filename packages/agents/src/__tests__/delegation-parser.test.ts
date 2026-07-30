@@ -54,13 +54,29 @@ describe('parseDelegationSignal', () => {
     expect(result?.strippedContent).not.toContain('DELEGATE_TO');
   });
 
-  it('strips {braces} + unknown slug without leaking (the research_analyst bug)', () => {
+  it('resolves a hallucinated role to the nearest real persona (research_analyst → cdao)', () => {
     const content =
       'My position on this.\nDELEGATE_TO: {research_analyst} TASK: find the budget holders.';
     const result = parseDelegationSignal(content);
-    expect(result?.signal).toBeNull();
+    // "analyst" stems to CDAO's "analytics" domain — delegation intent kept,
+    // routed to a real persona instead of being dropped.
+    expect(result?.signal?.toSlug).toBe('cdao');
     expect(result?.strippedContent).toBe('My position on this.');
     expect(result?.strippedContent).not.toContain('DELEGATE_TO');
+  });
+
+  it('drops only a truly unresolvable target (no persona overlap)', () => {
+    const content = 'Text.\nDELEGATE_TO: xyzzy TASK: do the thing.';
+    const result = parseDelegationSignal(content);
+    expect(result?.signal).toBeNull();
+    expect(result?.strippedContent).toBe('Text.');
+    expect(result?.strippedContent).not.toContain('DELEGATE_TO');
+  });
+
+  it('maps a plain role word to its persona (marketing → cmo)', () => {
+    const content = 'Sure.\nDELEGATE_TO: marketing TASK: plan the launch.';
+    const result = parseDelegationSignal(content);
+    expect(result?.signal?.toSlug).toBe('cmo');
   });
 
   it('tolerates {braces} around a VALID slug and delegates', () => {
