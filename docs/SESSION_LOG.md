@@ -13,6 +13,15 @@
 
 ---
 
+## 2026-08-01 — Low-friction onboarding: personal org + landing/login/signup/wizard
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 75e322d..a73b368
+**Done:** Removed the manual "create org" step. Backend (4b61f2c): users.name nullable (migration 0008); signup = email+password only (RegisterSchema drops name); register() auto-provisions a personal org ("My Workspace") + owner membership per new user (GitHub-style); POST /auth/me sets display name + renames workspace to "<name>'s Workspace"; GET /auth/me returns {needsOnboarding, personalOrgId} (needsOnboarding = no name OR no project); createProject seeds a default 'Council' room (+ main branch). Nullable name propagated through guard/admin/feedback/orgs types. Frontend (a73b368): landing rebuilt claude.com-structure (top nav, 2-col hero, auth card left = disabled Google + "Continue with email"→/login, gradient placeholder right, feature strip) in our palette; /signup (email+password+confirm, zxcvbn meter, →/onboarding); /login routes via /me needsOnboarding; /register→permanent redirect /signup; /onboarding full-screen 2-step wizard (name → first project → lands in auto-seeded Council room); dashboard bounces incomplete accounts; middleware protects /onboarding; room composer autoFocus. VERIFIED LIVE end-to-end: register 201→needsOnboarding true+personalOrgId→set name→create project→default Council room w/ branch→needsOnboarding false→org renamed "Ada Lovelace's Workspace". 111 server / 31 shared green; web build green.
+**Decisions:** Personal org auto-created at signup (user IS an org); manual multi-org kept as optional Settings action (future: separate org = unified knowledge store + team collab — parked). Auth stays enumeration-safe: separate /login (generic "invalid email or password") + /signup; name deferred to onboarding, not signup. Google OAuth scaffolded/disabled — email-first launch; wire when creds provided. Right landing pane = gradient placeholder (no promo asset yet).
+**Next:** Optional: Google OAuth (needs Google Cloud client id/secret + redirect URIs). Still-open lever: ~$1 OpenRouter credit + cheap paid model to fix free-model 429 latency + unreliable delegation-signal emission.
+
+---
+
 ## 2026-07-31 — Turn-latency diagnosis + router: exclusive @tags, deterministic no-match, /web
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ db6305b..f05efa4
