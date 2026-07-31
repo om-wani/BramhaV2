@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, uploadKnowledgeFile } from '@/lib/api';
 import { ArrowLeft, ArrowRight, Trash2 } from 'lucide-react';
 
 interface OrgRow {
@@ -228,13 +228,11 @@ export default function ProjectPage() {
     if (!projectId) return;
     setUploading(true);
     for (const file of Array.from(files)) {
-      const form = new FormData();
-      form.append('file', file);
-      await fetch(`/backend/projects/${projectId}/files`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
+      try {
+        await uploadKnowledgeFile(projectId, file);
+      } catch {
+        // best-effort per file; surfaced via the list not refreshing that entry
+      }
     }
     setUploading(false);
     queryClient.invalidateQueries({ queryKey: ['files', projectId] });

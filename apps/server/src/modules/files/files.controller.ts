@@ -13,6 +13,8 @@ import type { FastifyRequest } from 'fastify';
 import { FilesService } from './files.service.js';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard.js';
 import { ProjectMemberGuard } from '../../common/guards/project-member.guard.js';
+import { UploadTicketGuard } from './upload-ticket.guard.js';
+import { signUploadTicket } from './upload-ticket.js';
 import type { FileDto } from '@bramha/shared';
 
 type AuthenticatedRequest = FastifyRequest & {
@@ -21,14 +23,27 @@ type AuthenticatedRequest = FastifyRequest & {
 };
 
 @Controller('projects/:projectId/files')
-@UseGuards(SessionAuthGuard)
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
-  // POST /projects/:projectId/files — multipart upload
+  // POST /projects/:projectId/files/ticket — mint a short-lived upload ticket.
+  // Session + admin membership checked here (small request, goes via proxy).
+  @Post('ticket')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard, ProjectMemberGuard('admin'))
+  async uploadTicket(
+    @Param('projectId') projectId: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<{ token: string }> {
+    return { token: signUploadTicket(req.user.id, projectId) };
+  }
+
+  // POST /projects/:projectId/files — multipart upload, authorized by the
+  // ticket Bearer so the file can be sent directly to the backend origin
+  // (bypassing the proxy's ~4.5 MB body limit).
   @Post()
   @HttpCode(201)
-  @UseGuards(ProjectMemberGuard('admin'))
+  @UseGuards(UploadTicketGuard)
   async uploadFile(
     @Param('projectId') projectId: string,
     @Req() req: AuthenticatedRequest,
@@ -82,7 +97,7 @@ export class FilesController {
 
   // GET /projects/:projectId/files — list files
   @Get()
-  @UseGuards(ProjectMemberGuard('member'))
+  @UseGuards(SessionAuthGuard, ProjectMemberGuard('member'))
   async listFiles(
     @Param('projectId') projectId: string,
     @Req() req: AuthenticatedRequest,
@@ -92,7 +107,7 @@ export class FilesController {
 
   // DELETE /projects/:projectId/files/:fileId
   @Delete(':fileId')
-  @UseGuards(ProjectMemberGuard('admin'))
+  @UseGuards(SessionAuthGuard, ProjectMemberGuard('admin'))
   async deleteFile(
     @Param('projectId') projectId: string,
     @Param('fileId') fileId: string,

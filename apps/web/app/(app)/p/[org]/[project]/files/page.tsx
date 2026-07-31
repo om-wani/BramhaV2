@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, uploadKnowledgeFile } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 import { ArrowLeft, X } from 'lucide-react';
 import type { FileDto, FileStatus } from '@bramha/shared';
@@ -116,13 +116,11 @@ export default function FilesPage() {
     if (!projectId) return;
     setUploading(true);
     for (const file of Array.from(files)) {
-      const form = new FormData();
-      form.append('file', file);
-      await fetch(`/backend/projects/${projectId}/files`, {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
+      try {
+        await uploadKnowledgeFile(projectId, file);
+      } catch {
+        // best-effort per file
+      }
     }
     setUploading(false);
     queryClient.invalidateQueries({ queryKey: ['files', projectId] });
