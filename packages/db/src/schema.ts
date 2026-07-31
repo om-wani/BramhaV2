@@ -31,7 +31,7 @@ import { relations } from 'drizzle-orm';
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').unique().notNull(),
-  name: text('name').notNull(),
+  name: text('name'), // nullable — set during onboarding, not at signup (migration 0008)
   passwordHash: text('password_hash').notNull(),
   emailVerifiedAt: timestamptz('email_verified_at'),
   isAdmin: boolean('is_admin').notNull().default(false),

@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { eq, and } from 'drizzle-orm';
-import { getDb, projects, projectMembers, orgs, orgMembers, users } from '@bramha/db';
+import { getDb, projects, projectMembers, orgs, orgMembers, users, rooms, branches } from '@bramha/db';
 
 @Injectable()
 export class ProjectsService {
@@ -51,6 +51,23 @@ export class ProjectsService {
 
       if (!project) throw new Error('insert failed');
       await tx.insert(projectMembers).values({ projectId: project.id, userId: callerId, role: 'admin' });
+
+      // Seed a default council room so a new project is immediately usable —
+      // the user lands in a working chat instead of an empty project. Mirrors
+      // rooms.service.createRoom (room + 'main' branch + back-reference).
+      const [room] = await tx
+        .insert(rooms)
+        .values({ projectId: project.id, name: 'Council', kind: 'council', persona: null })
+        .returning();
+      if (room) {
+        const [branch] = await tx
+          .insert(branches)
+          .values({ roomId: room.id, projectId: project.id, name: 'main', createdBy: callerId })
+          .returning();
+        if (branch) {
+          await tx.update(rooms).set({ mainBranchId: branch.id }).where(eq(rooms.id, room.id));
+        }
+      }
 
       return { id: project.id, orgId: project.orgId, name: project.name, createdAt: project.createdAt };
     });

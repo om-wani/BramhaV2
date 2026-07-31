@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import * as argon2 from 'argon2';
 import { eq, and, gt } from 'drizzle-orm';
 import { getDb } from '@bramha/db';
-import { users, sessions } from '@bramha/db';
+import { users, sessions, orgs, orgMembers, projectMembers } from '@bramha/db';
 import type { RegisterInput, LoginInput } from '@bramha/shared';
 
 const require = createRequire(import.meta.url);
@@ -53,14 +53,31 @@ export class AuthService {
 
     const db = await getDb();
 
-    // timing: attempt insert; swallow conflict silently (enumeration prevention)
+    // timing: attempt insert; swallow conflict silently (enumeration prevention).
+    // name is null at signup — collected later in onboarding. On a genuinely new
+    // user, auto-provision a personal org so onboarding never asks the user to
+    // create one (GitHub-style: the individual IS an org).
     try {
-      await db.insert(users).values({
-        email,
-        name: dto.name,
-        passwordHash,
-        emailVerifiedAt: new Date(),
-      });
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email,
+          name: null,
+          passwordHash,
+          emailVerifiedAt: new Date(),
+        })
+        .returning();
+
+      if (newUser) {
+        const slug = 'workspace-' + randomBytes(6).toString('hex');
+        const [org] = await db
+          .insert(orgs)
+          .values({ name: 'My Workspace', slug, createdBy: newUser.id })
+          .returning();
+        if (org) {
+          await db.insert(orgMembers).values({ orgId: org.id, userId: newUser.id, role: 'owner' });
+        }
+      }
     } catch {
       // timing: hash already computed above — no extra work needed here
       // Silently swallow duplicate email; do NOT expose 409 or any distinguishing error
@@ -109,9 +126,47 @@ export class AuthService {
     await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
   }
 
+  // Onboarding step 1: set the display name and personalize the auto-created
+  // workspace. Idempotent — safe to call again to rename.
+  async setProfile(userId: string, name: string): Promise<void> {
+    const db = await getDb();
+    const trimmed = name.trim();
+    await db.update(users).set({ name: trimmed }).where(eq(users.id, userId));
+    // Rename the still-default personal workspace to the user's name.
+    await db
+      .update(orgs)
+      .set({ name: `${trimmed}'s Workspace` })
+      .where(and(eq(orgs.createdBy, userId), eq(orgs.name, 'My Workspace')));
+  }
+
+  // Onboarding gate + the personal org id the wizard creates the first project
+  // in. needsOnboarding = no display name yet OR no project membership yet.
+  async getOnboardingInfo(
+    userId: string,
+  ): Promise<{ needsOnboarding: boolean; personalOrgId: string | null }> {
+    const db = await getDb();
+
+    const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
+    const [org] = await db
+      .select({ id: orgs.id })
+      .from(orgMembers)
+      .innerJoin(orgs, eq(orgMembers.orgId, orgs.id))
+      .where(eq(orgMembers.userId, userId))
+      .orderBy(orgs.createdAt)
+      .limit(1);
+    const [proj] = await db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, userId))
+      .limit(1);
+
+    const needsOnboarding = !u?.name || !proj;
+    return { needsOnboarding, personalOrgId: org?.id ?? null };
+  }
+
   async validateSession(
     rawToken: string,
-  ): Promise<{ id: string; email: string; name: string; isAdmin: boolean }> {
+  ): Promise<{ id: string; email: string; name: string | null; isAdmin: boolean }> {
     const tokenHash = hashToken(rawToken);
     const db = await getDb();
     const now = new Date();

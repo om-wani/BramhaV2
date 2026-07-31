@@ -307,12 +307,13 @@ describe('Orgs endpoints', () => {
     });
 
     expect(listRes.statusCode).toBe(200);
-    const members = listRes.json<Array<{ userId: string; name: string; email: string; role: string }>>();
+    const members = listRes.json<Array<{ userId: string; name: string | null; email: string; role: string }>>();
     expect(members.length).toBeGreaterThanOrEqual(1);
     const ownerEntry = members.find((m) => m.userId === ownerId);
     expect(ownerEntry).toBeDefined();
     expect(ownerEntry!.role).toBe('owner');
-    expect(typeof ownerEntry!.name).toBe('string');
+    // name is null until onboarding sets it (signup no longer collects a name).
+    expect(ownerEntry!.name === null || typeof ownerEntry!.name === 'string').toBe(true);
     expect(typeof ownerEntry!.email).toBe('string');
 
     // Non-member gets 403

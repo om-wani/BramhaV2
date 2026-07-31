@@ -3,7 +3,7 @@ import type { FastifyRequest } from 'fastify';
 import { AuthService } from '../../modules/auth/auth.service.js';
 
 type AuthenticatedRequest = FastifyRequest & {
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string | null; isAdmin: boolean };
 };
 
 @Injectable()

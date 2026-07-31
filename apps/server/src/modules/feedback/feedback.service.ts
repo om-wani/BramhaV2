@@ -12,7 +12,7 @@ export interface FeedbackRow {
 export interface AdminFeedbackRow extends FeedbackRow {
   userId: string;
   userEmail: string;
-  userName: string;
+  userName: string | null;
 }
 
 @Injectable()

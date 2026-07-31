@@ -74,7 +74,7 @@ export class OrgsController {
   async listMembers(
     @Param('orgId') orgId: string,
     @Req() req: AuthenticatedRequest,
-  ): Promise<Array<{ userId: string; name: string; email: string; role: string }>> {
+  ): Promise<Array<{ userId: string; name: string | null; email: string; role: string }>> {
     return this.orgsService.listMembers(req.user.id, orgId);
   }
 }

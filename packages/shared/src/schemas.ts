@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
+// Signup collects only email + password. The display name is deferred to
+// onboarding ("What should we call you?"), so it is NOT part of registration.
 export const RegisterSchema = z.object({
   email: z.string().email().max(255),
-  name: z.string().min(1).max(100),
   password: z.string().min(8).max(128),
 });
 
@@ -14,6 +15,13 @@ export const LoginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof LoginSchema>;
+
+// Onboarding step 1 — the user's display name, set after signup.
+export const SetProfileSchema = z.object({
+  name: z.string().min(1).max(100),
+});
+
+export type SetProfileInput = z.infer<typeof SetProfileSchema>;
 
 export const CreateOrgSchema = z.object({
   name: z.string().min(1).max(100),

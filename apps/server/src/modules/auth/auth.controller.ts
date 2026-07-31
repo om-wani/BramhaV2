@@ -13,8 +13,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service.js';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard.js';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
-import { RegisterSchema, LoginSchema } from '@bramha/shared';
-import type { RegisterInput, LoginInput } from '@bramha/shared';
+import { RegisterSchema, LoginSchema, SetProfileSchema } from '@bramha/shared';
+import type { RegisterInput, LoginInput, SetProfileInput } from '@bramha/shared';
 
 const COOKIE_NAME = 'bramha_session';
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
@@ -79,10 +79,34 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(SessionAuthGuard)
-  async me(
+  async me(@Req() req: FastifyRequest): Promise<{
+    id: string;
+    email: string;
+    name: string | null;
+    isAdmin: boolean;
+    needsOnboarding: boolean;
+    personalOrgId: string | null;
+  }> {
+    const user = (
+      req as FastifyRequest & {
+        user: { id: string; email: string; name: string | null; isAdmin: boolean };
+      }
+    ).user;
+    const onboarding = await this.authService.getOnboardingInfo(user.id);
+    return { ...user, ...onboarding };
+  }
+
+  // Onboarding step 1 — set the display name.
+  @Post('me')
+  @HttpCode(200)
+  @UseGuards(SessionAuthGuard)
+  async setProfile(
     @Req() req: FastifyRequest,
-  ): Promise<{ id: string; email: string; name: string; isAdmin: boolean }> {
-    return (req as FastifyRequest & { user: { id: string; email: string; name: string; isAdmin: boolean } }).user;
+    @Body(new ZodValidationPipe(SetProfileSchema)) body: SetProfileInput,
+  ): Promise<{ ok: true }> {
+    const user = (req as FastifyRequest & { user: { id: string } }).user;
+    await this.authService.setProfile(user.id, body.name);
+    return { ok: true };
   }
 
   @Post('logout')

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RegisterSchema,
+  SetProfileSchema,
   LoginSchema,
   CreateOrgSchema,
   CreateProjectSchema,
@@ -8,6 +9,15 @@ import {
   SendMessageSchema,
   CreateBranchSchema,
 } from '../schemas.js';
+
+describe('SetProfileSchema', () => {
+  it('accepts a non-empty name', () => {
+    expect(SetProfileSchema.safeParse({ name: 'Alice' }).success).toBe(true);
+  });
+  it('rejects an empty name', () => {
+    expect(SetProfileSchema.safeParse({ name: '' }).success).toBe(false);
+  });
+});
 
 describe('RegisterSchema', () => {
   it('accepts valid registration data', () => {
@@ -37,13 +47,12 @@ describe('RegisterSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects empty name', () => {
+  it('does not require a name (name is deferred to onboarding)', () => {
     const result = RegisterSchema.safeParse({
       email: 'user@example.com',
-      name: '',
       password: 'securepassword123',
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('rejects email longer than 255 characters', () => {

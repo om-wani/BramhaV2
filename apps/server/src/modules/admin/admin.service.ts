@@ -126,7 +126,7 @@ export class AdminService {
     Array<{
       userId: string;
       email: string;
-      name: string;
+      name: string | null;
       isAdmin: boolean;
       tokens: number;
       calls: number;

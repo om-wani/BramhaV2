@@ -117,7 +117,7 @@ export class OrgsService {
   async listMembers(
     callerId: string,
     orgId: string,
-  ): Promise<Array<{ userId: string; name: string; email: string; role: string }>> {
+  ): Promise<Array<{ userId: string; name: string | null; email: string; role: string }>> {
     const db = await getDb();
 
     // Caller must be a member
