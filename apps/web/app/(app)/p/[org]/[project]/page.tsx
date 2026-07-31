@@ -29,6 +29,14 @@ interface RoomRow {
   createdAt: string;
 }
 
+interface KnowledgeFileRow {
+  id: string;
+  filename: string;
+  sizeBytes: number;
+  status: string;
+  chunkCount: number | null;
+}
+
 function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
@@ -209,6 +217,13 @@ export default function ProjectPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rooms', projectId] }),
   });
 
+  const filesQuery = useQuery<KnowledgeFileRow[]>({
+    queryKey: ['files', projectId],
+    queryFn: () => apiFetch(`/backend/projects/${projectId}/files`),
+    enabled: projectId !== null,
+  });
+  const knowledgeFiles = filesQuery.data ?? [];
+
   async function handleFiles(files: FileList) {
     if (!projectId) return;
     setUploading(true);
@@ -368,13 +383,7 @@ export default function ProjectPage() {
         <section aria-label="Files" className="mt-10">
           <h2 className="sr-only">Files</h2>
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-medium text-[hsl(var(--text-primary))]">Knowledge files</p>
-            <Link
-              href={`/p/${orgSlug}/${projectSlug}/files`}
-              className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))] hover:opacity-80 transition-opacity"
-            >
-              View all files <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-            </Link>
+            <p className="text-sm font-medium text-[hsl(var(--text-primary))]">Knowledge store</p>
           </div>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -398,6 +407,44 @@ export default function ProjectPage() {
               {uploading ? 'Uploading…' : 'Drop files here or click to upload (PDF, DOCX, TXT, MD, CSV · 25 MB max)'}
             </p>
           </div>
+
+          {/* Knowledge store contents — first 4, then a link to the full list. */}
+          {knowledgeFiles.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {knowledgeFiles.slice(0, 4).map((f) => (
+                <div
+                  key={f.id}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[hsl(var(--surface))] border border-[hsl(var(--border))]"
+                >
+                  <span className="flex-1 min-w-0 text-sm text-[hsl(var(--text-primary))] truncate">
+                    {f.filename}
+                  </span>
+                  <span className="shrink-0 text-xs text-[hsl(var(--text-muted))]">
+                    {(f.sizeBytes / 1024).toFixed(0)} KB
+                  </span>
+                  <span
+                    className={`shrink-0 text-xs ${
+                      f.status === 'ready'
+                        ? 'text-emerald-400'
+                        : f.status === 'error'
+                          ? 'text-red-400'
+                          : 'text-[hsl(var(--text-muted))]'
+                    }`}
+                  >
+                    {f.status === 'ready' && f.chunkCount !== null ? `${f.chunkCount} chunks` : f.status}
+                  </span>
+                </div>
+              ))}
+              {knowledgeFiles.length > 4 && (
+                <Link
+                  href={`/p/${orgSlug}/${projectSlug}/files`}
+                  className="inline-flex items-center gap-1 text-xs text-[hsl(var(--accent))] hover:opacity-80 transition-opacity pt-1"
+                >
+                  View all {knowledgeFiles.length} files <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                </Link>
+              )}
+            </div>
+          )}
         </section>
       )}
 

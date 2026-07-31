@@ -191,7 +191,7 @@ export default function FilesPage() {
           <span className="text-[hsl(var(--text-muted))] text-sm">/</span>
           <span className="text-sm text-[hsl(var(--text-primary))] font-medium">Files</span>
         </div>
-        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">Knowledge files</h1>
+        <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">Knowledge store</h1>
         <p className="text-[hsl(var(--text-muted))] text-sm mt-1">
           Uploaded files are chunked and indexed for RAG — agents will cite them automatically.
         </p>
