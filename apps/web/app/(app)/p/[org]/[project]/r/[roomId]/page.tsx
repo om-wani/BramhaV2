@@ -1347,6 +1347,7 @@ export default function RoomPage() {
               )}
               <textarea
                 ref={textareaRef}
+                autoFocus
                 aria-label="Message"
                 placeholder="Message the council… (@agent to tag · /web to search · Enter to send)"
                 value={draft}

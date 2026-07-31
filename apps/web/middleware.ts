@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/settings', '/p/', '/admin'];
+const PROTECTED_PREFIXES = ['/dashboard', '/settings', '/p/', '/admin', '/onboarding'];
 const SESSION_COOKIE = 'bramha_session';
 
 function isProtected(pathname: string): boolean {
@@ -39,14 +39,14 @@ export function middleware(request: NextRequest): NextResponse {
     if (!session) {
       const loginUrl = new URL('/login', request.url);
       const next = pathname;
-      if (next !== '/login' && next !== '/register') {
+      if (next !== '/login' && next !== '/register' && next !== '/signup') {
         loginUrl.searchParams.set('next', next);
       }
       return NextResponse.redirect(loginUrl);
     }
   }
 
-  if (pathname === '/login' || pathname === '/register') {
+  if (pathname === '/login' || pathname === '/register' || pathname === '/signup') {
     const session = request.cookies.get(SESSION_COOKIE);
     if (session) {
       const nextParam = request.nextUrl.searchParams.get('next');

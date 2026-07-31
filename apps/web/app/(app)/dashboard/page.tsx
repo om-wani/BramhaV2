@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { Building2, Sparkles, ArrowRight } from 'lucide-react';
@@ -167,8 +168,19 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
+
+  // Incomplete accounts (no name / no first project) belong in onboarding.
+  const meQuery = useQuery<{ needsOnboarding: boolean }>({
+    queryKey: ['me'],
+    queryFn: () => apiFetch('/backend/auth/me'),
+    retry: 0,
+  });
+  useEffect(() => {
+    if (meQuery.data?.needsOnboarding) router.replace('/onboarding');
+  }, [meQuery.data, router]);
 
   const orgsQuery = useQuery<Org[]>({
     queryKey: ['orgs'],
@@ -187,7 +199,7 @@ export default function DashboardPage() {
 
   const projects = projectsQuery.data ?? [];
 
-  if (orgsQuery.isLoading) {
+  if (orgsQuery.isLoading || meQuery.isLoading || meQuery.data?.needsOnboarding) {
     return (
       <div className="p-8">
         <div className="h-8 w-48 rounded-lg bg-[hsl(var(--surface))] animate-pulse mb-6" />

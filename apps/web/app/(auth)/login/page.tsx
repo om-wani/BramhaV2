@@ -25,6 +25,12 @@ function LoginForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
+      // Incomplete accounts (no name/first project) go through onboarding.
+      const me = await apiFetch<{ needsOnboarding: boolean }>('/backend/auth/me');
+      if (me.needsOnboarding) {
+        router.push('/onboarding');
+        return;
+      }
       const next = searchParams.get('next') ?? '';
       const dest = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
       router.push(dest);
@@ -97,9 +103,9 @@ function LoginForm() {
       </form>
 
       <p className="mt-6 text-center text-sm text-[hsl(var(--text-muted))]">
-        No account?{' '}
-        <Link href="/register" className="inline-flex items-center gap-1 text-[hsl(var(--accent))] hover:underline font-medium">
-          Create one <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+        Don&apos;t have an account yet?{' '}
+        <Link href="/signup" className="inline-flex items-center gap-1 text-[hsl(var(--accent))] hover:underline font-medium">
+          Sign up <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
         </Link>
       </p>
     </div>
