@@ -144,28 +144,24 @@ describe('CreateProjectSchema', () => {
 });
 
 describe('CreateRoomSchema', () => {
-  it('accepts council room', () => {
-    const result = CreateRoomSchema.safeParse({ name: 'Strategy Room', kind: 'council' });
+  it('accepts a custom room with one agent (1-on-1)', () => {
+    const result = CreateRoomSchema.safeParse({ name: 'CEO Chat', personas: ['ceo'] });
     expect(result.success).toBe(true);
   });
 
-  it('accepts one_on_one room with persona', () => {
-    const result = CreateRoomSchema.safeParse({
-      name: 'CEO Chat',
-      kind: 'one_on_one',
-      persona: 'ceo',
-    });
+  it('accepts a custom room with several agents', () => {
+    const result = CreateRoomSchema.safeParse({ name: 'Growth', personas: ['cmo', 'cfo', 'ceo'] });
     expect(result.success).toBe(true);
   });
 
-  it('rejects unknown room kind', () => {
-    const result = CreateRoomSchema.safeParse({ name: 'Room', kind: 'unknown_kind' });
+  it('rejects a room with no agents', () => {
+    const result = CreateRoomSchema.safeParse({ name: 'Empty', personas: [] });
     expect(result.success).toBe(false);
   });
 
-  it('accepts one_on_one without persona (server validates persona requirement)', () => {
-    const result = CreateRoomSchema.safeParse({ name: 'CEO Chat', kind: 'one_on_one' });
-    expect(result.success).toBe(true);
+  it('rejects a room with no name', () => {
+    const result = CreateRoomSchema.safeParse({ personas: ['ceo'] });
+    expect(result.success).toBe(false);
   });
 });
 

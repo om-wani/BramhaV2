@@ -102,6 +102,7 @@ const TurnStateAnnotation = Annotation.Root({
   recentSpeakers: Annotation<PersonaSlug[]>(),
   roomKind: Annotation<'council' | 'one_on_one'>(),
   boundPersona: Annotation<PersonaSlug | undefined>(),
+  allowedPersonas: Annotation<PersonaSlug[] | undefined>(),
   // P5 delegation sets this to true so respondNode omits the DELEGATE_TO instruction
   isDelegated: Annotation<boolean>(),
   // Injected RAG search callback — avoids @bramha/db import in this package
@@ -126,6 +127,17 @@ export function createTurnGraph(
 ) {
   const router = getModelRouter();
   const allPersonas = Object.values(PERSONAS);
+
+  // Candidate agents for a turn: a custom room restricts scoring to its own
+  // selected agents; council (or unset) scores all 8.
+  function candidatePersonas(allowed: PersonaSlug[] | undefined): PersonaConfig[] {
+    if (allowed && allowed.length > 0) {
+      const set = new Set(allowed);
+      const subset = allPersonas.filter((p) => set.has(p.slug));
+      if (subset.length > 0) return subset;
+    }
+    return allPersonas;
+  }
 
   // -------------------------------------------------------------------------
   // select node: embed message, score all 8 personas, emit selection event
@@ -168,7 +180,7 @@ export function createTurnGraph(
         recentSpeakers: state.recentSpeakers,
       },
       state.domainEmbeddings as Map<PersonaSlug, number[]>,
-      allPersonas,
+      candidatePersonas(state.allowedPersonas),
       scoringOptions,
     );
 
@@ -418,6 +430,7 @@ export interface TurnGraphParams {
   userMessage: string;
   roomKind: 'council' | 'one_on_one';
   boundPersona?: PersonaSlug;
+  allowedPersonas?: PersonaSlug[];
   recentSpeakers: PersonaSlug[];
   domainEmbeddings: Map<string, number[]>;
   isDelegated?: boolean;
@@ -460,6 +473,10 @@ export async function invokeTurnGraph(params: TurnGraphParams): Promise<TurnGrap
 
   if (params.boundPersona !== undefined) {
     initialState['boundPersona'] = params.boundPersona;
+  }
+
+  if (params.allowedPersonas !== undefined) {
+    initialState['allowedPersonas'] = params.allowedPersonas;
   }
 
   if (params.emitDelegationFn !== undefined) {

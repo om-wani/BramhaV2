@@ -151,8 +151,9 @@ export const rooms = pgTable('rooms', {
     .notNull()
     .references(() => projects.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
-  kind: text('kind').notNull(), // council | one_on_one — CHECK in SQL
-  persona: text('persona'),
+  kind: text('kind').notNull(), // council | one_on_one | custom — CHECK in SQL
+  persona: text('persona'), // legacy 1:1 single agent
+  personas: jsonb('personas').notNull().default([]), // agent slugs for custom rooms
   mainBranchId: uuid('main_branch_id'), // forward ref to branches — no FK
   createdAt: timestamptz('created_at').notNull().defaultNow(),
 });

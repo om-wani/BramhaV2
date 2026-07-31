@@ -46,10 +46,11 @@ export const CreateProjectSchema = z.object({
 
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
+// Users create custom rooms only — a name plus 1..8 agents. The single council
+// conference room is auto-seeded per project and is not creatable via this API.
 export const CreateRoomSchema = z.object({
   name: z.string().min(1).max(100),
-  kind: z.enum(['council', 'one_on_one']),
-  persona: z.string().optional(), // required when kind=one_on_one, validated server-side
+  personas: z.array(z.string()).min(1).max(8),
 });
 
 export type CreateRoomInput = z.infer<typeof CreateRoomSchema>;

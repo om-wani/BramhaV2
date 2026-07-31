@@ -147,7 +147,7 @@ describe('P2 gate — branch mid-thread, both lineages survive hard refresh', ()
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: 'Gate Room', kind: 'council' }),
+      body: JSON.stringify({ name: 'Gate Room', personas: ['ceo'] }),
     });
     expect(roomRes.statusCode).toBe(201);
     const { id: roomId, mainBranchId } = roomRes.json<{ id: string; mainBranchId: string }>();

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Trash2 } from 'lucide-react';
 
 interface OrgRow {
   id: string;
@@ -25,6 +25,7 @@ interface RoomRow {
   name: string;
   kind: string;
   persona: string | null;
+  personas: string[];
   createdAt: string;
 }
 
@@ -49,6 +50,15 @@ function getPersonaName(slug: string): string {
     : slug;
 }
 
+function roomAgentsLabel(room: { kind: string; persona: string | null; personas: string[] }): string {
+  if (room.kind === 'council') return 'Council · all agents';
+  const slugs = room.personas.length > 0 ? room.personas : room.persona ? [room.persona] : [];
+  if (slugs.length === 0) return 'Custom room';
+  if (slugs.length === 1) return `1-on-1 · ${getPersonaName(slugs[0]!)}`;
+  if (slugs.length <= 3) return slugs.map(getPersonaName).join(', ');
+  return `${slugs.length} agents`;
+}
+
 function CreateRoomDialog({
   projectId,
   onClose,
@@ -57,21 +67,20 @@ function CreateRoomDialog({
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
-  const [kind, setKind] = useState<'council' | 'one_on_one'>('council');
-  const [persona, setPersona] = useState('ceo');
+  const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState('');
   const qc = useQueryClient();
+
+  function toggle(slug: string) {
+    setSelected((prev) => (prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]));
+  }
 
   const mutation = useMutation({
     mutationFn: () =>
       apiFetch(`/backend/projects/${projectId}/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          kind,
-          ...(kind === 'one_on_one' ? { persona } : {}),
-        }),
+        body: JSON.stringify({ name: name.trim(), personas: selected }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rooms', projectId] });
@@ -107,47 +116,34 @@ function CreateRoomDialog({
             className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] placeholder-[hsl(var(--text-muted))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] text-sm"
           />
           <fieldset>
-            <legend className="text-xs text-[hsl(var(--text-muted))] mb-1.5">Room type</legend>
-            <div className="flex gap-3">
-              {(['council', 'one_on_one'] as const).map((k) => (
-                <label key={k} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="kind"
-                    value={k}
-                    checked={kind === k}
-                    onChange={() => setKind(k)}
-                    className="accent-[hsl(var(--accent))]"
-                  />
-                  <span className="text-sm text-[hsl(var(--text-primary))]">
-                    {k === 'council' ? 'Council' : '1-on-1'}
-                  </span>
-                </label>
-              ))}
+            <legend className="text-xs text-[hsl(var(--text-muted))] mb-1.5">
+              Agents in this room ({selected.length} selected)
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(PERSONA_NAMES).map(([slug, displayName]) => {
+                const on = selected.includes(slug);
+                return (
+                  <button
+                    key={slug}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggle(slug)}
+                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                      on
+                        ? 'bg-[hsl(var(--accent)/0.15)] border-[hsl(var(--accent))] text-[hsl(var(--accent))]'
+                        : 'bg-[hsl(var(--canvas))] border-[hsl(var(--border))] text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))]'
+                    }`}
+                  >
+                    {displayName} · {slug.toUpperCase()}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[11px] text-[hsl(var(--text-muted))] mt-2">
+              Pick one for a focused 1-on-1, or several for a scoped mini-council. The full council
+              room already exists.
+            </p>
           </fieldset>
-          {kind === 'one_on_one' && (
-            <div>
-              <label
-                htmlFor="persona-select"
-                className="block text-xs text-[hsl(var(--text-muted))] mb-1.5"
-              >
-                Persona
-              </label>
-              <select
-                id="persona-select"
-                value={persona}
-                onChange={(e) => setPersona(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))]"
-              >
-                {Object.entries(PERSONA_NAMES).map(([slug, displayName]) => (
-                  <option key={slug} value={slug}>
-                    {displayName} ({slug.toUpperCase()})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
         {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
         <div className="flex gap-2 justify-end">
@@ -158,7 +154,7 @@ function CreateRoomDialog({
             Cancel
           </button>
           <button
-            disabled={!name.trim() || mutation.isPending}
+            disabled={!name.trim() || selected.length === 0 || mutation.isPending}
             onClick={() => mutation.mutate()}
             className="px-4 py-2 text-sm rounded-lg bg-[hsl(var(--accent))] text-white font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
@@ -206,6 +202,12 @@ export default function ProjectPage() {
   });
 
   const rooms = roomsQuery.data ?? [];
+
+  const deleteRoom = useMutation({
+    mutationFn: (roomId: string) =>
+      apiFetch(`/backend/projects/${projectId}/rooms/${roomId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rooms', projectId] }),
+  });
 
   async function handleFiles(files: FileList) {
     if (!projectId) return;
@@ -320,19 +322,31 @@ export default function ProjectPage() {
                   <h3 className="font-semibold text-[hsl(var(--text-primary))] mb-1 truncate">
                     {room.name}
                   </h3>
-                  <p className="text-xs text-[hsl(var(--text-muted))]">
-                    {room.kind === 'council'
-                      ? 'Council'
-                      : `1-on-1 · ${room.persona ? getPersonaName(room.persona) : ''}`}
+                  <p className="text-xs text-[hsl(var(--text-muted))] truncate">
+                    {roomAgentsLabel(room)}
                   </p>
                 </div>
-                <div className="mt-4">
+                <div className="mt-4 flex items-center gap-2">
                   <Link
                     href={`/p/${orgSlug}/${projectSlug}/r/${room.id}`}
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
                   >
                     Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                   </Link>
+                  {room.kind !== 'council' && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Delete room "${room.name}"? This cannot be undone.`)) {
+                          deleteRoom.mutate(room.id);
+                        }
+                      }}
+                      aria-label={`Delete room ${room.name}`}
+                      title="Delete room"
+                      className="p-1.5 rounded-lg text-[hsl(var(--text-muted))] hover:text-red-400 hover:bg-[hsl(var(--canvas))] transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

@@ -110,7 +110,7 @@ async function setupProjectRoom(app: NestFastifyApplication): Promise<Ctx> {
     method: 'POST',
     url: `/projects/${projectId}/rooms`,
     headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ name: 'Test Room', kind: 'council' }),
+    body: JSON.stringify({ name: 'Test Room', personas: ['ceo'] }),
   });
   const roomId = room.json().id as string;
 

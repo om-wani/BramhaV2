@@ -149,7 +149,7 @@ describe('Rooms (P2.1)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: 'Council Room', kind: 'council' }),
+      body: JSON.stringify({ name: 'Growth Room', personas: ['ceo', 'cfo'] }),
     });
 
     expect(res.statusCode).toBe(201);
@@ -159,21 +159,23 @@ describe('Rooms (P2.1)', () => {
       name: string;
       kind: string;
       persona: null;
+      personas: string[];
       mainBranchId: string;
       createdAt: string;
     }>();
     expect(typeof body.id).toBe('string');
     expect(body.projectId).toBe(projectId);
-    expect(body.name).toBe('Council Room');
-    expect(body.kind).toBe('council');
+    expect(body.name).toBe('Growth Room');
+    expect(body.kind).toBe('custom');
     expect(body.persona).toBeNull();
+    expect(body.personas).toEqual(['ceo', 'cfo']);
     expect(typeof body.mainBranchId).toBe('string');
     expect(body.mainBranchId.length).toBeGreaterThan(0);
     expect(typeof body.createdAt).toBe('string');
   });
 
-  // 2. POST — one_on_one room with persona
-  it('POST /projects/:id/rooms — one_on_one room with valid persona returns 201', async () => {
+  // 2. POST — single-agent custom room (1-on-1)
+  it('POST /projects/:id/rooms — single-agent room returns 201', async () => {
     const { cookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, cookie);
     const { projectId } = await createProject(app, cookie, orgId);
@@ -182,18 +184,18 @@ describe('Rooms (P2.1)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: '1:1 with CTO', kind: 'one_on_one', persona: 'cto' }),
+      body: JSON.stringify({ name: '1:1 with CTO', personas: ['cto'] }),
     });
 
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ kind: string; persona: string; mainBranchId: string }>();
-    expect(body.kind).toBe('one_on_one');
-    expect(body.persona).toBe('cto');
+    const body = res.json<{ kind: string; personas: string[]; mainBranchId: string }>();
+    expect(body.kind).toBe('custom');
+    expect(body.personas).toEqual(['cto']);
     expect(typeof body.mainBranchId).toBe('string');
   });
 
-  // 3. POST — one_on_one without persona → 400
-  it('POST /projects/:id/rooms — one_on_one without persona returns 400', async () => {
+  // 3. POST — no agents → 400
+  it('POST /projects/:id/rooms — no agents returns 400', async () => {
     const { cookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, cookie);
     const { projectId } = await createProject(app, cookie, orgId);
@@ -202,15 +204,15 @@ describe('Rooms (P2.1)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: 'Bad Room', kind: 'one_on_one' }),
+      body: JSON.stringify({ name: 'Bad Room', personas: [] }),
     });
 
     expect(res.statusCode).toBe(400);
     expect(res.json<{ code: string }>().code).toBe('VALIDATION_ERROR');
   });
 
-  // 4. POST — council with persona → 400
-  it('POST /projects/:id/rooms — council with persona returns 400', async () => {
+  // 4. POST — invalid agent slug → 400
+  it('POST /projects/:id/rooms — invalid agent slug returns 400', async () => {
     const { cookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, cookie);
     const { projectId } = await createProject(app, cookie, orgId);
@@ -219,7 +221,7 @@ describe('Rooms (P2.1)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ name: 'Bad Council', kind: 'council', persona: 'ceo' }),
+      body: JSON.stringify({ name: 'Bad Agents', personas: ['wizard'] }),
     });
 
     expect(res.statusCode).toBe(400);
@@ -237,22 +239,21 @@ describe('Rooms (P2.1)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json', cookie: otherCookie },
-      body: JSON.stringify({ name: 'Forbidden Room', kind: 'council' }),
+      body: JSON.stringify({ name: 'Forbidden Room', personas: ['ceo'] }),
     });
 
     expect(res.statusCode).toBe(403);
     expect(res.json<{ code: string }>().code).toBe('FORBIDDEN');
   });
 
-  // 6. GET — list rooms
+  // 6. GET — list rooms (includes the auto-seeded council + created customs)
   it('GET /projects/:id/rooms — lists rooms for project member', async () => {
     const { cookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, cookie);
     const { projectId } = await createProject(app, cookie, orgId);
 
-    // Create two rooms
-    await createRoom(app, cookie, projectId, { name: 'Room A', kind: 'council' });
-    await createRoom(app, cookie, projectId, { name: 'Room B', kind: 'one_on_one', persona: 'ceo' });
+    await createRoom(app, cookie, projectId, { name: 'Room A', personas: ['ceo'] });
+    await createRoom(app, cookie, projectId, { name: 'Room B', personas: ['cmo', 'cfo'] });
 
     const res = await app.inject({
       method: 'GET',
@@ -265,6 +266,39 @@ describe('Rooms (P2.1)', () => {
     const names = rooms.map((r) => r.name);
     expect(names).toContain('Room A');
     expect(names).toContain('Room B');
+    // Project creation auto-seeds a single council room.
+    expect(rooms.filter((r) => r.kind === 'council')).toHaveLength(1);
+  });
+
+  // 7. DELETE — custom room deletes (204); council room cannot be deleted.
+  it('DELETE /projects/:id/rooms/:roomId — custom deletes, council is protected', async () => {
+    const { cookie } = await registerAndLogin(app);
+    const { orgId } = await createOrg(app, cookie);
+    const { projectId } = await createProject(app, cookie, orgId);
+
+    const custom = await createRoom(app, cookie, projectId, { name: 'Temp', personas: ['ceo'] });
+    const delCustom = await app.inject({
+      method: 'DELETE',
+      url: `/projects/${projectId}/rooms/${custom.id}`,
+      headers: { cookie },
+    });
+    expect(delCustom.statusCode).toBe(204);
+
+    // The auto-seeded council room cannot be deleted.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/projects/${projectId}/rooms`,
+      headers: { cookie },
+    });
+    const council = list.json<Array<{ id: string; kind: string }>>().find((r) => r.kind === 'council');
+    expect(council).toBeDefined();
+    const delCouncil = await app.inject({
+      method: 'DELETE',
+      url: `/projects/${projectId}/rooms/${council!.id}`,
+      headers: { cookie },
+    });
+    expect(delCouncil.statusCode).toBe(403);
+    expect(delCouncil.json<{ code: string }>().code).toBe('COUNCIL_UNDELETABLE');
   });
 });
 
@@ -291,7 +325,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'Chat Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     const res = await app.inject({
@@ -321,7 +355,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'Chat Room 2',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     // First message
@@ -358,7 +392,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'Branch Test Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     // Insert a node first
@@ -398,7 +432,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'Thread Test Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     // Insert message 1
@@ -457,7 +491,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId: branchId } = await createRoom(app, cookie, projectId, {
       name: 'Fork Test Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     // Insert first node normally via HTTP → head = node1
@@ -491,7 +525,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'List Branches Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     // Insert a node and create a named branch
@@ -549,7 +583,7 @@ describe('Conversation (P2.2)', () => {
       method: 'POST',
       url: `/projects/${projectId}/rooms`,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Unauth Room', kind: 'council' }),
+      body: JSON.stringify({ name: 'Unauth Room', personas: ['ceo'] }),
     });
     expect(res.statusCode).toBe(401);
     expect(res.json<{ code: string }>().code).toBe('UNAUTHORIZED');
@@ -559,7 +593,7 @@ describe('Conversation (P2.2)', () => {
     const { cookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, cookie);
     const { projectId } = await createProject(app, cookie, orgId);
-    const { id: roomId } = await createRoom(app, cookie, projectId, { name: 'Room', kind: 'council' });
+    const { id: roomId } = await createRoom(app, cookie, projectId, { name: 'Room', personas: ['ceo'] });
 
     const res = await app.inject({
       method: 'GET',
@@ -576,7 +610,7 @@ describe('Conversation (P2.2)', () => {
     const { projectId } = await createProject(app, cookie, orgId);
     const { id: roomId, mainBranchId } = await createRoom(app, cookie, projectId, {
       name: 'Empty Thread Room',
-      kind: 'council',
+      personas: ['ceo'],
     });
 
     const res = await app.inject({
@@ -594,7 +628,7 @@ describe('Conversation (P2.2)', () => {
     const { cookie: otherCookie } = await registerAndLogin(app);
     const { orgId } = await createOrg(app, ownerCookie);
     const { projectId } = await createProject(app, ownerCookie, orgId);
-    const { id: roomId } = await createRoom(app, ownerCookie, projectId, { name: 'Room', kind: 'council' });
+    const { id: roomId } = await createRoom(app, ownerCookie, projectId, { name: 'Room', personas: ['ceo'] });
 
     const res = await app.inject({
       method: 'GET',

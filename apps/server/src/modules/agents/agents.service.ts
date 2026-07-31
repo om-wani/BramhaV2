@@ -108,6 +108,7 @@ export class AgentsService implements OnModuleInit {
     userMessage: string;
     roomKind: 'council' | 'one_on_one';
     boundPersona?: PersonaSlug;
+    allowedPersonas?: PersonaSlug[]; // custom rooms: restrict scoring to this set
     userId?: string; // triggering user (undefined for system/proactive)
     thread: ConversationNodeRow[];
   }): Promise<AgentResponse[]> {
@@ -238,6 +239,7 @@ export class AgentsService implements OnModuleInit {
       roomKind: params.roomKind,
       ...(params.userId !== undefined ? { triggerUserId: params.userId } : {}),
       ...(params.boundPersona !== undefined ? { boundPersona: params.boundPersona } : {}),
+      ...(params.allowedPersonas !== undefined ? { allowedPersonas: params.allowedPersonas } : {}),
       recentSpeakers,
       domainEmbeddings: this.domainEmbeddings,
       persistFn,

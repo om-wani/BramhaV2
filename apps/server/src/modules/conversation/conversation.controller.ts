@@ -81,6 +81,15 @@ export class ConversationController {
           roomId,
           effectiveBranchId,
         );
+        // Room → candidate agents:
+        //  - council: all 8, relevance-scored (roomKind 'council').
+        //  - custom:  only the room's selected agents, scored among themselves.
+        //  - one_on_one (legacy): the single bound agent (roomKind 'one_on_one').
+        const allowedPersonas =
+          room.kind === 'custom' ? (room.personas as PersonaSlug[]) : undefined;
+        const roomKind: 'council' | 'one_on_one' =
+          room.kind === 'one_on_one' ? 'one_on_one' : 'council';
+
         await this.agentsService.triggerAgentTurn({
           projectId,
           roomId,
@@ -88,8 +97,11 @@ export class ConversationController {
           orgName: 'org', // TODO: fetch from project in P3.4 — placeholder for now
           userNodeId: result.nodeId,
           userMessage: body.content,
-          roomKind: room.kind as 'council' | 'one_on_one',
-          ...(room.persona !== null ? { boundPersona: room.persona as PersonaSlug } : {}),
+          roomKind,
+          ...(allowedPersonas && allowedPersonas.length > 0 ? { allowedPersonas } : {}),
+          ...(room.persona !== null && room.kind === 'one_on_one'
+            ? { boundPersona: room.persona as PersonaSlug }
+            : {}),
           userId: req.user.id,
           thread,
         });
