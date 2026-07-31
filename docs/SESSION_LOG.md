@@ -13,6 +13,20 @@
 
 ---
 
+## 2026-08-01 — UX batch: sidebar/profile, multi-agent rooms, knowledge store, big uploads
+
+**Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 8fff51b..660ae38
+**Done:**
+- **Sidebar/profile (4124cc6):** collapsible sidebar (w-60↔w-14 rail, PanelLeft toggle, persisted); removed org section/dropdown (projects list under implicit personal org); bottom 3 items → single profile avatar menu (name/email/org · View profile · Settings · Godmode · Sign out, outside-click close, opens up); Feedback widget moved to centre of the bottom status bar (opens upward).
+- **Multi-agent rooms (18aa4b7):** rooms.personas jsonb + kind 'custom' (migration 0009). Create API = { name, personas[] } (1..8, valid, distinct); council not creatable (project-seeded only); DELETE endpoint refuses council (COUNCIL_UNDELETABLE). Turn flow threads allowedPersonas (controller→agents.service→turn-graph selectNode candidate filter) so custom rooms score only their agents; council all 8; legacy one_on_one still binds. Web: room dialog = multi-select agent chips (no council option); cards show agent set + delete (hidden for council).
+- **Knowledge store (53121c6):** project page lists files inline (first 4 + "View all N" link when >4); renamed "Knowledge files" → "Knowledge store".
+- **Big uploads (660ae38):** uploads hit the Vercel proxy's ~4.5MB external-rewrite body cap (verified 1MB→201, 6MB+→413). Fix = short-lived project-scoped HMAC upload ticket minted via proxy (session+admin), then file sent DIRECTLY to the backend origin (NEXT_PUBLIC_UPLOAD_ORIGIN=bramha-api) with the ticket as Bearer (UploadTicketGuard), bypassing the proxy. Local dev falls back to the proxy path. VERIFIED LIVE: ticket 200 → direct 10MB upload 201 → CORS preflight 204.
+- All deployed (Render + Vercel). 112 server / 31 shared / 144 agents green; web build green.
+**Decisions:** Custom rooms use relevance scoring restricted to their agent subset (1-agent ⇒ that agent always answers). Upload ticket is stateless HMAC(SESSION_SECRET) w/ 10-min TTL + projectId binding — no table. CORS already allowed the Vercel origin + Authorization, so direct cross-origin upload works with Bearer (no cookie).
+**Next:** More UX changes queued by user. Still-open: Google OAuth (needs creds); ~$1 OpenRouter credit for free-model 429 latency + reliable delegation-signal emission.
+
+---
+
 ## 2026-08-01 — Low-friction onboarding: personal org + landing/login/signup/wizard
 
 **Branch/commits:** `claude/mvp-plan-simplify-1zfx9b` @ 75e322d..a73b368
