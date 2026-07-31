@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { FeedbackWidget } from './FeedbackWidget';
 
 // Mirrors UsageSummary from apps/server usage.service
 interface UsageBucket {
@@ -83,7 +84,7 @@ export function StatusBar() {
       className="shrink-0 flex items-center justify-between gap-4 h-7 px-4 border-t border-[hsl(var(--border))] bg-[hsl(var(--surface))] text-[11px] text-[hsl(var(--text-muted))] select-none"
     >
       {/* Left: route context + realtime status */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex-1 flex items-center gap-3 min-w-0">
         <span className="truncate">{contextLabel(pathname)}</span>
         {inRoom && (
           <span className="flex items-center gap-1 shrink-0" title={socketConnected ? 'Realtime connected' : 'Realtime disconnected'}>
@@ -96,8 +97,13 @@ export function StatusBar() {
         )}
       </div>
 
+      {/* Center: demo feedback */}
+      <div className="shrink-0">
+        <FeedbackWidget />
+      </div>
+
       {/* Right: usage — always visible */}
-      <div className="flex items-center gap-3 shrink-0 tabular-nums">
+      <div className="flex-1 flex items-center justify-end gap-3 shrink-0 tabular-nums">
         {usage ? (
           <>
             <span title="Model calls · tokens in+out · estimated cost — last 24 hours">

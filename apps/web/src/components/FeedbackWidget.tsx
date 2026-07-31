@@ -86,7 +86,7 @@ export function FeedbackWidget() {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-2 w-80 max-h-[70vh] z-50 flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-2xl overflow-hidden">
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 max-h-[70vh] z-50 flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[hsl(var(--border))]">
             <span className="text-xs font-semibold text-[hsl(var(--text-primary))]">Demo feedback</span>
             <button
