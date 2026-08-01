@@ -120,6 +120,7 @@ Rule: any commit that completes a task updates TASKS.md in that commit. Last com
 | `docs/02_mvp_data_model.md` | Schema, DAG semantics, hybrid search SQL, job claim, withTenant, migrations |
 | `docs/03_mvp_agents.md` | Personas, relevance math, turn graph, prompts, delegation, PA lite, checkpoint slot |
 | `docs/04_mvp_ui.md` | Routes, room screen, WS handling, **demo narrative §8 = exit gate** |
+| `docs/DESIGN.md` | **UI system** — tokens, curvature/radius tiers, contrast, type, motion; follow for all UI work |
 | `docs/TASKS.md` | **Living** task tracker — statuses, phase gates (update rules above) |
 | `docs/SESSION_LOG.md` | **Living** append-only session log (update rules above) |
 | `docs/old/` | Archived full-platform specs (superseded) |
