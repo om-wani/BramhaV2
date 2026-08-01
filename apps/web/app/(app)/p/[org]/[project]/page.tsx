@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, uploadKnowledgeFile } from '@/lib/api';
@@ -76,6 +76,7 @@ function RoomCard({
   href: string;
   onDelete: (roomId: string) => void;
 }) {
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const deletable = room.kind !== 'council';
@@ -90,9 +91,20 @@ function RoomCard({
   }, [menuOpen]);
 
   return (
-    <div className="relative flex flex-col justify-between p-5 rounded-xl bg-[hsl(var(--surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--accent)/0.4)] transition-colors">
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => router.push(href)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          router.push(href);
+        }
+      }}
+      className="relative flex flex-col justify-between p-5 rounded-xl bg-[hsl(var(--surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--accent)/0.4)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--accent))] transition-colors cursor-pointer"
+    >
       {deletable && (
-        <div className="absolute top-2 right-2" ref={ref}>
+        <div className="absolute top-2 right-2" ref={ref} onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
