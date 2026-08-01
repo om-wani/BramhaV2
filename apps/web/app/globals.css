@@ -26,6 +26,24 @@ html {
   color-scheme: dark;
 }
 
+/* DESIGN.md §6 — crisper text rendering + calm selection (no halation). */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+::selection {
+  background: hsl(var(--accent) / 0.28);
+  color: hsl(var(--text-primary));
+}
+
+/* DESIGN.md §2 — G2/G3 squircle (continuous corners) for large surfaces.
+   Progressive enhancement: `corner-shape` is honored where supported; the
+   element's own border-radius (rounded-2xl etc.) is the universal fallback. */
+.squircle {
+  corner-shape: superellipse(1.8);
+}
+
 @keyframes caret {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }

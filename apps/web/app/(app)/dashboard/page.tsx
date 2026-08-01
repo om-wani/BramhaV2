@@ -24,6 +24,14 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
+// Time-of-day greeting — a small "at home" touch (DESIGN.md §7).
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 function CreateProjectDialog({
   orgId,
   onClose,
@@ -57,7 +65,7 @@ function CreateProjectDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-dialog-title"
-        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-2xl squircle p-6 w-full max-w-sm shadow-xl"
       >
         <h3
           id="create-project-dialog-title"
@@ -125,7 +133,7 @@ function CreateOrgDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-org-dialog-title"
-        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-2xl squircle p-6 w-full max-w-sm shadow-xl"
       >
         <h3
           id="create-org-dialog-title"
@@ -173,11 +181,12 @@ export default function DashboardPage() {
   const [showCreateOrg, setShowCreateOrg] = useState(false);
 
   // Incomplete accounts (no name / no first project) belong in onboarding.
-  const meQuery = useQuery<{ needsOnboarding: boolean }>({
+  const meQuery = useQuery<{ needsOnboarding: boolean; name: string | null }>({
     queryKey: ['me'],
     queryFn: () => apiFetch('/backend/auth/me'),
     retry: 0,
   });
+  const firstName = (meQuery.data?.name ?? '').trim().split(/\s+/)[0] ?? '';
   useEffect(() => {
     if (meQuery.data?.needsOnboarding) router.replace('/onboarding');
   }, [meQuery.data, router]);
@@ -228,7 +237,9 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-[hsl(var(--text-primary))]">
+            {greeting()}{firstName ? `, ${firstName}` : ''}
+          </h1>
           <p className="text-[hsl(var(--text-muted))] text-sm mt-1">
             {firstOrg ? `${firstOrg.name} · ${firstOrg.role}` : 'Get started by creating an org'}
           </p>

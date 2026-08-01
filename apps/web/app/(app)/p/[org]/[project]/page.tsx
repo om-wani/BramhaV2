@@ -105,7 +105,7 @@ function CreateRoomDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-room-dialog-title"
-        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-2xl squircle p-6 w-full max-w-sm shadow-xl"
       >
         <h3
           id="create-room-dialog-title"

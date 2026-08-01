@@ -154,7 +154,7 @@ function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string 
   }, [expanded]);
 
   return (
-    <div className="mt-3 rounded-lg border border-[hsl(var(--border))] overflow-hidden">
+    <div className="mt-3 rounded-xl border border-[hsl(var(--border))] overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-[hsl(var(--surface-raised))]
         border-b border-[hsl(var(--border))]">
         <span className="text-xs font-medium text-[hsl(var(--text-muted))]">HTML Artifact</span>
@@ -175,12 +175,12 @@ function ArtifactCard({ artifact }: { artifact: { type: 'html'; content: string 
 
       {expanded && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-[hsl(var(--surface))] rounded-lg w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden border border-[hsl(var(--border))]">
-            <div className="flex items-center justify-between p-3 border-b">
-              <span className="text-sm font-medium">HTML Artifact</span>
+          <div className="bg-[hsl(var(--surface))] rounded-2xl squircle w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden border border-[hsl(var(--border))] shadow-2xl">
+            <div className="flex items-center justify-between p-3 border-b border-[hsl(var(--border))]">
+              <span className="text-sm font-medium text-[hsl(var(--text-primary))]">HTML Artifact</span>
               <button
                 onClick={() => setExpanded(false)}
-                className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
+                className="inline-flex items-center gap-1 text-sm text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] transition-colors"
               >
                 <X className="w-4 h-4" aria-hidden="true" /> Close
               </button>
@@ -654,7 +654,7 @@ function CreateBranchDialog({
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className="relative z-10 w-full max-w-sm bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 shadow-2xl"
+        className="relative z-10 w-full max-w-sm bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-2xl squircle p-6 shadow-2xl"
       >
         <h2
           id="create-branch-title"

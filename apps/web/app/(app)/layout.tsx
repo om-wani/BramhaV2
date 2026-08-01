@@ -79,7 +79,7 @@ function NewProjectDialog({ orgId, onClose }: { orgId: string; onClose: () => vo
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-project-dialog-title"
-        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-xl p-6 w-full max-w-sm shadow-xl"
+        className="bg-[hsl(var(--surface))] border border-[hsl(var(--border))] rounded-2xl squircle p-6 w-full max-w-sm shadow-xl"
       >
         <h3 id="new-project-dialog-title" className="text-lg font-semibold text-[hsl(var(--text-primary))] mb-4">
           New project
