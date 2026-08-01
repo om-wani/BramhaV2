@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, uploadKnowledgeFile } from '@/lib/api';
-import { ArrowLeft, ArrowRight, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Trash2, MoreVertical } from 'lucide-react';
 
 interface OrgRow {
   id: string;
@@ -65,6 +65,81 @@ function roomAgentsLabel(room: { kind: string; persona: string | null; personas:
   if (slugs.length === 1) return `1-on-1 · ${getPersonaName(slugs[0]!)}`;
   if (slugs.length <= 3) return slugs.map(getPersonaName).join(', ');
   return `${slugs.length} agents`;
+}
+
+function RoomCard({
+  room,
+  href,
+  onDelete,
+}: {
+  room: RoomRow;
+  href: string;
+  onDelete: (roomId: string) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const deletable = room.kind !== 'council';
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
+
+  return (
+    <div className="relative flex flex-col justify-between p-5 rounded-xl bg-[hsl(var(--surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--accent)/0.4)] transition-colors">
+      {deletable && (
+        <div className="absolute top-2 right-2" ref={ref}>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`Options for ${room.name}`}
+            className="p-1.5 rounded-lg text-[hsl(var(--text-muted))] hover:text-[hsl(var(--text-primary))] hover:bg-[hsl(var(--canvas))] transition-colors"
+          >
+            <MoreVertical className="w-4 h-4" aria-hidden="true" />
+          </button>
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 mt-1 w-40 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] shadow-2xl overflow-hidden z-20"
+            >
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  if (window.confirm(`Delete room "${room.name}"? This cannot be undone.`)) {
+                    onDelete(room.id);
+                  }
+                }}
+                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-[hsl(var(--text-muted))] hover:text-red-400 hover:bg-[hsl(var(--canvas))] transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Delete room
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <h3 className="font-semibold text-[hsl(var(--text-primary))] mb-1 truncate pr-8">
+          {room.name}
+        </h3>
+        <p className="text-xs text-[hsl(var(--text-muted))] truncate">{roomAgentsLabel(room)}</p>
+      </div>
+      <div className="mt-4">
+        <Link
+          href={href}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
+        >
+          Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function CreateRoomDialog({
@@ -327,41 +402,12 @@ export default function ProjectPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {rooms.map((room) => (
-              <div
+              <RoomCard
                 key={room.id}
-                className="flex flex-col justify-between p-5 rounded-xl bg-[hsl(var(--surface))] border border-[hsl(var(--border))] hover:border-[hsl(var(--accent)/0.4)] transition-colors"
-              >
-                <div>
-                  <h3 className="font-semibold text-[hsl(var(--text-primary))] mb-1 truncate">
-                    {room.name}
-                  </h3>
-                  <p className="text-xs text-[hsl(var(--text-muted))] truncate">
-                    {roomAgentsLabel(room)}
-                  </p>
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <Link
-                    href={`/p/${orgSlug}/${projectSlug}/r/${room.id}`}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-[hsl(var(--canvas))] border border-[hsl(var(--border))] text-[hsl(var(--text-primary))] hover:border-[hsl(var(--accent))] hover:text-[hsl(var(--accent))] transition-colors"
-                  >
-                    Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                  </Link>
-                  {room.kind !== 'council' && (
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete room "${room.name}"? This cannot be undone.`)) {
-                          deleteRoom.mutate(room.id);
-                        }
-                      }}
-                      aria-label={`Delete room ${room.name}`}
-                      title="Delete room"
-                      className="p-1.5 rounded-lg text-[hsl(var(--text-muted))] hover:text-red-400 hover:bg-[hsl(var(--canvas))] transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
+                room={room}
+                href={`/p/${orgSlug}/${projectSlug}/r/${room.id}`}
+                onDelete={(id) => deleteRoom.mutate(id)}
+              />
             ))}
             {projectId && (
               <button
