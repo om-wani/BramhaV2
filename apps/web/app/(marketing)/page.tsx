@@ -28,18 +28,11 @@ export default function LandingPage() {
       {/* Hero: auth entry left, visual right (claude.com structure).
           Fills the viewport below the h-16 nav so the first screen is all hero. */}
       <section className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
-        {/* Left — headline + auth entry */}
-        <div className="flex flex-col justify-center px-6 sm:px-10 lg:px-16 py-16">
-          <div className="max-w-md">
-            <h1 className="text-4xl sm:text-5xl font-bold leading-tight text-[hsl(var(--text-primary))] mb-4">
-              Your AI C-suite
-              <br />
-              is in session.
-            </h1>
-            <p className="text-lg text-[hsl(var(--text-muted))] leading-relaxed mb-8">
-              Eight executive agents that know when to speak, remember what your company knows, and
-              delegate to each other — in one room.
-            </p>
+        {/* Left — auth only, centered */}
+        <div className="flex flex-col items-center justify-center px-6 sm:px-10 py-16">
+          <div className="w-full max-w-sm">
+            <h2 className="text-xl font-semibold text-[hsl(var(--text-primary))] mb-1">Get started</h2>
+            <p className="text-sm text-[hsl(var(--text-muted))] mb-6">Sign in or create an account.</p>
 
             <div className="space-y-3">
               {/* Google — coming soon (email-first launch) */}
@@ -65,7 +58,7 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <p className="mt-4 text-xs text-[hsl(var(--text-muted))]">
+            <p className="mt-4 text-xs text-[hsl(var(--text-muted))] text-center">
               New here?{' '}
               <Link href="/signup" className="text-[hsl(var(--accent))] hover:underline font-medium">
                 Create an account
@@ -74,10 +67,19 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Right — branded gradient placeholder (promo asset slot) */}
-        <div className="hidden lg:flex items-center justify-center p-10 bg-gradient-to-br from-[hsl(var(--accent))]/25 via-[hsl(var(--surface))] to-[hsl(var(--canvas))] border-l border-[hsl(var(--border))]">
-          <div className="text-center max-w-sm">
-            <div className="flex flex-wrap justify-center gap-2 mb-6">
+        {/* Right — hero headline + tagline over branded gradient */}
+        <div className="hidden lg:flex flex-col justify-center px-16 bg-gradient-to-br from-[hsl(var(--accent))]/25 via-[hsl(var(--surface))] to-[hsl(var(--canvas))] border-l border-[hsl(var(--border))]">
+          <div className="max-w-lg">
+            <h1 className="text-5xl font-bold leading-tight text-[hsl(var(--text-primary))] mb-5">
+              Your AI C-suite
+              <br />
+              is in session.
+            </h1>
+            <p className="text-lg text-[hsl(var(--text-muted))] leading-relaxed mb-8">
+              Eight executive agents that know when to speak, remember what your company knows, and
+              delegate to each other — in one room.
+            </p>
+            <div className="flex flex-wrap gap-2">
               {['CEO', 'CTO', 'CMO', 'CFO', 'COO', 'CHRO', 'CSO', 'CDAO'].map((role) => (
                 <span
                   key={role}
@@ -87,9 +89,6 @@ export default function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="text-sm text-[hsl(var(--text-muted))]">
-              One council. Non-linear threads. Cited knowledge. Delegation between agents.
-            </p>
           </div>
         </div>
       </section>
