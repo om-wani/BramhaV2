@@ -25,8 +25,9 @@ export default function LandingPage() {
         </Link>
       </nav>
 
-      {/* Hero: auth entry left, visual right (claude.com structure) */}
-      <section className="flex-1 grid lg:grid-cols-2">
+      {/* Hero: auth entry left, visual right (claude.com structure).
+          Fills the viewport below the h-16 nav so the first screen is all hero. */}
+      <section className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
         {/* Left — headline + auth entry */}
         <div className="flex flex-col justify-center px-6 sm:px-10 lg:px-16 py-16">
           <div className="max-w-md">
