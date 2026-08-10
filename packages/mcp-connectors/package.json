@@ -19,12 +19,12 @@
   "dependencies": {
     "@bramha/shared": "workspace:*",
     "ajv": "^8.20.0",
-    "fastify": "^5.9.0",
+    "fastify": "^5.11.2",
     "postgres": "^3.4.9",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
