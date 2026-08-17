@@ -12,20 +12,20 @@
     "db:seed": "pnpm --filter @bramha/db db:seed"
   },
   "devDependencies": {
-    "@commitlint/cli": "21.2.0",
-    "@commitlint/config-conventional": "21.2.0",
+    "@commitlint/cli": "21.2.2",
+    "@commitlint/config-conventional": "21.2.2",
     "@eslint/js": "10.0.1",
-    "eslint": "10.6.0",
+    "eslint": "10.8.1",
     "eslint-import-resolver-typescript": "4.4.5",
-    "eslint-plugin-boundaries": "6.0.2",
+    "eslint-plugin-boundaries": "7.2.0",
     "eslint-plugin-security": "4.0.1",
     "husky": "9.1.7",
-    "lint-staged": "17.0.8",
-    "tsx": "^4.23.0",
-    "turbo": "2.10.3",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.62.1",
-    "vitest": "2.1.9"
+    "lint-staged": "17.3.0",
+    "tsx": "^4.23.12",
+    "turbo": "2.10.9",
+    "typescript": "7.0.2",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10"
   },
   "engines": {
     "node": ">=20.0.0",
