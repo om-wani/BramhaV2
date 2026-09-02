@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { getSocket } from '@/lib/socket';
 import { useToast } from '@/components/Toaster';
 import { Markdown } from '@/components/Markdown';
 import {
@@ -825,79 +824,66 @@ export default function RoomPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [nodes.length, streamingNodes, turnWaiting]);
 
-  // ---- Socket.IO — lifecycle (connect once per room) ----------------------
+  // ---- SSE — room stream (replaces Socket.IO for agent-to-UI updates) ------
 
   useEffect(() => {
-    if (!projectId) return;
-    const socket = getSocket();
-    socket.connect();
-    socket.emit('room:join', { projectId, roomId });
-    return () => {
-      socket.emit('room:leave', { roomId });
-      socket.disconnect();
-    };
-  }, [projectId, roomId]);
+    if (!projectId || !roomId) return;
+    const url = `/backend/projects/${projectId}/rooms/${roomId}/stream`;
+    const stream = new EventSource(url, { withCredentials: true });
 
-  // ---- Socket.IO — node:created handler -----------------------------------
-  // Reads branch ID from live cache so it never captures a stale closure value.
-
-  useEffect(() => {
-    if (!projectId) return;
-    const socket = getSocket();
-
-    const handleNodeCreated = (event: NodeCreatedEvent) => {
-      if (event.node.roomId !== roomId) return;
+    const handleNodeCreated = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as NodeCreatedEvent;
+      if (payload.node.roomId !== roomId) return;
       const targetBranchId = activeBranchIdRef.current;
       if (!targetBranchId) return;
       qc.setQueryData<ConversationNodeDto[]>(
         ['thread', projectId, roomId, targetBranchId],
         (prev) => {
-          if (!prev) return [event.node];
-          if (prev.some((n) => n.id === event.node.id)) return prev;
-          return [...prev, event.node];
+          if (!prev) return [payload.node];
+          if (prev.some((n) => n.id === payload.node.id)) return prev;
+          return [...prev, payload.node];
         },
       );
-      // Remove the pending streaming card now that the real node is persisted
-      if (event.node.authorType === 'agent' && event.node.persona) {
+      if (payload.node.authorType === 'agent' && payload.node.persona) {
         setStreamingNodes((prev) => {
           const next = new Map(prev);
-          next.delete(`pending-${event.node.persona}`);
+          next.delete(`pending-${payload.node.persona}`);
           return next;
         });
-        // Turn progress: this persona is done. Clear the waiting state once the
-        // last selected persona replies (or on the first reply in 1:1 rooms,
-        // where no turn:selection fires and the list stays empty).
         setRespondingPersonas((prev) => {
-          const next = prev.filter((p) => p !== event.node.persona);
+          const next = prev.filter((p) => p !== payload.node.persona);
           if (next.length === 0) setTurnWaiting(false);
           return next;
         });
       }
     };
 
-    const handleNodeDelta = (event: NodeDeltaEvent) => {
+    const handleNodeDelta = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as NodeDeltaEvent;
       setStreamingNodes((prev) => {
         const next = new Map(prev);
-        next.set(event.nodeId, (next.get(event.nodeId) ?? '') + event.text);
+        next.set(payload.nodeId, (next.get(payload.nodeId) ?? '') + payload.text);
         return next;
       });
     };
 
-    const handleNodeError = (event: NodeErrorEvent) => {
+    const handleNodeError = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as NodeErrorEvent;
       setStreamingNodes((prev) => {
         const next = new Map(prev);
-        next.delete(event.nodeId);
+        next.delete(payload.nodeId);
         return next;
       });
-      // Usage cap hit — clear, specific message; the turn never started.
-      if (event.code === 'USAGE_LIMIT_EXCEEDED') {
-        toast('Usage limit reached — an admin must raise your token limit', { kind: 'error', durationMs: 7000 });
+      if (payload.code === 'USAGE_LIMIT_EXCEEDED') {
+        toast('Usage limit reached — an admin must raise your token limit', {
+          kind: 'error',
+          durationMs: 7000,
+        });
         setTurnWaiting(false);
         setRespondingPersonas([]);
         return;
       }
-      // Surface the failure instead of silently going idle
-      const slug = event.nodeId.startsWith('pending-') ? event.nodeId.slice('pending-'.length) : null;
+      const slug = payload.nodeId.startsWith('pending-') ? payload.nodeId.slice('pending-'.length) : null;
       toast(`${slug ? getPersonaName(slug) : 'An agent'} failed to respond`, { kind: 'error' });
       if (slug) {
         setRespondingPersonas((prev) => {
@@ -910,52 +896,44 @@ export default function RoomPage() {
       }
     };
 
-    const handleTurnSelection = (event: TurnSelectionEvent) => {
-      setPersonaScores(event.scores);
-      // Selection done — we now know who will speak this turn
+    const handleTurnSelection = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as TurnSelectionEvent;
+      setPersonaScores(payload.scores);
       setRespondingPersonas(
-        event.scores.filter((s) => s.selected).map((s) => s.persona as PersonaSlug),
+        payload.scores.filter((s) => s.selected).map((s) => s.persona as PersonaSlug),
       );
     };
 
-    const handleDelegationPending = (event: DelegationPendingEvent) => {
-      if (event.roomId !== roomId) return;
+    const handleDelegationPending = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as DelegationPendingEvent;
+      if (payload.roomId !== roomId) return;
       setPendingApprovals((prev) =>
-        prev.some((p) => p.taskId === event.taskId) ? prev : [...prev, event],
+        prev.some((p) => p.taskId === payload.taskId) ? prev : [...prev, payload],
       );
-      toast(`${getPersonaName(event.fromPersona)} wants to delegate a task — approval needed`);
+      toast(`${getPersonaName(payload.fromPersona)} wants to delegate a task — approval needed`);
     };
 
-    socket.on('node:created', handleNodeCreated);
-    socket.on('node:delta', handleNodeDelta);
-    socket.on('node:error', handleNodeError);
-    socket.on('turn:selection', handleTurnSelection);
-    socket.on('delegation:pending', handleDelegationPending);
-    return () => {
-      socket.off('node:created', handleNodeCreated);
-      socket.off('node:delta', handleNodeDelta);
-      socket.off('node:error', handleNodeError);
-      socket.off('turn:selection', handleTurnSelection);
-      socket.off('delegation:pending', handleDelegationPending);
-    };
-  }, [projectId, roomId, qc, toast]);
-
-  // ---- Socket.IO — branch:created handler ---------------------------------
-
-  useEffect(() => {
-    if (!projectId) return;
-    const socket = getSocket();
-
-    const handleBranchCreated = (event: BranchCreatedEvent) => {
-      if (event.branch.roomId !== roomId) return;
+    const handleBranchCreated = (event: MessageEvent<string>) => {
+      const payload = JSON.parse(event.data) as BranchCreatedEvent;
+      if (payload.branch.roomId !== roomId) return;
       void qc.invalidateQueries({ queryKey: ['branches', projectId, roomId] });
     };
 
-    socket.on('branch:created', handleBranchCreated);
-    return () => {
-      socket.off('branch:created', handleBranchCreated);
+    stream.addEventListener('node:created', handleNodeCreated);
+    stream.addEventListener('node:delta', handleNodeDelta);
+    stream.addEventListener('node:error', handleNodeError);
+    stream.addEventListener('turn:selection', handleTurnSelection);
+    stream.addEventListener('delegation:pending', handleDelegationPending);
+    stream.addEventListener('branch:created', handleBranchCreated);
+
+    stream.onerror = () => {
+      setTurnWaiting(false);
     };
-  }, [projectId, roomId, qc]);
+
+    return () => {
+      stream.close();
+    };
+  }, [projectId, roomId, qc, toast]);
 
   // ---- Clear streaming nodes on room/branch switch -------------------------
 

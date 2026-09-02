@@ -8,8 +8,9 @@ import {
   UseGuards,
   Req,
   Logger,
+  Res,
 } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { ConversationService } from './conversation.service.js';
 import { SessionAuthGuard } from '../../common/guards/session-auth.guard.js';
@@ -18,7 +19,13 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe.js';
 import { AgentsService } from '../agents/agents.service.js';
 import { RoomsService } from '../rooms/rooms.service.js';
 import { eventBus } from '@bramha/event-bus';
-import type { PersonaSlug } from '@bramha/shared';
+import { getDb, branches, conversationNodes } from '@bramha/db';
+import type {
+  BranchCreatedEvent,
+  NodeCreatedEvent,
+  PersonaSlug,
+} from '@bramha/shared';
+import { and, eq } from 'drizzle-orm';
 
 type AuthenticatedRequest = FastifyRequest & {
   user: { id: string; email: string; name: string };
@@ -148,6 +155,162 @@ export class ConversationController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.conversationService.getThread(req.user.id, projectId, roomId, branchId);
+  }
+
+  // GET /projects/:projectId/rooms/:roomId/stream
+  @Get('stream')
+  async streamRoomEvents(
+    @Param('projectId') projectId: string,
+    @Param('roomId') roomId: string,
+    @Req() _req: AuthenticatedRequest,
+    @Res() res: FastifyReply,
+  ): Promise<void> {
+    // The stream writes directly to Node's response; prevent Nest/Fastify
+    // from trying to serialize and finish the route after this method returns.
+    res.hijack();
+    res.raw.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.raw.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.raw.setHeader('Connection', 'keep-alive');
+    res.raw.setHeader('X-Accel-Buffering', 'no');
+    res.raw.flushHeaders?.();
+
+    const sendEvent = (event: string, payload: unknown) => {
+      res.raw.write(`event: ${event}\n`);
+      res.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    const unsubscribers: Array<() => void> = [];
+    const isOpen = () => !res.raw.writableEnded && !res.raw.destroyed;
+
+    const unsubNode = eventBus.on('node.created', async (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId) return;
+      const db = await getDb();
+      const [node] = await db
+        .select({
+          id: conversationNodes.id,
+          parentId: conversationNodes.parentId,
+          authorType: conversationNodes.authorType,
+          userId: conversationNodes.userId,
+          persona: conversationNodes.persona,
+          content: conversationNodes.content,
+          metadata: conversationNodes.metadata,
+          createdAt: conversationNodes.createdAt,
+        })
+        .from(conversationNodes)
+        .where(eq(conversationNodes.id, event.nodeId));
+      if (!isOpen()) return;
+      const payload: NodeCreatedEvent = {
+        type: 'node:created',
+        node: {
+          id: node?.id ?? event.nodeId,
+          roomId,
+          projectId,
+          parentId: node?.parentId ?? null,
+          authorType: (node?.authorType ?? 'system') as NodeCreatedEvent['node']['authorType'],
+          userId: node?.userId ?? null,
+          persona: node?.persona ?? null,
+          content: node?.content ?? '',
+          metadata: (node?.metadata ?? {}) as Record<string, unknown>,
+          createdAt: node?.createdAt?.toISOString() ?? new Date().toISOString(),
+        },
+      };
+      sendEvent('node:created', payload);
+    });
+
+    const unsubStreaming = eventBus.on('node.streaming', (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId || !isOpen()) return;
+      sendEvent('node:delta', {
+        type: 'node:delta',
+        nodeId: event.nodeId,
+        seq: event.seq,
+        text: event.text,
+      });
+    });
+
+    const unsubError = eventBus.on('node.error', (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId || !isOpen()) return;
+      sendEvent('node:error', {
+        type: 'node:error',
+        nodeId: event.nodeId,
+        code: event.code,
+      });
+    });
+
+    const unsubBranch = eventBus.on('branch.created', async (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId) return;
+      const db = await getDb();
+      const [branch] = await db
+        .select({
+          id: branches.id,
+          name: branches.name,
+          headNodeId: branches.headNodeId,
+          forkedFromNodeId: branches.forkedFromNodeId,
+          createdBy: branches.createdBy,
+          createdAt: branches.createdAt,
+        })
+        .from(branches)
+        .where(and(eq(branches.id, event.branchId), eq(branches.projectId, projectId)));
+      if (!isOpen()) return;
+      const payload: BranchCreatedEvent = {
+        type: 'branch:created',
+        branch: {
+          id: branch?.id ?? event.branchId,
+          roomId,
+          projectId,
+          name: branch?.name ?? '',
+          headNodeId: branch?.headNodeId ?? null,
+          forkedFromNodeId: branch?.forkedFromNodeId ?? null,
+          createdBy: branch?.createdBy ?? '',
+          createdAt: branch?.createdAt?.toISOString() ?? new Date().toISOString(),
+        },
+      };
+      sendEvent('branch:created', payload);
+    });
+
+    const unsubDelegation = eventBus.on('delegation.pending', (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId || !isOpen()) return;
+      sendEvent('delegation:pending', {
+        type: 'delegation:pending',
+        taskId: event.taskId,
+        roomId,
+        fromPersona: event.fromPersona,
+        toPersona: event.toPersona,
+        task: event.task,
+      });
+    });
+
+    const unsubSelection = eventBus.on('turn.selection', (event) => {
+      if (event.projectId !== projectId || event.roomId !== roomId || !isOpen()) return;
+      sendEvent('turn:selection', {
+        type: 'turn:selection',
+        userNodeId: event.userNodeId,
+        scores: event.scores,
+      });
+    });
+
+    unsubscribers.push(
+      unsubNode,
+      unsubStreaming,
+      unsubError,
+      unsubBranch,
+      unsubDelegation,
+      unsubSelection,
+    );
+
+    const heartbeat = setInterval(() => {
+      if (isOpen()) {
+        res.raw.write(': heartbeat\n\n');
+      }
+    }, 15000);
+
+    res.raw.on('close', () => {
+      clearInterval(heartbeat);
+      for (const unsub of unsubscribers) unsub();
+      res.raw.end();
+    });
+
+    res.raw.write('event: connected\n');
+    res.raw.write(`data: ${JSON.stringify({ roomId, projectId })}\n\n`);
   }
 
   // GET /projects/:projectId/rooms/:roomId/branches
